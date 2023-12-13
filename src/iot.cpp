@@ -55,7 +55,7 @@ Iot::Iot() :
     // _activeDuration_ms is set on shutdown
     // _lastSleepDuration_s is set on shutdown
     _deviceId = "";
-    _battery_mV = -1;
+    _battery_mV = 0;
     // _panicSleepDuration_s is set on panic
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
