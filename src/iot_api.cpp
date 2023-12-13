@@ -499,14 +499,14 @@ void updateFirmwareHttpEvent(HttpEvent_t *event)
 // TODO: add Authentication header
 bool IotApi::updateFirmware(String apiPath)
 {
-    String url = getApiUrlForPath(apiPath);
-    bool updateAvailable = apiCheckForUpdate(url, _nvram_firmware_etag_key, _nvram_firmware_date_key);
+    bool updateAvailable = apiCheckForUpdate(apiPath, _nvram_firmware_etag_key, _nvram_firmware_date_key);
     if (!updateAvailable)
     {
         log_i("No firmware update available");
         return false;
     }
 
+    String url = getApiUrlForPath(apiPath);
     log_i("Updating firmware from %s", url.c_str());
     updateFirmwareNewEtag = "";
     updateFirmwareNewDate = "";
