@@ -474,8 +474,8 @@ bool IotApi::updateFirmware(String apiPath, std::map<String, String> header)
     {
         Preferences preferences;
         preferences.begin("iot", false);
-        preferences.putString(_nvram_firmware_etag_key, etag.c_str());
-        preferences.putString(_nvram_firmware_date_key, date.c_str());
+        preferences.putString(_nvram_firmware_etag_key, newEtag.c_str());
+        preferences.putString(_nvram_firmware_date_key, newDate.c_str());
         preferences.end();
         log_i("Firmware update successful");
     } else {
