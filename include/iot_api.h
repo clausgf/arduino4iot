@@ -221,7 +221,7 @@ public:
 
     String getFirmwareHttpEtag();
     String getFirmwareHttpDate();
-    bool updateFirmware(String apiPath = "files/{project}/{device}/firmware.bin", std::map<String, String> header = {});
+    bool updateFirmware(String apiPath = "file/{project}/{device}/firmware.bin", std::map<String, String> header = {});
 
 
     // **********************************************************************
