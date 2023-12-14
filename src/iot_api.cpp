@@ -342,8 +342,12 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
     }
     //log_i("  HTTP response status: %d", httpStatusCode);
     //log_i("  HTTP response size: %d", getHttpClient().getSize());
-    oResponse = httpStatusCode != 304 ? _getHttpClient().getString() : "";
-    //log_d("  HTTP response length: %d", oResponse.length());
+    if ((strcasecmp("HEAD", requestType) != 0) && httpStatusCode != 304)
+    {
+        oResponse = _getHttpClient().getString();
+    } else {
+        oResponse = "";
+    }
 
     // evaluate HTTP response
     if (httpStatusCode < 0)
