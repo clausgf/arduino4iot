@@ -240,10 +240,6 @@ int Iot::postTelemetry(String kind, String jsonData, String apiPath)
 
 int Iot::postSystemTelemetry(String kind, String apiPath)
 {
-    time_t now = time(nullptr);
-    struct tm timeinfo;
-    gmtime_r(&now, &timeinfo);
-
     String jsonData = String("{") 
         + "\"battery_V\":" + String(getBatteryVoltage_mV()/1000.0, 2)
         + ",\"wifi_rssi\":" + WiFi.RSSI() 
