@@ -3,12 +3,13 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
+#pragma once
+
+// TODO replace with list
 #include <map>
 
 #include "Arduino.h"
 #include <Preferences.h>
-
-#pragma once
 
 // *****************************************************************************
 

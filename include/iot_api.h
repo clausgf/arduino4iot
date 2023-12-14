@@ -3,14 +3,13 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
+#pragma once
 
 #include <map>
 
 #include "Arduino.h"
 #include <HTTPClient.h>
 #include <WiFiClient.h>
-
-#pragma once
 
 // *****************************************************************************
 
@@ -222,7 +221,7 @@ public:
 
     String getFirmwareHttpEtag();
     String getFirmwareHttpDate();
-    bool updateFirmware(String apiPath = "files/{project}/{device}/firmware.bin");
+    bool updateFirmware(String apiPath = "files/{project}/{device}/firmware.bin", std::map<String, String> header = {});
 
 
     // **********************************************************************
@@ -245,7 +244,6 @@ private:
     WiFiClientSecure * _wifiClientSecurePtr;
     WiFiClient * _wifiClientPtr;
     HTTPClient * _httpClientPtr;
-
 
     /**
      * @return a WiFiClient instance, either secure or insecure, depending
@@ -274,13 +272,11 @@ private:
      * Add request header
      */
     void _addRequestHeader(HTTPClient& http, std::map<String, String> &header);
-
     /**
      * Send a HEAD request to the given URL and check if the server has an 
      * update, based on the ETag or Last-Modified headers. 
      * If availabe, the API token is used for authentication.
      */
-    bool _apiCheckForUpdate(String url, const char *nvram_etag_key, const char *nvram_date_key);
 };
 
 // *****************************************************************************

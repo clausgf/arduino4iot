@@ -11,11 +11,13 @@
 #include <HttpsOTAUpdate.h>
 #include <ArduinoJson.h>
 
+#include "iot_ota_internal.h"
 #include "iot.h"
 
 // *****************************************************************************
 
 IotApi api;
+static class IotOtaInternal ota;
 
 // *****************************************************************************
 
@@ -138,6 +140,7 @@ void IotApi::setCACert(const char *server_certificate)
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setCACert(server_certificate);
+        ota.setServerCert(server_certificate, false);
     } else {
         log_e("setCACert: WiFiClientSecure not used");
     }
@@ -149,6 +152,7 @@ void IotApi::setClientCertificateAndKey(const char *client_certificate, const ch
     {
         _wifiClientSecurePtr->setCertificate(client_certificate);
         _wifiClientSecurePtr->setPrivateKey(client_key);
+        ota.setClientCert(client_certificate, client_key, nullptr);
     } else {
         log_e("setCACert: WiFiClientSecure not used");
     }
@@ -159,6 +163,8 @@ void IotApi::setCertInsecure()
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
+        ota.setServerCert(nullptr, true);
+        ota.setClientCert(nullptr, nullptr, nullptr);
     } else {
         log_e("setCACert: WiFiClientSecure not used");
     }
@@ -312,38 +318,6 @@ void IotApi::_addRequestHeader(HTTPClient& http, std::map<String, String> &heade
 
 // *****************************************************************************
 
-bool IotApi::_apiCheckForUpdate(String url, const char *nvram_etag_key, const char *nvram_date_key)
-{
-    url = _replaceVars(url);
-    // get etag and date from preferences
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String etag = preferences.getString(nvram_etag_key, "");
-    String date = preferences.getString(nvram_date_key, "");
-    preferences.end();
-
-    log_i("HTTP HEAD url=%s etag=%s date=%s", url.c_str(), etag.c_str(), date.c_str());
-    _getHttpClient().begin(*(_getWiFiClientPtr()), url);
-    std::map<String, String> request_header = {
-        {"If-None-Match", etag},
-        {"If-Modified-Since", date}
-    };
-    _addRequestHeader(_getHttpClient(), request_header);
-    int httpStatusCode = _getHttpClient().sendRequest("HEAD");
-
-    if (httpStatusCode < 0)
-    {
-        log_e("HTTP HEAD -> status=%d error %s", 
-            httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
-    } else {
-        log_i("HTTP HEAD -> %d", httpStatusCode);
-    }
-    _getHttpClient().end();
-    return (httpStatusCode >= 200) && (httpStatusCode < 300);
-}
-
-// *****************************************************************************
-
 int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHeader, const char * requestType, String apiPath, String requestBody, std::map<String, String> requestHeader, const char* collectResponseHeaderKeys[], const size_t collectResponseHeaderKeysCount)
 {
     String url = getApiUrlForPath(apiPath);
@@ -454,85 +428,56 @@ String IotApi::getFirmwareHttpDate()
 
 // *****************************************************************************
 
-String updateFirmwareNewEtag = "";
-String updateFirmwareNewDate = "";
-
-void updateFirmwareHttpEvent(HttpEvent_t *event)
+bool IotApi::updateFirmware(String apiPath, std::map<String, String> header)
 {
-    switch(event->event_id) {
-        case HTTP_EVENT_ERROR:
-            Serial.println("Http Event Error");
-            break;
-        case HTTP_EVENT_ON_CONNECTED:
-            // Serial.println("Http Event On Connected");
-            break;
-        case HTTP_EVENT_HEADER_SENT:
-            // Serial.println("Http Event Header Sent");
-            break;
-        case HTTP_EVENT_ON_HEADER:
-            {
-                String key = event->header_key;
-                Serial.printf("Http Event On Header, key=%s, value=%s\n", key.c_str(), event->header_value);
-                if (key.equalsIgnoreCase("etag"))
-                {
-                    updateFirmwareNewEtag = event->header_value;
-                } else if (key.equalsIgnoreCase("last-modified"))
-                {
-                    updateFirmwareNewDate = event->header_value;
-                }
-            }
-            break;
-        case HTTP_EVENT_ON_DATA:
-            break;
-        case HTTP_EVENT_ON_FINISH:
-            Serial.println("Http Event On Finish");
-            break;
-        case HTTP_EVENT_DISCONNECTED:
-            Serial.println("Http Event Disconnected");
-            break;
-    }
-}
+    // get etag and date from preferences
+    Preferences preferences;
+    preferences.begin("iot", true);
+    String etag = preferences.getString(_nvram_firmware_etag_key, "");
+    String date = preferences.getString(_nvram_firmware_date_key, "");
+    preferences.end();
 
-// TODO: add support for HTTP instead of HTTPS
-// TODO: add support for server certificate
-// TODO: add support for skip_cert_common_name_check
-// TODO: add Authentication header
-bool IotApi::updateFirmware(String apiPath)
-{
-    bool updateAvailable = apiCheckForUpdate(apiPath, _nvram_firmware_etag_key, _nvram_firmware_date_key);
-    if (!updateAvailable)
+    // prepare header
+    std::map<String, String> h = {
+        { "If-None-Match", etag },
+        { "If-Modified-Since", date },
+        { "Authorization", _deviceToken }
+    };
+    for (auto const& kv : _defaultRequestHeader) { h[kv.first] = kv.second; }
+    for (auto const& kv : header) { h[kv.first] = kv.second; }
+    std::map<std::string, std::string> hh;
+    for (auto const& kv : h) { hh[kv.first.c_str()] = kv.second.c_str(); }
+
+    // HEAD request to check if update is available
+    String response = "";
+    std::map<String, String> responseHeader;
+    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", h);
+
+    // return if no update available
+    if (httpStatusCode != 200)
     {
-        log_i("No firmware update available");
+        log_i("No firmware update available status=%d", httpStatusCode);
         return false;
     }
 
     String url = getApiUrlForPath(apiPath);
-    log_i("Updating firmware from %s", url.c_str());
-    updateFirmwareNewEtag = "";
-    updateFirmwareNewDate = "";
-    HttpsOTA.onHttpEvent(updateFirmwareHttpEvent); // HttpsOTA.begin(url, server_certificate); 
-    HttpsOTA.begin(url.c_str(), NULL, true);
-    while (1)
+    // ota.setTimeout(10000); is the default
+    std::string newEtag;
+    std::string newDate;
+    bool success = ota.updateFirmwareFromUrl(newEtag, newDate, url.c_str(), &hh);
+
+    if (success)
     {
-        HttpsOTAStatus_t ota_status = HttpsOTA.status();
-        if (ota_status == HTTPS_OTA_SUCCESS)
-        {
-            log_i("Firmware update successful");
-            break;
-        } else if (ota_status == HTTPS_OTA_FAIL)
-        {
-            log_i("Firmware update failed");
-            return false;
-        }
-        log_d("... updating ...");
-        delay(1000);
+        Preferences preferences;
+        preferences.begin("iot", false);
+        preferences.putString(_nvram_firmware_etag_key, etag.c_str());
+        preferences.putString(_nvram_firmware_date_key, date.c_str());
+        preferences.end();
+        log_i("Firmware update successful");
+    } else {
+        log_e("Firmware update failed");
     }
-    Preferences preferences;
-    preferences.begin("iot", false);
-    preferences.putString(_nvram_firmware_etag_key, updateFirmwareNewEtag);
-    preferences.putString(_nvram_firmware_date_key, updateFirmwareNewDate);
-    preferences.end();
-    return true;
+    return success;
 }
 
 // *****************************************************************************

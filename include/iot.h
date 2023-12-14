@@ -3,6 +3,7 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
+#pragma once
 
 #include <cstdio>
 #include <cstdarg>
@@ -15,8 +16,6 @@
 #include <iot_api.h>
 #include <iot_logger.h>
 #include <iot_config.h>
-
-#pragma once
 
 // *****************************************************************************
 
@@ -205,7 +204,7 @@ private:
     RTC_DATA_ATTR static int64_t _activeDuration_ms;
     RTC_DATA_ATTR static int _lastSleepDuration_s;
     String _deviceId;
-    uint32_t _battery_mV;
+    int _battery_mV;
     RTC_DATA_ATTR static int _panicSleepDuration_s;
     std::function<void()> _panicHandler;
     String _firmwareVersion;

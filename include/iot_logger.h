@@ -3,13 +3,12 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
+#pragma once
 
 #include <cstdio>
 #include <cstdarg>
 
 #include "Arduino.h"
-
-#pragma once
 
 // *****************************************************************************
 

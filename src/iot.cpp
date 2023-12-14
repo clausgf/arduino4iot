@@ -55,7 +55,7 @@ Iot::Iot() :
     // _activeDuration_ms is set on shutdown
     // _lastSleepDuration_s is set on shutdown
     _deviceId = "";
-    _battery_mV = 0;
+    _battery_mV = -1;
     // _panicSleepDuration_s is set on panic
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
@@ -271,7 +271,7 @@ int Iot::getBatteryVoltage_mV()
     }
     if (_battery_mV <= 0)
     {
-        int raw = analogReadMilliVolts(_batteryPin);
+        uint32_t raw = analogReadMilliVolts(_batteryPin);
         int64_t voltage = raw;
         voltage = voltage * _batteryFactor;
         voltage = voltage / _batteryDivider;
