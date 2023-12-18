@@ -21,8 +21,8 @@ class IotConfig;
 class PersistableIotConfigValue
 {
 public:
-    virtual void readFromPreferences(Preferences& preferences) = 0;
-    virtual void writeToPreferences(Preferences& preferences) const = 0;
+    virtual void readFromNvram(Preferences& preferences) = 0;
+    virtual void writeToNvram(Preferences& preferences) const = 0;
 };
 
 /**
@@ -43,8 +43,8 @@ public:
     T get() const { return _value; }
     void set(T value) { _value = value; }
 
-    virtual void readFromPreferences(Preferences& preferences);
-    virtual void writeToPreferences(Preferences& preferences) const;
+    virtual void readFromNvram(Preferences& preferences);
+    virtual void writeToNvram(Preferences& preferences) const;
 
     IotConfigValue<T>& operator=(const T& value) { set(value); return *this; }
     operator T() const { return _value; }

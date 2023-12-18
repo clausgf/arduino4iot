@@ -221,6 +221,11 @@ public:
 
     String getFirmwareHttpEtag();
     String getFirmwareHttpDate();
+
+    /**
+     * Update the firmware from the given API path.
+     * @return true if firmware was updated
+     */
     bool updateFirmware(String apiPath = "file/{project}/{device}/firmware.bin", std::map<String, String> header = {});
 
 

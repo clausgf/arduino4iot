@@ -43,19 +43,19 @@ IotConfigValue<T>::IotConfigValue(IotConfig& config, T value, const char *config
 // *****************************************************************************
 
 template <>
-void IotConfigValue<int>::readFromPreferences(Preferences& preferences)
+void IotConfigValue<int>::readFromNvram(Preferences& preferences)
 {
     _value = preferences.getInt(_nvram_key, _value);
 }
 
 template <>
-void IotConfigValue<bool>::readFromPreferences(Preferences& preferences)
+void IotConfigValue<bool>::readFromNvram(Preferences& preferences)
 {
     _value = preferences.getBool(_nvram_key, _value);
 }
 
 template <>
-void IotConfigValue<String>::readFromPreferences(Preferences& preferences)
+void IotConfigValue<String>::readFromNvram(Preferences& preferences)
 {
     _value = preferences.getString(_nvram_key, _value);
 }
@@ -63,19 +63,19 @@ void IotConfigValue<String>::readFromPreferences(Preferences& preferences)
 // *****************************************************************************
 
 template <>
-void IotConfigValue<int>::writeToPreferences(Preferences& preferences) const
+void IotConfigValue<int>::writeToNvram(Preferences& preferences) const
 {
     preferences.putInt(_nvram_key, _value);
 }
 
 template <>
-void IotConfigValue<bool>::writeToPreferences(Preferences& preferences) const
+void IotConfigValue<bool>::writeToNvram(Preferences& preferences) const
 {
     preferences.putBool(_nvram_key, _value);
 }
 
 template <>
-void IotConfigValue<String>::writeToPreferences(Preferences& preferences) const
+void IotConfigValue<String>::writeToNvram(Preferences& preferences) const
 {
     preferences.putString(_nvram_key, _value);
 }
@@ -118,7 +118,7 @@ void IotConfig::readConfigFromPreferences()
     preferences.begin("iot", true);
     for (auto const& kv : _configMap)
     {
-        kv.second->readFromPreferences(preferences);
+        kv.second->readFromNvram(preferences);
     }
     preferences.end();
 }
@@ -231,7 +231,7 @@ bool IotConfig::updateConfig()
     // publish config values
     for (auto const& kv : _configMap)
     {
-        kv.second->readFromPreferences(preferences);
+        kv.second->readFromNvram(preferences);
     }
 
     // cleanup

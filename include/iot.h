@@ -13,6 +13,7 @@
 #include <HTTPClient.h>
 #include <WiFiClient.h>
 
+#include <iot_util.h>
 #include <iot_api.h>
 #include <iot_logger.h>
 #include <iot_config.h>
@@ -39,7 +40,7 @@ public:
      * WiFi must be connected before calling begin() or the device
      * name will not be determined correctly.
      */
-    void begin();
+    void begin(bool isRtcAvailable = true);
 
     /**
      * Shut down the IoT system.
@@ -66,11 +67,18 @@ public:
     // **********************************************************************
 
     /**
+     * @return the given time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
+     */
+    String getTimeIso(time_t time);
+
+    /**
      * @return the current time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
     String getTimeIso();
 
     bool isTimePlausible();
+    bool waitUntilTimePlausible(unsigned long timeout_ms);
+    bool waitUntilNtpSync(unsigned long timeout_ms);
 
     /**
      * Synchronize the system time with an NTP server.
@@ -188,9 +196,9 @@ public:
     void setSleepDuration_s(int sleep_duration_s);
 
     void deepSleep();
-    static void deepSleep(int sleep_duration_s, bool panic = false);
-    static void restart(bool panic = false);
-    static void shutdown(bool panic = false);
+    void deepSleep(int sleep_duration_s, bool panic = false);
+    void restart(bool panic = false);
+    void shutdown(bool panic = false);
 
 
     // **********************************************************************
@@ -198,21 +206,25 @@ public:
     // **********************************************************************
 
 private:
-    static int64_t _bootTimestamp_ms;
+    int64_t _bootTimestamp_ms;
     esp_sleep_wakeup_cause_t _wakeupCause;
-    RTC_DATA_ATTR static uint32_t _bootCount;
-    RTC_DATA_ATTR static int64_t _activeDuration_ms;
-    RTC_DATA_ATTR static int _lastSleepDuration_s;
     String _deviceId;
     int _battery_mV;
-    RTC_DATA_ATTR static int _panicSleepDuration_s;
     std::function<void()> _panicHandler;
     String _firmwareVersion;
     String _firmwareSha256;
 
+    // persistent variables
+    IotPersistentValue<int32_t> _bootCount;
+    IotPersistentValue<int64_t> _activeDuration_ms;
+    IotPersistentValue<int32_t> _lastSleepDuration_s;
+    IotPersistentValue<int64_t> _ntpLastSyncTime;
+    IotPersistentValue<int32_t> _panicSleepDuration_s;
+
     // configurable variables
     IotConfigValue<int> _logLevel;
     IotConfigValue<int> _sleepDuration_s;
+    IotConfigValue<int> _ntpResyncInterval_s;
     IotConfigValue<int> _batteryOffset_mV;
     IotConfigValue<int> _batteryDivider;
     IotConfigValue<int> _batteryFactor;
@@ -229,6 +241,8 @@ private:
      * a configuration file / nvram.
      */
     void _readConfiguration();
+
+    static void _ntpSyncCallback(struct timeval *tv);
 };
 
 extern Iot iot;

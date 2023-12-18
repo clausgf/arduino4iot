@@ -11,6 +11,7 @@
 #include <esp_wifi.h>
 #include <esp_ota_ops.h>
 #include <nvs_flash.h>
+#include <esp_sntp.h>
 #include <WiFi.h>
 #include <Preferences.h>
 #include <HttpsOTAUpdate.h>
@@ -21,11 +22,11 @@
 Iot iot;
 static const char *tag = "iot";
 
-int64_t Iot::_bootTimestamp_ms = 0;
-uint32_t Iot::_bootCount = 0;
-int64_t Iot::_activeDuration_ms = 0;
-int Iot::_lastSleepDuration_s = 0;
-int Iot::_panicSleepDuration_s = -1;
+RTC_DATA_ATTR static int32_t rtcBootCount;
+RTC_DATA_ATTR static int64_t rtcActiveDuration_ms;
+RTC_DATA_ATTR static int32_t rtcLastSleepDuration_s;
+RTC_DATA_ATTR static int64_t rtcNtpLastSyncTime;
+RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s;
 
 static void defaultPanicHandler()
 {
@@ -37,8 +38,14 @@ static void defaultPanicHandler()
 // *****************************************************************************
 
 Iot::Iot() :
+    _bootCount(&rtcBootCount),
+    _activeDuration_ms(&rtcActiveDuration_ms),
+    _lastSleepDuration_s(&rtcLastSleepDuration_s),
+    _panicSleepDuration_s(&rtcPanicSleepDuration_s),
+    _ntpLastSyncTime(&rtcNtpLastSyncTime),
     _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level", "logLevel"),
     _sleepDuration_s(config, 5 * 60, "sleep_s", "sleepFor"),
+    _ntpResyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s", "ntpResync"),
     _batteryOffset_mV(config, 0, "battery_offset_mV", "batOffs"),
     _batteryDivider(config, 1, "battery_divider", "batDiv"),
     _batteryFactor(config, 2, "battery_factor", "batMul"),
@@ -51,7 +58,7 @@ Iot::Iot() :
     // initialize variables
     _bootTimestamp_ms = millis();
     _wakeupCause = esp_sleep_get_wakeup_cause();
-    _bootCount++;
+    _bootCount = _bootCount + 1;
     // _activeDuration_ms is set on shutdown
     // _lastSleepDuration_s is set on shutdown
     _deviceId = "";
@@ -83,11 +90,21 @@ Iot::Iot() :
     log_i("--- SHA256 %s", getFirmwareSha256().c_str());
 }
 
-void Iot::begin()
+void Iot::begin(bool isRtcAvailable)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
         log_e("WiFi not connected yet. Connect WiFi first.");
+    }
+
+    // initialize persistent variables
+    if (!isRtcAvailable)
+    {
+        //_bootCount.setStorage(IotPersistentValue<int32_t>::IOT_STORAGE_NVRAM_IMPLICIT);
+        //_activeDuration_ms.setStorage(IotPersistentValue<int64_t>::IOT_STORAGE_NVRAM_IMPLICIT);
+        //_lastSleepDuration_s.setStorage(IotPersistentValue<int32_t>::IOT_STORAGE_NVRAM_IMPLICIT);
+        _ntpLastSyncTime.setStorage(IotPersistentValue<int64_t>::IOT_STORAGE_NVRAM_IMPLICIT);
+        _panicSleepDuration_s.setStorage(IotPersistentValue<int32_t>::IOT_STORAGE_NVRAM_IMPLICIT);
     }
 
     // read configuration again to allow overwriting parameters with WiFi config
@@ -179,11 +196,10 @@ String Iot::getDeviceId()
 // NTP time
 // *****************************************************************************
 
-String Iot::getTimeIso()
+String Iot::getTimeIso(time_t time)
 {
-    time_t now = time(nullptr);
     struct tm timeinfo;
-    gmtime_r(&now, &timeinfo);
+    gmtime_r(&time, &timeinfo);
 
     const int BUFLEN = 32;
     static char buf[BUFLEN];
@@ -193,6 +209,14 @@ String Iot::getTimeIso()
     return buf;
 }
 
+String Iot::getTimeIso()
+{
+    time_t now = time(nullptr);
+    return getTimeIso(now);
+}
+
+// *****************************************************************************
+
 bool Iot::isTimePlausible()
 {
     time_t implausibleTimeThreshold = 40 * 365 * 24 * 3600l;
@@ -200,19 +224,74 @@ bool Iot::isTimePlausible()
     return (now > implausibleTimeThreshold);
 }
 
-// TODO force re-sync after some time; prefer background sync and block only if more time is then shutting down needed
-bool Iot::syncNtpTime(const char* ntpServer1, const char *ntpServer2, const char *ntpServer3, unsigned long timeout_ms)
+bool Iot::waitUntilTimePlausible(unsigned long timeout_ms)
 {
-    configTime(0, 0, ntpServer1, ntpServer2, ntpServer3);
-
     log_i("Waiting for NTP time sync");
-    time_t now = time(nullptr);
     unsigned long startTime = millis();
     while ( !isTimePlausible() && ((millis() - startTime) < timeout_ms) )
     {
         delay(50);
     }
+    return isTimePlausible();
+}
 
+// *****************************************************************************
+
+bool Iot::waitUntilNtpSync(unsigned long timeout_ms)
+{
+    log_i("Waiting for NTP time sync");
+    unsigned long startTime = millis();
+    bool completed = ( esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED );
+    while ( !completed && ((millis() - startTime) < timeout_ms) )
+    {
+        delay(50);
+        bool completed = ( esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED );
+    }
+    return completed;
+}
+
+void Iot::_ntpSyncCallback(struct timeval *tv)
+{
+    time_t now = time(nullptr);
+    log_i("NTP time sync success, time=%s", iot.getTimeIso(now).c_str());
+    iot._ntpLastSyncTime = now;
+}
+
+// *****************************************************************************
+
+bool Iot::syncNtpTime(const char* ntpServer1, const char *ntpServer2, const char *ntpServer3, unsigned long timeout_ms)
+{
+    int64_t sinceLastSync_s = time(nullptr) - _ntpLastSyncTime;
+    if (isTimePlausible() && sinceLastSync_s >= 0 && sinceLastSync_s < _ntpResyncInterval_s)
+    {
+        log_i("NTP time should be good enough: time=%s", getTimeIso().c_str());
+        return true;
+    }
+
+    // initialize NTP
+    esp_netif_init();
+    if (esp_sntp_enabled())
+    {
+        esp_sntp_stop();
+    }
+    esp_sntp_servermode_dhcp(1);
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, ntpServer1);
+    if (ntpServer2 != nullptr)
+    {
+        esp_sntp_setservername(1, ntpServer2);
+    }
+    if (ntpServer3 != nullptr)
+    {
+        esp_sntp_setservername(2, ntpServer3);
+    }
+    esp_sntp_set_time_sync_notification_cb(_ntpSyncCallback);
+    esp_sntp_init();
+
+    configTime(0, 0, ntpServer1, ntpServer2, ntpServer3);
+
+    // wait for time to be set
+    waitUntilTimePlausible(timeout_ms);
     if (!isTimePlausible())
     {
         log_i("NTP time sync failed: %s", getTimeIso().c_str());
@@ -401,7 +480,7 @@ void Iot::deepSleep(int sleep_duration_s, bool panic)
 
     _lastSleepDuration_s = sleep_duration_s;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %lld ms, going to deep sleep for %d s", _activeDuration_ms, sleep_duration_s);
+    log_i("Active for %d ms, going to deep sleep for %d s", _activeDuration_ms, sleep_duration_s);
     delay(50);  // delay to allow log to be written
     esp_deep_sleep(sleep_duration_s * 1000ll * 1000ll);
 }
@@ -417,7 +496,7 @@ void Iot::restart(bool panic)
 
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %lld ms, restarting", _activeDuration_ms);
+    log_i("Active for %d ms, restarting", _activeDuration_ms);
     delay(50);  // delay to allow log to be written
     esp_restart();
 }
@@ -433,7 +512,7 @@ void Iot::shutdown(bool panic)
 
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %lld ms, shutting down", _activeDuration_ms);
+    log_i("Active for %d ms, shutting down", _activeDuration_ms);
     delay(50);  // delay to allow log to be written
     esp_deep_sleep_start();
 }
