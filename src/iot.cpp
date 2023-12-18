@@ -22,11 +22,11 @@
 Iot iot;
 static const char *tag = "iot";
 
-RTC_DATA_ATTR static int32_t rtcBootCount;
-RTC_DATA_ATTR static int64_t rtcActiveDuration_ms;
-RTC_DATA_ATTR static int32_t rtcLastSleepDuration_s;
-RTC_DATA_ATTR static int64_t rtcNtpLastSyncTime;
-RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s;
+RTC_DATA_ATTR static int32_t rtcBootCount = 0;
+RTC_DATA_ATTR static int64_t rtcActiveDuration_ms = 0;
+RTC_DATA_ATTR static int32_t rtcLastSleepDuration_s = 0;
+RTC_DATA_ATTR static int64_t rtcNtpLastSyncTime = 0;
+RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s = -1;
 
 static void defaultPanicHandler()
 {
@@ -78,12 +78,12 @@ Iot::Iot() :
 
     // startup logging
     log_i("--- Bootup #%lu, cause %d after %d s, panicSleepDuration=%d s",
-            getBootCount(), (int)getWakeupCause(), getLastSleepDuration_s(), _panicSleepDuration_s);
+            getBootCount(), (int)getWakeupCause(), getLastSleepDuration_s(), getPanicSleepDuration_s());
     if (WiFi.status() == WL_CONNECTED)
     {
-        if (_panicSleepDuration_s >= 0)
+        if (getPanicSleepDuration_s() >= 0)
         {
-            log_i("*** LAST STARTUP WAS A PANIC, panicSpeepDuration=%d s", _panicSleepDuration_s);
+            log_i("*** LAST STARTUP WAS A PANIC, panicSpeepDuration=%d s", getPanicSleepDuration_s());
         }
     }
     log_i("--- Firmware %s", getFirmwareVersion().c_str());
@@ -392,18 +392,18 @@ void Iot::panicEarly(const char* format...)
 
 void Iot::escalatingSleepPanicHandler()
 {
-    if (_panicSleepDuration_s <= 0)
+    if (getPanicSleepDuration_s() <= 0)
     {
         // first panic, last run was successful
         _panicSleepDuration_s = _panicSleepDurationInit_s;
         restart(true);
     } else {
-        _panicSleepDuration_s = _panicSleepDuration_s * _panicSleepDurationFactor;
-        if (_panicSleepDuration_s > _panicSleepDurationMax_s)
+        _panicSleepDuration_s = getPanicSleepDuration_s() * _panicSleepDurationFactor;
+        if (getPanicSleepDuration_s() > _panicSleepDurationMax_s)
         {
             _panicSleepDuration_s = _panicSleepDurationMax_s;
         }
-        deepSleep(_panicSleepDuration_s, true);
+        deepSleep(getPanicSleepDuration_s(), true);
     }
 }
 
@@ -480,7 +480,7 @@ void Iot::deepSleep(int sleep_duration_s, bool panic)
 
     _lastSleepDuration_s = sleep_duration_s;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %d ms, going to deep sleep for %d s", _activeDuration_ms, sleep_duration_s);
+    log_i("Active for %d ms, going to deep sleep for %d s", getActiveDuration_ms(), sleep_duration_s);
     delay(50);  // delay to allow log to be written
     esp_deep_sleep(sleep_duration_s * 1000ll * 1000ll);
 }
@@ -496,7 +496,7 @@ void Iot::restart(bool panic)
 
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %d ms, restarting", _activeDuration_ms);
+    log_i("Active for %d ms, restarting", getActiveDuration_ms());
     delay(50);  // delay to allow log to be written
     esp_restart();
 }
@@ -512,7 +512,7 @@ void Iot::shutdown(bool panic)
 
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis() - _bootTimestamp_ms;
-    log_i("Active for %d ms, shutting down", _activeDuration_ms);
+    log_i("Active for %d ms, shutting down", getActiveDuration_ms());
     delay(50);  // delay to allow log to be written
     esp_deep_sleep_start();
 }

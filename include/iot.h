@@ -184,10 +184,10 @@ public:
 
     int64_t getBootTimestamp_ms() { return _bootTimestamp_ms; }
     esp_sleep_wakeup_cause_t getWakeupCause() { return _wakeupCause; };
-    uint32_t getBootCount() { return _bootCount; }
-    int64_t getActiveDuration_ms() { return _activeDuration_ms; }
-    int getLastSleepDuration_s() { return _lastSleepDuration_s; }
-    int getPanicSleepDuration_s() { return _panicSleepDuration_s; }
+    uint32_t getBootCount() { return _bootCount.get(); }
+    int64_t getActiveDuration_ms() { return _activeDuration_ms.get(); }
+    int getLastSleepDuration_s() { return _lastSleepDuration_s.get(); }
+    int getPanicSleepDuration_s() { return _panicSleepDuration_s.get(); }
 
     String getFirmwareVersion();
     String getFirmwareSha256();
