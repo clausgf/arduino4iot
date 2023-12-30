@@ -50,10 +50,21 @@ Server implementations are [j4iot](https://github.com/clausgf/j4iot) or [py4iot]
 
 ## Tips
 - Browse the header files of the library, there is some doxygen style documentation.
+- Due to bugs in `arduino-esp32`, a relatively new version of the library is needed. For testing, we used `framework-arduinoespressif32 @ 3.20014.231204`. `platformio.ini`:
+  ```
+  platform = https://github.com/platformio/platform-espressif32.git
+  framework = arduino, espidf
+  platform_packages =
+    framework-espidf @ 3.40406.0
+    framework-arduinoespressif32 @ 3.20014.231204
+  ```
 - To distribute the new firmware to the server for OTA updates via ssh. Add the following lines to you `platformio.ini`:
   ```
   upload_protocol = custom
   upload_command = scp $SOURCE garnix.local:/home/username/docker/j4iot/iot-data/projectname
   ```
-- Firmware update via http (instead of https) requires an IDF SDKCONFIG different from the standard Arduino one with `CONFIG_OTA_ALLOW_HTTP=y`. API calls different from the
-firmware update 
+- Reducing logging is crucial to achieve short active periods. Use `CORE_DEBUG_LEVEL=5` for full logs and `2` for production. `platformio.ini` (remember to rebuild everything):
+  ```
+  build_flags = -DCORE_DEBUG_LEVEL=2
+  ```
+- Firmware update via http (instead of https) requires an IDF SDKCONFIG configuration different from the one which is shipped with `arduino-esp32`. It needs the configuration option `CONFIG_OTA_ALLOW_HTTP=y`. Only firmware updates are affected, other API calls support http as well as https in the standard configuration.
