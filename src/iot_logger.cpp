@@ -3,9 +3,10 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
-#include "iot_logger.h"
-
+#include "Arduino.h"
 #include "iot_api.h"
+
+#include "iot_logger.h"
 
 // *****************************************************************************
 
@@ -21,8 +22,9 @@ IotLogger::IotLogger()
     _logLevel = LogLevel::IOT_LOGLEVEL_NOTSET;
 }
 
-void IotLogger::begin()
+void IotLogger::begin(LogLevel logLevel)
 {
+    setLogLevel(logLevel);
 }
 
 void IotLogger::end()
@@ -41,7 +43,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
     // TODO logging is not reentrant - do we need to change this?
     if (level <= _logLevel)
     {
-        const char * ESP_LOG_LEVEL_CHARS = "_EWIDV";
+        const char * ESP_LOG_LEVEL_CHARS = "EWIDV";
         const int logBufLen = 160;
         char logBuf[logBufLen];
 
@@ -58,7 +60,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
         vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
 
         // actual log output
-        log_printf(logBuf);
+        log_i("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
         if (WiFi.status() == WL_CONNECTED) {
             postLog(logBuf);
         }

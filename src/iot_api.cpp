@@ -163,11 +163,11 @@ void IotApi::setCertInsecure()
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
-        ota.setServerCert(nullptr, true);
-        ota.setClientCert(nullptr, nullptr, nullptr);
     } else {
         log_e("setCACert: WiFiClientSecure not used");
     }
+    ota.setServerCert(nullptr, true);
+    ota.setClientCert(nullptr, nullptr, nullptr);
 }
 
 
@@ -225,12 +225,12 @@ void IotApi::clearDeviceToken()
 
 // *****************************************************************************
 
-bool IotApi::updateProvisioning(String apiPath)
+bool IotApi::updateProvisioningOk(String apiPath)
 {
     if (!_deviceToken.isEmpty())
     {
-        log_i("updateProvisioning: already provisioned");
-        return false;
+        log_i("updateProvisioningOk: already provisioned");
+        return true;
     }
 
     // execute HTTP POST request
@@ -242,7 +242,7 @@ bool IotApi::updateProvisioning(String apiPath)
     int httpStatusCode = apiPost(response, apiPath, request, {{"Authorization", ""}});
     if (response.isEmpty() || httpStatusCode < HTTP_CODE_OK || httpStatusCode >= HTTP_CODE_BAD_REQUEST)
     {
-        log_i("updateProvisioning: status=%d or no response", httpStatusCode);
+        log_i("updateProvisioningOk: status=%d or no response", httpStatusCode);
         return false;
     }
 
@@ -251,22 +251,22 @@ bool IotApi::updateProvisioning(String apiPath)
     DeserializationError error = deserializeJson(doc, response);
     if (error)
     {
-        log_i("updateProvisioning: JSON deserialization failed: %s", error.c_str());
+        log_i("updateProvisioningOk: JSON deserialization failed: %s", error.c_str());
         return false;
     }
     if (!doc.containsKey("accessToken"))
     {
-        log_i("updateProvisioning: no accessToken");
+        log_i("updateProvisioningOk: no accessToken");
         return false;
     }
     if (!doc.containsKey("tokenType"))
     {
-        log_i("updateProvisioning: no tokenType");
+        log_i("updateProvisioningOk: no tokenType");
         return false;
     }
     String deviceToken = doc["tokenType"].as<String>() + " " + doc["accessToken"].as<String>();
     setDeviceToken(deviceToken);
-    log_i("updateProvisioning: new device token for api access");
+    log_i("updateProvisioningOk: new device token for api access");
     return true;
 }
 
@@ -355,12 +355,12 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
         log_e("HTTP %s url=%s -> status=%d error=%s", 
             requestType, url.c_str(), httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
     } else if (httpStatusCode == 403) { // 403 FORBIDDEN
-            log_e("HTTP %s url=%s -> status=%d FORBIDDEN - clearing api token to force provisioning",
+            log_e("HTTP %s url=%s -> status=%d FORBIDDEN - clearing device api token to force provisioning",
                 requestType, url.c_str(), httpStatusCode);
             clearDeviceToken();
     } else if (httpStatusCode < 200 || httpStatusCode >= 400) {
-        log_e("HTTP %s url=%s -> status=%d requestBody=%s", 
-            requestType, url.c_str(), httpStatusCode, requestBody.c_str());
+        log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s", 
+            requestType, url.c_str(), requestBody.c_str(), httpStatusCode, oResponse.c_str());
     } else {
         log_i("HTTP %s url=%s -> status=%d", requestType, url.c_str(), httpStatusCode);
     }

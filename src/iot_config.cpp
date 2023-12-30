@@ -16,7 +16,7 @@
 
 IotConfig config;
 
-template class IotConfigValue<int>;
+template class IotConfigValue<int32_t>;
 template class IotConfigValue<bool>;
 template class IotConfigValue<String>;
 
@@ -43,7 +43,7 @@ IotConfigValue<T>::IotConfigValue(IotConfig& config, T value, const char *config
 // *****************************************************************************
 
 template <>
-void IotConfigValue<int>::readFromNvram(Preferences& preferences)
+void IotConfigValue<int32_t>::readFromNvram(Preferences& preferences)
 {
     _value = preferences.getInt(_nvram_key, _value);
 }
@@ -60,25 +60,15 @@ void IotConfigValue<String>::readFromNvram(Preferences& preferences)
     _value = preferences.getString(_nvram_key, _value);
 }
 
-// *****************************************************************************
-
-template <>
-void IotConfigValue<int>::writeToNvram(Preferences& preferences) const
-{
-    preferences.putInt(_nvram_key, _value);
-}
-
-template <>
-void IotConfigValue<bool>::writeToNvram(Preferences& preferences) const
-{
-    preferences.putBool(_nvram_key, _value);
-}
-
-template <>
-void IotConfigValue<String>::writeToNvram(Preferences& preferences) const
-{
-    preferences.putString(_nvram_key, _value);
-}
+template <> bool IotConfigValue<int32_t>::isInt32() const { return true; }
+template <> bool IotConfigValue<int32_t>::isBool() const { return false; }
+template <> bool IotConfigValue<int32_t>::isString() const { return false; }
+template <> bool IotConfigValue<bool>::isInt32() const { return false; }
+template <> bool IotConfigValue<bool>::isBool() const { return true; }
+template <> bool IotConfigValue<bool>::isString() const { return false; }
+template <> bool IotConfigValue<String>::isInt32() const { return false; }
+template <> bool IotConfigValue<String>::isBool() const { return false; }
+template <> bool IotConfigValue<String>::isString() const { return true; }
 
 
 // *****************************************************************************
@@ -115,7 +105,7 @@ void IotConfig::end()
 void IotConfig::readConfigFromPreferences()
 {
     Preferences preferences;
-    preferences.begin("iot", true);
+    preferences.begin(_nvramSection, true);
     for (auto const& kv : _configMap)
     {
         kv.second->readFromNvram(preferences);
@@ -123,7 +113,7 @@ void IotConfig::readConfigFromPreferences()
     preferences.end();
 }
 
-void IotConfig::registerConfigValuePtr(const char *configKey, PersistableIotConfigValue* configValuePtr)
+void IotConfig::registerConfigValuePtr(const char *configKey, IotPersistableConfigValue* configValuePtr)
 {
     _configMap[configKey] = configValuePtr;
 }
@@ -182,41 +172,49 @@ bool IotConfig::updateConfig()
     preferences.begin(_nvramSection, false);
     for (JsonPair kv : doc.as<JsonObject>())
     {
-        String key = kv.key().c_str();
-        if (kv.value().is<int>())
+        const char * configKey = kv.key().c_str();
+        if (_configMap.find(configKey) == _configMap.end())
+        {
+            log_e("Ignoring unknown key %s", configKey);
+            continue;
+        }
+        IotPersistableConfigValue* configValuePtr = _configMap[configKey];
+        const char * nvramKey = configValuePtr->getNvramKey();
+
+        if (kv.value().is<int>() && configValuePtr->isInt32())
         {
             int value = kv.value().as<int>();
-            if ( !preferences.isKey(key.c_str()) || (value != preferences.getInt(key.c_str(), -1)) )
+            if ( !preferences.isKey(nvramKey) || (value != preferences.getInt(nvramKey)) )
             {
-                log_d("Config %s=%d", key.c_str(), value);
-                preferences.putInt(key.c_str(), value);
+                log_d("configKey=%s nvramKey=%s value=%d", configKey, nvramKey, value);
+                preferences.putInt(nvramKey, value);
             }
-        } else if (kv.value().is<bool>())
+        } else if (kv.value().is<bool>() && configValuePtr->isBool())
         {
             bool value = kv.value().as<bool>();
-            if ( !preferences.isKey(key.c_str()) || (value != preferences.getBool(key.c_str(), false)) )
+            if ( !preferences.isKey(nvramKey) || (value != preferences.getBool(nvramKey)) )
             {
-                log_d("Config %s=%s", key.c_str(), value ? "true" : "false");
-                preferences.putBool(key.c_str(), value);
+                log_d("configKey=%s nvramKey=%s value=%s", configKey, nvramKey, value ? "true" : "false");
+                preferences.putBool(nvramKey, value);
             }
-        } else if (kv.value().is<String>())
+        } else if (kv.value().is<String>() && configValuePtr->isString())
         {
             String value = kv.value().as<String>();
-            if ( !preferences.isKey(key.c_str()) || (value != preferences.getString(key.c_str(), "")) )
+            if ( !preferences.isKey(nvramKey) || (value != preferences.getString(nvramKey)) )
             {
-                log_d("Config %s=%s", key.c_str(), value.c_str());
-                preferences.putString(key.c_str(), value);
+                log_d("configKey=%s nvramKey=%s value=%s", configKey, nvramKey, value.c_str());
+                preferences.putString(nvramKey, value);
             }
         } else
         {
-            log_d("Ignoring key %s", key.c_str());
+            log_e("Ignoring configKey=%s nvramKey=%s, check types", configKey);
         }
     }
-    
+
     // update etag and last-modified date in preferences
     for (auto const& kv : responseHeader)
     {
-        log_v("  HTTP response header: %s=%s", kv.first.c_str(), kv.second.c_str());
+        //log_v("  HTTP response header: %s=%s", kv.first.c_str(), kv.second.c_str());
         if (kv.first.equalsIgnoreCase("etag"))
         {
             preferences.putString(_nvramEtagKey, kv.second);
@@ -242,7 +240,7 @@ bool IotConfig::updateConfig()
 
 // *****************************************************************************
 
-int IotConfig::getConfigInt(const char *key, int defaultValue)
+int32_t IotConfig::getConfigInt32(const char *key, int32_t defaultValue)
 {
     Preferences preferences;
     preferences.begin(_nvramSection, true);
@@ -251,7 +249,7 @@ int IotConfig::getConfigInt(const char *key, int defaultValue)
     return value;
 }
 
-void IotConfig::setConfigInt(const char *key, int value)
+void IotConfig::setConfigInt32(const char *key, int32_t value)
 {
     Preferences preferences;
     preferences.begin(_nvramSection, false);
@@ -288,7 +286,7 @@ String IotConfig::getConfigString(const char *key, String defaultValue)
 void IotConfig::setConfigString(const char *key, String value)
 {
     Preferences preferences;
-    preferences.begin("iot", false);
+    preferences.begin(_nvramSection, false);
     preferences.putString(key, value.c_str());
     preferences.end();
 }

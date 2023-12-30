@@ -5,7 +5,6 @@
 
 #pragma once
 
-// TODO replace with list
 #include <map>
 
 #include "Arduino.h"
@@ -18,11 +17,14 @@ class IotConfig;
 /**
  * Interface for configuration values.
  */
-class PersistableIotConfigValue
+class IotPersistableConfigValue
 {
 public:
     virtual void readFromNvram(Preferences& preferences) = 0;
-    virtual void writeToNvram(Preferences& preferences) const = 0;
+    virtual const char * getNvramKey() const = 0;
+    virtual bool isInt32() const = 0;
+    virtual bool isBool() const = 0;
+    virtual bool isString() const = 0;
 };
 
 /**
@@ -31,20 +33,22 @@ public:
  * The value is stored in NVRAM and can be updated from the server.
  */
 template <typename T>
-class IotConfigValue: public PersistableIotConfigValue
+class IotConfigValue: public IotPersistableConfigValue
 {
 public:
     IotConfigValue(IotConfig& config, T value, const char *key);
     IotConfigValue(IotConfig& config, T value, const char *config_key, const char *nvram_key);
     ~IotConfigValue() {}
 
-    String getConfigKey() const { return _config_key; }
 
     T get() const { return _value; }
     void set(T value) { _value = value; }
 
     virtual void readFromNvram(Preferences& preferences);
-    virtual void writeToNvram(Preferences& preferences) const;
+    virtual const char * getNvramKey() const { return _nvram_key; }
+    virtual bool isInt32() const;
+    virtual bool isBool() const;
+    virtual bool isString() const;
 
     IotConfigValue<T>& operator=(const T& value) { set(value); return *this; }
     operator T() const { return _value; }
@@ -79,7 +83,7 @@ public:
     IotConfig();
     void begin(
         const char * apiPath = "file/{project}/{device}/config.json", 
-        const char * nvramSection = "iot", 
+        const char * nvramSection = "iot-cfg", 
         const char * nvram_etag_key = "iotCfgEtag", 
         const char * nvram_date_key = "iotCfgDate");
     void end();
@@ -90,13 +94,13 @@ public:
     // **********************************************************************
 
     void readConfigFromPreferences();
-    void registerConfigValuePtr(const char *configKey, PersistableIotConfigValue* configValuePtr);
+    void registerConfigValuePtr(const char *configKey, IotPersistableConfigValue* configValuePtr);
 
     /**
      * Check if the server has a new configuration, based on the ETag and 
      * Last-Modified headers.
      * If available the new configuration is downloaded and stored in NVRAM.
-     * It is available via @see getConfigString and @see getConfigInt.
+     * It is available via @see getConfigString and @see getConfigInt32.
      * 
      * @return true if a new configuration was downloaded
      */
@@ -107,8 +111,8 @@ public:
     /// @return the last modified date of the current configuration for diagnostics
     String getConfigHttpDate() { return getConfigString(_nvramDateKey, ""); }
 
-    int getConfigInt(const char *key, int defaultValue = 0);
-    void setConfigInt(const char *key, int value);
+    int32_t getConfigInt32(const char *key, int32_t defaultValue = 0);
+    void setConfigInt32(const char *key, int32_t value);
     bool getConfigBool(const char *key, bool defaultValue = false);
     void setConfigBool(const char *key, bool value);
     String getConfigString(const char *key, String defaultValue = "");
@@ -127,7 +131,7 @@ private:
     const char * _nvramSection;
     const char * _nvramEtagKey;
     const char * _nvramDateKey;
-    std::map<String, PersistableIotConfigValue*> _configMap;
+    std::map<String, IotPersistableConfigValue*> _configMap;
 };
 
 extern IotConfig config;

@@ -19,8 +19,10 @@ public:
     IotLogger(const IotLogger&) = delete;
     IotLogger& operator=(const IotLogger&) = delete;
 
+    enum LogLevel { IOT_LOGLEVEL_ERROR = 0, IOT_LOGLEVEL_WARNING = 1, IOT_LOGLEVEL_INFO = 2, IOT_LOGLEVEL_DEBUG = 3, IOT_LOGLEVEL_VERBOSE = 4, IOT_LOGLEVEL_NOTSET = 5  };
+
     IotLogger();
-    void begin();
+    void begin(LogLevel logLevel = IOT_LOGLEVEL_NOTSET);
     void end();
 
 
@@ -28,8 +30,7 @@ public:
     // Logging
     // **********************************************************************
 
-    enum LogLevel { IOT_LOGLEVEL_ERROR = 0, IOT_LOGLEVEL_WARNING = 1, IOT_LOGLEVEL_INFO = 2, IOT_LOGLEVEL_DEBUG = 3, IOT_LOGLEVEL_VERBOSE = 4, IOT_LOGLEVEL_NOTSET = 5  };
-
+ 
     /**
      * Set minimum criticality of log info to output. Info with lower
      * criticality is suppressed.

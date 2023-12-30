@@ -99,7 +99,7 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt) noexcept
 bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDate, const char * url, std::map<std::string, std::string> * headerPtr)
 {
     _headerPtr = headerPtr;
-    ESP_LOGI(tag, "OTA updating firmware from %s", url);
+    ESP_LOGW(tag, "OTA updating firmware from %s", url);
 
     esp_http_client_config_t http_cfg;
     memset(&http_cfg, 0, sizeof(http_cfg));

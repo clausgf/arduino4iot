@@ -146,7 +146,11 @@ public:
     void clearDeviceToken();
 
     // TODO think about periodic updates of provisioning and api tokens
-    bool updateProvisioning(String apiPath = "provision");
+    /**
+     * Update the provisioning information from the API.
+     * @return true if provisioning information is current (with or without update)
+     */
+    bool updateProvisioningOk(String apiPath = "provision");
 
 
     // **********************************************************************
