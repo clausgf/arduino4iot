@@ -354,7 +354,7 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
     {
         log_e("HTTP %s url=%s -> status=%d error=%s", 
             requestType, url.c_str(), httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
-    } else if (httpStatusCode == 403) { // 403 FORBIDDEN
+    } else if (httpStatusCode == 401 || httpStatusCode == 403) { // 401 UNAUTHORIZED or 403 FORBIDDEN
             log_e("HTTP %s url=%s -> status=%d FORBIDDEN - clearing device api token to force provisioning",
                 requestType, url.c_str(), httpStatusCode);
             clearDeviceToken();
