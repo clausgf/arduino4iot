@@ -51,10 +51,9 @@ void IotApi::end()
 {
 }
 
-
 // *****************************************************************************
 
-WiFiClient * IotApi::_getWiFiClientPtr()
+WiFiClient *IotApi::_getWiFiClientPtr()
 {
     // create WiFiClient or WiFiClientSecure if needed
     if (_wifiClientPtr == nullptr)
@@ -64,7 +63,9 @@ WiFiClient * IotApi::_getWiFiClientPtr()
             log_d("Create WiFiClientSecure");
             _wifiClientSecurePtr = new WiFiClientSecure();
             _wifiClientPtr = _wifiClientSecurePtr;
-        } else {
+        }
+        else
+        {
             log_d("Create WiFiClient");
             _wifiClientPtr = new WiFiClient();
         }
@@ -75,7 +76,7 @@ WiFiClient * IotApi::_getWiFiClientPtr()
     {
         iot.panicEarly("WiFiClient creation failed");
     }
-    
+
     return _wifiClientPtr;
 }
 
@@ -87,7 +88,7 @@ bool IotApi::_isWiFiClientSecure()
 
 // *****************************************************************************
 
-HTTPClient & IotApi::_getHttpClient()
+HTTPClient &IotApi::_getHttpClient()
 {
     // create HTTPClient if needed
     if (_httpClientPtr == nullptr)
@@ -105,7 +106,6 @@ HTTPClient & IotApi::_getHttpClient()
     _httpClientPtr->setReuse(true);
     return *_httpClientPtr;
 }
-
 
 // *****************************************************************************
 // API configuration
@@ -141,7 +141,9 @@ void IotApi::setCACert(const char *server_certificate)
     {
         _wifiClientSecurePtr->setCACert(server_certificate);
         ota.setServerCert(server_certificate, false);
-    } else {
+    }
+    else
+    {
         log_e("setCACert: WiFiClientSecure not used");
     }
 }
@@ -153,7 +155,9 @@ void IotApi::setClientCertificateAndKey(const char *client_certificate, const ch
         _wifiClientSecurePtr->setCertificate(client_certificate);
         _wifiClientSecurePtr->setPrivateKey(client_key);
         ota.setClientCert(client_certificate, client_key, nullptr);
-    } else {
+    }
+    else
+    {
         log_e("setCACert: WiFiClientSecure not used");
     }
 }
@@ -163,13 +167,14 @@ void IotApi::setCertInsecure()
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
-    } else {
+    }
+    else
+    {
         log_e("setCACert: WiFiClientSecure not used");
     }
     ota.setServerCert(nullptr, true);
     ota.setClientCert(nullptr, nullptr, nullptr);
 }
-
 
 // *****************************************************************************
 // Provisioning
@@ -234,10 +239,12 @@ bool IotApi::updateProvisioningOk(String apiPath)
     }
 
     // execute HTTP POST request
-    String request = 
-            "{\"projectName\":\"" + _projectName + "\","
-            "\"deviceName\":\"" + _deviceName + "\","
-            "\"provisioningToken\":\"" + _provisioningToken + "\"}";
+    String request =
+        "{\"projectName\":\"" + _projectName + "\","
+                                               "\"deviceName\":\"" +
+        _deviceName + "\","
+                      "\"provisioningToken\":\"" +
+        _provisioningToken + "\"}";
     String response;
     int httpStatusCode = apiPost(response, apiPath, request, {{"Authorization", ""}});
     if (response.isEmpty() || httpStatusCode < HTTP_CODE_OK || httpStatusCode >= HTTP_CODE_BAD_REQUEST)
@@ -270,7 +277,6 @@ bool IotApi::updateProvisioningOk(String apiPath)
     return true;
 }
 
-
 // *****************************************************************************
 // HTTP requests
 // *****************************************************************************
@@ -294,21 +300,26 @@ String IotApi::getApiUrlForPath(String path)
 
 // *****************************************************************************
 
-void IotApi::_addRequestHeader(HTTPClient& http, std::map<String, String> &header)
+void IotApi::_addRequestHeader(HTTPClient &http, std::map<String, String> &header)
 {
     // start with default header, then merge base header, then merge request header
     std::map<String, String> h = {
-        { "Accept", "application/json" },
-        { "Content-Type", "application/json" },
-        { "Authorization", _deviceToken }
-    };
-    for (auto const& kv : _defaultRequestHeader) { h[kv.first] = kv.second; }
-    for (auto const& kv : header) { h[kv.first] = kv.second; }
- 
-    // write headers to HTTPClient
-    for (auto const& kv : h)
+        {"Accept", "application/json"},
+        {"Content-Type", "application/json"},
+        {"Authorization", _deviceToken}};
+    for (auto const &kv : _defaultRequestHeader)
     {
-        if ( !kv.second.isEmpty() )
+        h[kv.first] = kv.second;
+    }
+    for (auto const &kv : header)
+    {
+        h[kv.first] = kv.second;
+    }
+
+    // write headers to HTTPClient
+    for (auto const &kv : h)
+    {
+        if (!kv.second.isEmpty())
         {
             log_d("  HTTP header: %s=%s", kv.first.c_str(), kv.second.c_str());
             http.addHeader(kv.first.c_str(), kv.second.c_str());
@@ -318,7 +329,7 @@ void IotApi::_addRequestHeader(HTTPClient& http, std::map<String, String> &heade
 
 // *****************************************************************************
 
-int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHeader, const char * requestType, String apiPath, String requestBody, std::map<String, String> requestHeader, const char* collectResponseHeaderKeys[], const size_t collectResponseHeaderKeysCount)
+int IotApi::apiRequest(String &oResponse, std::map<String, String> &oResponseHeader, const char *requestType, String apiPath, String requestBody, std::map<String, String> requestHeader, const char *collectResponseHeaderKeys[], const size_t collectResponseHeaderKeysCount)
 {
     String url = getApiUrlForPath(apiPath);
     log_i("HTTP %s url=%s", requestType, url.c_str());
@@ -326,42 +337,51 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
     // prepare HTTP request
     _getHttpClient().begin(*(_getWiFiClientPtr()), url);
     _addRequestHeader(_getHttpClient(), requestHeader);
-    if (collectResponseHeaderKeys != nullptr && collectResponseHeaderKeysCount > 0) {
+    if (collectResponseHeaderKeys != nullptr && collectResponseHeaderKeysCount > 0)
+    {
         _getHttpClient().collectHeaders(collectResponseHeaderKeys, collectResponseHeaderKeysCount);
     }
 
     // execute HTTP request
-    int httpStatusCode = _getHttpClient().sendRequest(requestType, (uint8_t*)requestBody.c_str(), requestBody.length());
-    for (int i=0; i<collectResponseHeaderKeysCount; i++)
+    int httpStatusCode = _getHttpClient().sendRequest(requestType, (uint8_t *)requestBody.c_str(), requestBody.length());
+    for (int i = 0; i < collectResponseHeaderKeysCount; i++)
     {
-        const char * key = collectResponseHeaderKeys[i];
+        const char *key = collectResponseHeaderKeys[i];
         if (_getHttpClient().hasHeader(key))
         {
             oResponseHeader[key] = _getHttpClient().header(key);
         }
     }
-    //log_i("  HTTP response status: %d", httpStatusCode);
-    //log_i("  HTTP response size: %d", getHttpClient().getSize());
+    // log_i("  HTTP response status: %d", httpStatusCode);
+    // log_i("  HTTP response size: %d", getHttpClient().getSize());
     if ((strcasecmp("HEAD", requestType) != 0) && httpStatusCode != 304)
     {
         oResponse = _getHttpClient().getString();
-    } else {
+    }
+    else
+    {
         oResponse = "";
     }
 
     // evaluate HTTP response
     if (httpStatusCode < 0)
     {
-        log_e("HTTP %s url=%s -> status=%d error=%s", 
-            requestType, url.c_str(), httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
-    } else if (httpStatusCode == 401 || httpStatusCode == 403) { // 401 UNAUTHORIZED or 403 FORBIDDEN
-            log_e("HTTP %s url=%s -> status=%d FORBIDDEN - clearing device api token to force provisioning",
-                requestType, url.c_str(), httpStatusCode);
-            clearDeviceToken();
-    } else if (httpStatusCode < 200 || httpStatusCode >= 400) {
-        log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s", 
-            requestType, url.c_str(), requestBody.c_str(), httpStatusCode, oResponse.c_str());
-    } else {
+        log_e("HTTP %s url=%s -> status=%d error=%s",
+              requestType, url.c_str(), httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
+    }
+    else if (httpStatusCode == 401 || httpStatusCode == 403)
+    { // 401 UNAUTHORIZED or 403 FORBIDDEN
+        log_e("HTTP %s url=%s -> status=%d FORBIDDEN - clearing device api token to force provisioning",
+              requestType, url.c_str(), httpStatusCode);
+        clearDeviceToken();
+    }
+    else if (httpStatusCode < 200 || httpStatusCode >= 400)
+    {
+        log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s",
+              requestType, url.c_str(), requestBody.c_str(), httpStatusCode, oResponse.c_str());
+    }
+    else
+    {
         log_i("HTTP %s url=%s -> status=%d", requestType, url.c_str(), httpStatusCode);
     }
     _getHttpClient().end();
@@ -370,7 +390,7 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
 
 // *****************************************************************************
 
-int IotApi::apiGet(String& response, String apiPath, String body, std::map<String, String> header)
+int IotApi::apiGet(String &response, String apiPath, String body, std::map<String, String> header)
 {
     std::map<String, String> responseHeader;
     return apiRequest(response, responseHeader, "GET", apiPath, body, header);
@@ -388,7 +408,7 @@ int IotApi::apiHead(String apiPath, std::map<String, String> header)
 
 // *****************************************************************************
 
-int IotApi::apiPost(String& response, String apiPath, String body, std::map<String, String> header)
+int IotApi::apiPost(String &response, String apiPath, String body, std::map<String, String> header)
 {
     std::map<String, String> responseHeader;
     return apiRequest(response, responseHeader, "POST", apiPath, body, header);
@@ -407,14 +427,24 @@ bool IotApi::apiCheckForUpdate(String apiPath, const char *nvram_etag_key, const
 
     String response = "";
     std::map<String, String> responseHeader;
-    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", {
-        {"If-None-Match", etag},
-        {"If-Modified-Since", date}
-    });
+    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", {{"If-None-Match", etag}, {"If-Modified-Since", date}});
 
     return (httpStatusCode >= 200) && (httpStatusCode < 300);
 }
 
+// *****************************************************************************
+
+void IotApi::apiSetConnectionTimeout(int32_t timeout)
+{
+    _getHttpClient().setConnectTimeout(timeout);
+}
+
+// *****************************************************************************
+
+void IotApi::apiSetRequestTimeout(uint16_t timeout)
+{
+    _getHttpClient().setTimeout(timeout);
+}
 
 // *****************************************************************************
 // Firmware
@@ -443,14 +473,22 @@ bool IotApi::updateFirmware(String apiPath, std::map<String, String> header)
 
     // prepare header
     std::map<String, String> h = {
-        { "If-None-Match", etag },
-        { "If-Modified-Since", date },
-        { "Authorization", _deviceToken }
-    };
-    for (auto const& kv : _defaultRequestHeader) { h[kv.first] = kv.second; }
-    for (auto const& kv : header) { h[kv.first] = kv.second; }
+        {"If-None-Match", etag},
+        {"If-Modified-Since", date},
+        {"Authorization", _deviceToken}};
+    for (auto const &kv : _defaultRequestHeader)
+    {
+        h[kv.first] = kv.second;
+    }
+    for (auto const &kv : header)
+    {
+        h[kv.first] = kv.second;
+    }
     std::map<std::string, std::string> hh;
-    for (auto const& kv : h) { hh[kv.first.c_str()] = kv.second.c_str(); }
+    for (auto const &kv : h)
+    {
+        hh[kv.first.c_str()] = kv.second.c_str();
+    }
 
     // HEAD request to check if update is available
     String response = "";
@@ -478,7 +516,9 @@ bool IotApi::updateFirmware(String apiPath, std::map<String, String> header)
         preferences.putString(_nvram_firmware_date_key, newDate.c_str());
         preferences.end();
         log_i("Firmware update successful");
-    } else {
+    }
+    else
+    {
         log_e("Firmware update failed");
     }
     return success;

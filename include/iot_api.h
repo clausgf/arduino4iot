@@ -217,8 +217,19 @@ public:
      * Last-Modified headers are stored in NVRAM under the given keys.
      */
     bool apiCheckForUpdate(String apiPath, const char *nvram_etag_key, const char *nvram_date_key);
-
-
+    
+    /**
+     * Set a timeout for connection to a remote server via http.
+     * @param timeout the timeout in ms
+    */
+    void apiSetConnectionTimeout(int32_t timeout);
+    
+    /**
+    * Set a timeout for every http request 
+    * @param timeout the timeout in ms
+    */
+    void apiSetRequestTimeout(uint16_t timeout);
+    
     // **********************************************************************
     // Firmware
     // **********************************************************************
