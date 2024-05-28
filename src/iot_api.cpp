@@ -415,6 +415,17 @@ bool IotApi::apiCheckForUpdate(String apiPath, const char *nvram_etag_key, const
     return (httpStatusCode >= 200) && (httpStatusCode < 300);
 }
 
+// *****************************************************************************
+
+void IotApi::apiSetConnectionTimeout(int32_t timeout){
+    _getHttpClient().setConnectTimeout(timeout);
+}
+
+// *****************************************************************************
+
+void IotApi::apiSetRequestTimeout(uint16_t timeout){
+    _getHttpClient().setTimeout(timeout);
+}
 
 // *****************************************************************************
 // Firmware
