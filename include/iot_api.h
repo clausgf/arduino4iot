@@ -91,10 +91,27 @@ public:
 
     /**
      * Deactivate checking the server certificate for TLS connections.
+     *
+     * WARNING: this disables server authentication. The connection is still
+     * encrypted, but the server identity is not verified, so the device is
+     * vulnerable to man-in-the-middle attacks. Do not use in production;
+     * provide a CA certificate via setCACert() instead. This method logs a
+     * warning on every call.
+     *
      * This method silently fails if the WiFi client is not an instance
      * of WiFiClientSecure.
      */
     void setCertInsecure();
+
+    /**
+     * Close the HTTP connection to the server.
+     *
+     * All requests within a wakeup cycle share a single keep-alive TCP/TLS
+     * connection. This method closes it cleanly. It is called automatically
+     * before deep sleep, restart and shutdown; call it manually to release the
+     * connection (and its TLS buffers) earlier.
+     */
+    void closeConnection();
 
     /**
      * Set a timeout for establishing the TCP connection to the server.
@@ -245,6 +262,17 @@ public:
     int apiGet(String& oResponse, const String& apiPath, const String& body = "", const std::map<String, String>& headers = {});
 
     /**
+     * Send a GET request like the other apiGet() overload, additionally
+     * returning selected response headers.
+     *
+     * @param oResponseHeader receives the collected response headers
+     * @param collectResponseHeaderKeys the response header names to collect,
+     *        e.g. {"ETag", "Last-Modified"}
+     */
+    int apiGet(String& oResponse, std::map<String, String>& oResponseHeader, const String& apiPath,
+        const std::vector<String>& collectResponseHeaderKeys, const String& body = "", const std::map<String, String>& headers = {});
+
+    /**
      * Send a HEAD request to the API using the given API path and return
      * the response status code.
      *
@@ -361,13 +389,6 @@ private:
      * @return a HTTPClient instance. The instance is created on the first call.
      */
     HTTPClient & _getHttpClient();
-
-    /**
-     * Replace variables known to the IoT system like {project}
-     * and {device} in a string.
-     * This is useful for generating URLs.
-     */
-    String _replaceVars(String str);
 
     /**
      * Add request header

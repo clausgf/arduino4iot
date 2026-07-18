@@ -55,9 +55,35 @@ public:
     void verbose(const char *tag, const char* format...);
 
     /**
-     * Post a log message to the API. The body consist of ESP32 formatted 
-     * log lines. 
-     * 
+     * Enable or disable log buffering (enabled by default).
+     *
+     * When buffering is enabled, log messages are collected in RAM and sent
+     * to the server in a single request by @see flush() (called automatically
+     * before deep sleep, restart and shutdown). This avoids one HTTP request
+     * per log line, which is crucial for short active periods on battery
+     * powered devices, and avoids reentrancy problems when logging happens
+     * during an API request.
+     *
+     * When buffering is disabled, each log message is posted immediately
+     * (legacy behavior).
+     */
+    void setBuffered(bool enabled);
+
+    /**
+     * Post the buffered log messages to the server and clear the buffer.
+     *
+     * Call this at the end of a wakeup cycle (or rely on the automatic flush
+     * before deep sleep/restart/shutdown). Does nothing if the buffer is empty
+     * or buffering is disabled. Requires an active WiFi connection.
+     *
+     * @return the HTTP status code of the log request, 0 if nothing was sent
+     */
+    int flush();
+
+    /**
+     * Post a log message to the API. The body consist of ESP32 formatted
+     * log lines.
+     *
      * This method is similar to @see apiGet.
      */
     int postLog(const char * body, const char * apiPath = "log/{project}/{device}");
@@ -69,6 +95,8 @@ public:
 
 private:
     LogLevel _logLevel;
+    bool _buffered;
+    String _logBuffer;
 };
 
 extern IotLogger logger;

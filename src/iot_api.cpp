@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 
 #include "iot_ota_internal.h"
+#include "iot_text.h"
 #include "iot.h"
 
 // *****************************************************************************
@@ -161,6 +162,9 @@ void IotApi::setClientCertificateAndKey(const char *client_certificate, const ch
 
 void IotApi::setCertInsecure()
 {
+    log_w("setCertInsecure: TLS server authentication is DISABLED - the connection "
+          "is encrypted but the server identity is not verified. Do not use in "
+          "production; provide a CA certificate via setCACert() instead.");
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
@@ -169,6 +173,17 @@ void IotApi::setCertInsecure()
     }
     ota.setServerCert(nullptr, true);
     ota.setClientCert(nullptr, nullptr, nullptr);
+}
+
+void IotApi::closeConnection()
+{
+    // requests within a wakeup cycle share a single keep-alive connection
+    // (setReuse(true)); this closes it cleanly, e.g. before deep sleep
+    if (_httpClientPtr != nullptr)
+    {
+        _httpClientPtr->setReuse(false);
+        _httpClientPtr->end();
+    }
 }
 
 void IotApi::setConnectionTimeout_ms(int32_t timeout_ms)
@@ -325,22 +340,11 @@ bool IotApi::updateProvisioningOk(const String& apiPath)
 // HTTP requests
 // *****************************************************************************
 
-String IotApi::_replaceVars(String str)
-{
-    String ret = str;
-    ret.replace("{device}", _deviceName);
-    ret.replace("{project}", _projectName);
-    return ret;
-}
-
 String IotApi::getApiUrlForPath(const String& apiPath)
 {
-    String path = apiPath;
-    if (path.startsWith("/"))
-    {
-        path = path.substring(1);
-    }
-    return _replaceVars(_baseUrl + path);
+    std::string url = iot_text::buildApiUrl(
+        _baseUrl.c_str(), apiPath.c_str(), _projectName.c_str(), _deviceName.c_str());
+    return String(url.c_str());
 }
 
 // *****************************************************************************
@@ -461,6 +465,12 @@ int IotApi::apiGet(String& response, const String& apiPath, const String& body, 
 {
     std::map<String, String> responseHeader;
     return apiRequest(response, responseHeader, "GET", apiPath, body, header);
+}
+
+int IotApi::apiGet(String& response, std::map<String, String>& oResponseHeader, const String& apiPath,
+    const std::vector<String>& collectResponseHeaderKeys, const String& body, const std::map<String, String>& header)
+{
+    return apiRequest(response, oResponseHeader, "GET", apiPath, body, header, collectResponseHeaderKeys);
 }
 
 // *****************************************************************************

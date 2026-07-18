@@ -20,7 +20,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
 - **Provisioning:** obtain a device API token using a provisioning token; the token expiry reported by the server is stored, and the token is renewed proactively before it expires. On HTTP 401, the library re-provisions and retries the request automatically.
 - **Telemetry:** post measurements built with the `IotTelemetry` builder, which guarantees the flat JSON format expected by the server.
-- **Remote logging:** log messages are posted to the server; large bodies are split to respect the server's size limit.
+- **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit.
 - **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
 - **File upload:** `api.uploadFile()` pushes files to the device-specific storage on the server.
@@ -70,6 +70,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
 - **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). HTTP 401 triggers automatic re-provisioning and a retry; HTTP 403 signals a configuration problem on the server (project inactive, device not approved) which re-provisioning cannot fix — the library keeps the token and reports the error.
 - **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again.
+- **Connection reuse:** all HTTP(S) requests within a wakeup cycle share a single keep-alive TCP/TLS connection, so the (expensive) TLS handshake is paid only once per cycle. The connection is closed automatically before deep sleep, restart and shutdown (or manually via `api.closeConnection()`).
 
 ## Tips
 
@@ -95,6 +96,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 The following topics are known limitations that are being addressed on the server side in [nice4iot](https://github.com/clausgf/nice4iot), or are planned as future work:
 
 - **Telemetry backend (nice4iot):** non-numeric telemetry fields are silently dropped by the server, and measurements are always timestamped with the server arrival time — devices cannot backfill buffered measurements with their own timestamps. Both are being improved in nice4iot; the library already sends non-numeric system telemetry fields (`time`, `firmware_version`, `firmware_sha256`) for backends that support them.
+- **Offline buffering of telemetry (to be discussed):** if the server or WiFi is temporarily unreachable, the measurements of a whole wakeup cycle are lost. A small ring buffer in RTC RAM (survives deep sleep) could hold a few telemetry payloads and re-send them on the next successful cycle. This is coupled to the device-timestamp topic above — re-sent measurements need their original timestamp, otherwise they all collapse onto the server arrival time. Design questions still open: buffer location and size, eviction policy, and interaction with the flat-JSON telemetry format.
 - **MQTT transport:** nice4iot supports telemetry, logging and file transfer via MQTT for always-on devices. This library currently implements the HTTP transport only, which remains the best fit for deep-sleep cycles; an optional MQTT transport is future work.
 
 ## Migration to version 2.x

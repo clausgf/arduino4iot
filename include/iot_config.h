@@ -129,6 +129,11 @@ private:
     const char * _nvramEtagKey;
     const char * _nvramDateKey;
     std::map<String, IotPersistableConfigValue*> _configMap;
+
+    // The NVRAM section is kept open (read-write) between begin() and end() so
+    // the get/set accessors do not open and close NVRAM on every single call.
+    Preferences _preferences;
+    bool _isOpen;
 };
 
 extern IotConfig config;

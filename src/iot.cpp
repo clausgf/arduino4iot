@@ -173,6 +173,8 @@ bool Iot::begin(const char *ssid, const char *password, unsigned long timeout_ms
 
 void Iot::end()
 {
+    logger.flush();
+    api.closeConnection();
     api.end();
     logger.end();
     config.end();
@@ -493,6 +495,10 @@ void Iot::panic(const char* format...)
     logger.logv(IotLogger::LogLevel::IOT_LOGLEVEL_ERROR, tag, format, args);
     va_end(args);
 
+    // flush buffered logs (including this error) before the panic handler,
+    // which typically sends the device to sleep
+    logger.flush();
+
     delay(10);  // delay to allow log to be written
     _panicHandler();
 }
@@ -673,6 +679,8 @@ void Iot::deepSleep(int sleep_duration_s, bool panic)
     _lastSleepDuration_s = sleep_duration_s;
     _activeDuration_ms = millis();
     log_w("Active for %lld ms, going to deep sleep for %d s", getActiveDuration_ms(), sleep_duration_s);
+    logger.flush();
+    api.closeConnection();
     delay(10);  // delay to allow log to be written
     setLed(false);
     _deepSleepHandler(sleep_duration_s);
@@ -690,6 +698,8 @@ void Iot::restart(bool panic)
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis();
     log_w("Active for %lld ms, restarting", getActiveDuration_ms());
+    logger.flush();
+    api.closeConnection();
     delay(10);  // delay to allow log to be written
     setLed(false);
     _restartHandler();
@@ -707,6 +717,8 @@ void Iot::shutdown(bool panic)
     _lastSleepDuration_s = 0;
     _activeDuration_ms = millis();
     log_w("Active for %lld ms, shutting down", getActiveDuration_ms());
+    logger.flush();
+    api.closeConnection();
     delay(10);  // delay to allow log to be written
     setLed(false);
     _shutdownHandler();

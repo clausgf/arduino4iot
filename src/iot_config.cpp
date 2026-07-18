@@ -80,37 +80,53 @@ IotConfig::IotConfig():
     _nvramSection(nullptr),
     _nvramEtagKey(nullptr),
     _nvramDateKey(nullptr),
-    _configMap()
+    _configMap(),
+    _isOpen(false)
 {
 }
 
-void IotConfig::begin(const char * apiPath, const char * nvramSection, 
+void IotConfig::begin(const char * apiPath, const char * nvramSection,
     const char * nvram_etag_key,  const char * nvram_date_key)
 {
     _apiPath = apiPath;
     _nvramSection = nvramSection;
     _nvramEtagKey = nvram_etag_key;
     _nvramDateKey = nvram_date_key;
+
+    // open the NVRAM section read-write and keep it open until end()
+    _isOpen = _preferences.begin(_nvramSection, false);
+    if (!_isOpen)
+    {
+        log_e("IotConfig: failed to open NVRAM section %s", _nvramSection);
+    }
+
     readConfigFromPreferences();
-    log_i("--- Config section=%s etag=%s date=%s", 
+    log_i("--- Config section=%s etag=%s date=%s",
         _nvramSection, getConfigHttpEtag().c_str(), getConfigHttpDate().c_str());
 }
 
 void IotConfig::end()
 {
+    if (_isOpen)
+    {
+        _preferences.end();
+        _isOpen = false;
+    }
 }
 
 // *****************************************************************************
 
 void IotConfig::readConfigFromPreferences()
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, true);
+    if (!_isOpen)
+    {
+        log_e("IotConfig::readConfigFromPreferences: NVRAM not open - call begin() first");
+        return;
+    }
     for (auto const& kv : _configMap)
     {
-        kv.second->readFromNvram(preferences);
+        kv.second->readFromNvram(_preferences);
     }
-    preferences.end();
 }
 
 void IotConfig::registerConfigValuePtr(const char *configKey, IotPersistableConfigValue* configValuePtr)
@@ -123,18 +139,15 @@ void IotConfig::registerConfigValuePtr(const char *configKey, IotPersistableConf
 
 bool IotConfig::updateConfig()
 {
-    if (_apiPath == nullptr || _nvramSection == nullptr || _nvramEtagKey == nullptr || _nvramDateKey == nullptr)
+    if (_apiPath == nullptr || _nvramSection == nullptr || _nvramEtagKey == nullptr || _nvramDateKey == nullptr || !_isOpen)
     {
         log_e("IotConfig not initialized - call begin() first");
         return false;
     }
 
-    // get etag and last-modified date from preferences
-    Preferences preferences;
-    preferences.begin(_nvramSection, true);
-    String etag = preferences.getString(_nvramEtagKey, "");
-    String date = preferences.getString(_nvramDateKey, "");
-    preferences.end();
+    // get etag and last-modified date from the open preferences handle
+    String etag = _preferences.getString(_nvramEtagKey, "");
+    String date = _preferences.getString(_nvramDateKey, "");
 
     // get config from server
     String response = "";
@@ -167,8 +180,8 @@ bool IotConfig::updateConfig()
         return false;
     }
 
-    // store config in preferences
-    preferences.begin(_nvramSection, false);
+    // store config in the open preferences handle
+    Preferences& preferences = _preferences;
     for (JsonPair kv : doc.as<JsonObject>())
     {
         const char * configKey = kv.key().c_str();
@@ -231,8 +244,7 @@ bool IotConfig::updateConfig()
         kv.second->readFromNvram(preferences);
     }
 
-    // cleanup
-    preferences.end();
+    // the preferences handle stays open until end()
     log_i("Configuration data update finished");
     return true;
 }
@@ -241,53 +253,38 @@ bool IotConfig::updateConfig()
 
 int32_t IotConfig::getConfigInt32(const char *key, int32_t defaultValue)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, true);
-    int value = preferences.getInt(key, defaultValue);
-    preferences.end();
-    return value;
+    if (!_isOpen) { return defaultValue; }
+    return _preferences.getInt(key, defaultValue);
 }
 
 void IotConfig::setConfigInt32(const char *key, int32_t value)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, false);
-    preferences.putInt(key, value);
-    preferences.end();
+    if (!_isOpen) { return; }
+    _preferences.putInt(key, value);
 }
 
 bool IotConfig::getConfigBool(const char *key, bool defaultValue)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, true);
-    bool value = preferences.getBool(key, defaultValue);
-    preferences.end();
-    return value;
+    if (!_isOpen) { return defaultValue; }
+    return _preferences.getBool(key, defaultValue);
 }
 
 void IotConfig::setConfigBool(const char *key, bool value)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, false);
-    preferences.putBool(key, value);
-    preferences.end();
+    if (!_isOpen) { return; }
+    _preferences.putBool(key, value);
 }
 
 String IotConfig::getConfigString(const char *key, const String& defaultValue)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, true);
-    String value = preferences.getString(key, defaultValue);
-    preferences.end();
-    return value;
+    if (!_isOpen) { return defaultValue; }
+    return _preferences.getString(key, defaultValue);
 }
 
 void IotConfig::setConfigString(const char *key, const String& value)
 {
-    Preferences preferences;
-    preferences.begin(_nvramSection, false);
-    preferences.putString(key, value.c_str());
-    preferences.end();
+    if (!_isOpen) { return; }
+    _preferences.putString(key, value.c_str());
 }
 
 
