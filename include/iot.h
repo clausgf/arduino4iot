@@ -17,10 +17,11 @@
 #include <iot_api.h>
 #include <iot_logger.h>
 #include <iot_config.h>
+#include <iot_telemetry.h>
 
 // *****************************************************************************
 
-#define IOT_VERSION_MAJOR 1
+#define IOT_VERSION_MAJOR 2
 #define IOT_VERSION_MINOR 0
 #define IOT_VERSION_PATCH 0
 
@@ -154,17 +155,34 @@ public:
 
     /**
      * Post telemetry data to the API. The body must be a valid JSON string.
-     * 
+     *
+     * The server expects a flat JSON object with numeric values;
+     * prefer the IotTelemetry overload which guarantees this.
+     * Bodies larger than IOT_MAX_TELEMETRY_SIZE trigger a warning as the
+     * server rejects them by default (HTTP 413).
+     *
      * This method is similar to apiGet().
      */
-    int postTelemetry(String kind, String jsonData, String apiPath = "telemetry/{project}/{device}/{kind}");
+    int postTelemetry(const String& kind, const String& jsonData, const String& apiPath = "telemetry/{project}/{device}/{kind}");
 
     /**
-     * Post telemetry data to the API. The body must be a valid JSON string.
-     * 
+     * Post telemetry data built with an IotTelemetry builder to the API.
+     *
+     * Example:
+     *   IotTelemetry telemetry;
+     *   telemetry.add("temperature", 22.5);
+     *   iot.postTelemetry("sensors", telemetry);
+     */
+    int postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath = "telemetry/{project}/{device}/{kind}");
+
+    /**
+     * Post system telemetry (battery voltage if configured, WiFi RSSI,
+     * boot count, active duration, sleep durations, time and firmware
+     * information) to the API.
+     *
      * This method is similar to apiGet().
      */
-    int postSystemTelemetry(String kind = "system", String apiPath = "telemetry/{project}/{device}/{kind}");
+    int postSystemTelemetry(const String& kind = "system", const String& apiPath = "telemetry/{project}/{device}/{kind}");
 
 
     // **********************************************************************
@@ -441,13 +459,13 @@ private:
     IotPersistentValue<int32_t> _panicSleepDuration_s;
 
     // configurable variables
-    IotConfigValue<int> _logLevel;
-    IotConfigValue<int> _sleepDuration_s;
-    IotConfigValue<int> _watchdogTimeout_s;
-    IotConfigValue<int> _ledPin;
+    IotConfigValue<int32_t> _logLevel;
+    IotConfigValue<int32_t> _sleepDuration_s;
+    IotConfigValue<int32_t> _watchdogTimeout_s;
+    IotConfigValue<int32_t> _ledPin;
 
-    IotConfigValue<int> _ntpResyncInterval_s;
-    IotConfigValue<int> _ntpTimeout_ms;
+    IotConfigValue<int32_t> _ntpResyncInterval_s;
+    IotConfigValue<int32_t> _ntpTimeout_ms;
     IotConfigValue<String> _ntpServer1;
     IotConfigValue<String> _ntpServer2;
     IotConfigValue<String> _ntpServer3;
@@ -455,15 +473,15 @@ private:
     String __ntpServer2;
     String __ntpServer3;
 
-    IotConfigValue<int> _batteryOffset_mV;
-    IotConfigValue<int> _batteryFactor;
-    IotConfigValue<int> _batteryDivider;
-    IotConfigValue<int> _batteryPin;
-    IotConfigValue<int> _batteryMin_mV;
+    IotConfigValue<int32_t> _batteryOffset_mV;
+    IotConfigValue<int32_t> _batteryFactor;
+    IotConfigValue<int32_t> _batteryDivider;
+    IotConfigValue<int32_t> _batteryPin;
+    IotConfigValue<int32_t> _batteryMin_mV;
 
-    IotConfigValue<int> _panicSleepDurationInit_s;
-    IotConfigValue<int> _panicSleepDurationFactor;
-    IotConfigValue<int> _panicSleepDurationMax_s;
+    IotConfigValue<int32_t> _panicSleepDurationInit_s;
+    IotConfigValue<int32_t> _panicSleepDurationFactor;
+    IotConfigValue<int32_t> _panicSleepDurationMax_s;
 
     static void _ntpSyncCallback(struct timeval *tv);
 };

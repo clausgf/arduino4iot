@@ -4,9 +4,11 @@
  */
 
 #include "Arduino.h"
-#include "iot_api.h"
+#include <WiFi.h>
 
+#include "iot_api.h"
 #include "iot_logger.h"
+#include "iot_telemetry.h"
 
 // *****************************************************************************
 
@@ -121,8 +123,37 @@ void IotLogger::verbose(const char *tag, const char* format...)
 
 int IotLogger::postLog(const char * body, const char * apiPath)
 {
-    String oResult = "";
-    return api.apiPost(oResult, apiPath, body, {{"Content-Type", "text/plain"}});
+    // the server rejects bodies larger than its max_log_size (default 8 KiB)
+    // with HTTP 413, so split large bodies into chunks at line boundaries
+    const size_t maxChunkSize = IOT_MAX_TELEMETRY_SIZE;
+    size_t bodyLen = strlen(body);
+    int httpStatusCode = 0;
+
+    size_t offset = 0;
+    do
+    {
+        size_t chunkLen = bodyLen - offset;
+        if (chunkLen > maxChunkSize)
+        {
+            // prefer splitting after the last newline within the limit
+            chunkLen = maxChunkSize;
+            for (size_t i = maxChunkSize; i > 0; i--)
+            {
+                if (body[offset + i - 1] == '\n')
+                {
+                    chunkLen = i;
+                    break;
+                }
+            }
+        }
+        String chunk;
+        chunk.concat(body + offset, chunkLen);
+        String oResult = "";
+        httpStatusCode = api.apiPost(oResult, apiPath, chunk, {{"Content-Type", "text/plain"}});
+        offset += chunkLen;
+    } while (offset < bodyLen);
+
+    return httpStatusCode;
 }
 
 // *****************************************************************************

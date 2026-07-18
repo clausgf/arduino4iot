@@ -13,9 +13,9 @@
 #include <esp_ota_ops.h>
 #include <nvs_flash.h>
 #include <esp_sntp.h>
+#include <esp_idf_version.h>
 #include <WiFi.h>
 #include <Preferences.h>
-#include <HttpsOTAUpdate.h>
 #include <ArduinoJson.h>
 
 // *****************************************************************************
@@ -367,30 +367,49 @@ bool Iot::syncNtpTime()
 // API
 // *****************************************************************************
 
-int Iot::postTelemetry(String kind, String jsonData, String apiPath)
+int Iot::postTelemetry(const String& kind, const String& jsonData, const String& apiPath)
 {
-    apiPath.replace("{kind}", kind);
+    if (jsonData.length() > IOT_MAX_TELEMETRY_SIZE)
+    {
+        log_w("Telemetry body size %u exceeds the server's default limit of %u bytes",
+            jsonData.length(), IOT_MAX_TELEMETRY_SIZE);
+    }
+    String path = apiPath;
+    path.replace("{kind}", kind);
     // other variables are replaced in apiPost()
     String oResult = "";
-    return api.apiPost(oResult, apiPath, jsonData);
+    return api.apiPost(oResult, path, jsonData);
 }
 
 // *****************************************************************************
 
-int Iot::postSystemTelemetry(String kind, String apiPath)
+int Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath)
 {
-    String jsonData = String("{") 
-        + "\"battery_V\":" + String(getBatteryVoltage_mV()/1000.0, 2)
-        + ",\"wifi_rssi\":" + WiFi.RSSI() 
-        + ",\"boot_count\":" + getBootCount() 
-        + ",\"active_ms\":" + getActiveDuration_ms() 
-        + ",\"lastSleep_s\":" + getLastSleepDuration_s()
-        + ",\"panicSleep_s\":" + getPanicSleepDuration_s()
-        + ",\"time\":\"" + getTimeIso() + "\""
-        + ",\"firmware_version\":\"" + getFirmwareVersion() + "\""
-        + ",\"firmware_sha256\":\"" + getFirmwareSha256() + "\""
-        + "}";
+    String jsonData;
+    telemetry.serializeTo(jsonData);
     return postTelemetry(kind, jsonData, apiPath);
+}
+
+// *****************************************************************************
+
+int Iot::postSystemTelemetry(const String& kind, const String& apiPath)
+{
+    IotTelemetry telemetry;
+    if (_batteryPin.get() >= 0)
+    {
+        telemetry.add("battery_V", getBatteryVoltage_mV() / 1000.0);
+    }
+    telemetry.add("wifi_rssi", WiFi.RSSI());
+    telemetry.add("boot_count", getBootCount());
+    telemetry.add("active_ms", getActiveDuration_ms());
+    telemetry.add("lastSleep_s", getLastSleepDuration_s());
+    telemetry.add("panicSleep_s", getPanicSleepDuration_s());
+    // non-numeric fields are ignored by the nice4iot telemetry backend,
+    // but kept for backends which support them
+    telemetry.add("time", getTimeIso());
+    telemetry.add("firmware_version", getFirmwareVersion());
+    telemetry.add("firmware_sha256", getFirmwareSha256());
+    return postTelemetry(kind, telemetry, apiPath);
 }
 
 
@@ -564,7 +583,21 @@ String Iot::getFirmwareSha256()
 
 void Iot::startWatchdog(int watchdogTimeout_s)
 {
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t wdtConfig = {
+        .timeout_ms = (uint32_t)watchdogTimeout_s * 1000u,
+        .idle_core_mask = 0,
+        .trigger_panic = true, // panic on watchdog timeout
+    };
+    esp_err_t err = esp_task_wdt_init(&wdtConfig);
+    if (err == ESP_ERR_INVALID_STATE)
+    {
+        // watchdog already initialized by the Arduino core
+        err = esp_task_wdt_reconfigure(&wdtConfig);
+    }
+#else
     esp_err_t err = esp_task_wdt_init(watchdogTimeout_s, true); // panic=true on watchdog timeout
+#endif
     if (err != ESP_OK)
     {
         panic("*** PANIC *** Error in esp_task_wdt_init: 0x%x", err);

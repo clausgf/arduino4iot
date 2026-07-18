@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-native:
+    name: Native unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: pio-native-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Run native unit tests
+        run: pio test -e native
+
+  build-example:
+    name: Build example (${{ matrix.board }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [esp32dev, esp32-s3-devkitc-1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: pio-${{ matrix.board }}-${{ runner.os }}-${{ hashFiles('library.json') }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build example
+        # pioarduino platform provides current arduino-esp32 3.x for PlatformIO
+        run: >
+          pio ci
+          --lib="."
+          --board=${{ matrix.board }}
+          --project-option="platform=https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20/platform-espressif32.zip"
+          --project-option="framework=arduino"
+          --project-option="lib_deps=bblanchon/ArduinoJson@^7.0.0"
+          examples/main.cpp

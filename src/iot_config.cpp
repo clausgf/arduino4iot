@@ -139,14 +139,13 @@ bool IotConfig::updateConfig()
     // get config from server
     String response = "";
     std::map<String, String> responseHeader;
-    const char* collectResponseHeaderKeys[] =  {"ETag", "Last-Modified"};
     int httpStatusCode = api.apiRequest(
-        response, responseHeader, 
+        response, responseHeader,
         "GET", _apiPath, "", {
             {"If-None-Match", etag},
             {"If-Modified-Since", date}
-        }, 
-        collectResponseHeaderKeys, 2);
+        },
+        {"ETag", "Last-Modified"});
 
     if (httpStatusCode < 200 || httpStatusCode >= 300)
     {
@@ -160,7 +159,7 @@ bool IotConfig::updateConfig()
     }
 
     // decode JSON payload
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     if (error)
     {
@@ -207,7 +206,7 @@ bool IotConfig::updateConfig()
             }
         } else
         {
-            log_e("Ignoring configKey=%s nvramKey=%s, check types", configKey);
+            log_e("Ignoring configKey=%s nvramKey=%s, check types", configKey, nvramKey);
         }
     }
 
@@ -274,7 +273,7 @@ void IotConfig::setConfigBool(const char *key, bool value)
     preferences.end();
 }
 
-String IotConfig::getConfigString(const char *key, String defaultValue)
+String IotConfig::getConfigString(const char *key, const String& defaultValue)
 {
     Preferences preferences;
     preferences.begin(_nvramSection, true);
@@ -283,7 +282,7 @@ String IotConfig::getConfigString(const char *key, String defaultValue)
     return value;
 }
 
-void IotConfig::setConfigString(const char *key, String value)
+void IotConfig::setConfigString(const char *key, const String& value)
 {
     Preferences preferences;
     preferences.begin(_nvramSection, false);

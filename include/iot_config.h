@@ -115,11 +115,8 @@ public:
     void setConfigInt32(const char *key, int32_t value);
     bool getConfigBool(const char *key, bool defaultValue = false);
     void setConfigBool(const char *key, bool value);
-    String getConfigString(const char *key, String defaultValue = "");
-    void setConfigString(const char *key, String value);
-
-    template <typename T>
-    T getFromConfig(const char *key, T defaultValue = T());
+    String getConfigString(const char *key, const String& defaultValue = "");
+    void setConfigString(const char *key, const String& value);
 
 
     // **********************************************************************
