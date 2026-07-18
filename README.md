@@ -69,7 +69,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_V": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
 - **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). HTTP 401 triggers automatic re-provisioning and a retry; HTTP 403 signals a configuration problem on the server (project inactive, device not approved) which re-provisioning cannot fix — the library keeps the token and reports the error.
-- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` for cache validation, so unchanged files are not downloaded again.
+- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again.
 
 ## Tips
 
@@ -94,7 +94,6 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
 The following topics are known limitations that are being addressed on the server side in [nice4iot](https://github.com/clausgf/nice4iot), or are planned as future work:
 
-- **`Last-Modified` / `Date` headers (nice4iot):** the file API currently returns the file modification time in the `Date` header instead of `Last-Modified`, so cache validation effectively works via `ETag` only. The library still sends `If-Modified-Since` for servers that support it; this becomes fully functional once fixed in nice4iot.
 - **Telemetry backend (nice4iot):** non-numeric telemetry fields are silently dropped by the server, and measurements are always timestamped with the server arrival time — devices cannot backfill buffered measurements with their own timestamps. Both are being improved in nice4iot; the library already sends non-numeric system telemetry fields (`time`, `firmware_version`, `firmware_sha256`) for backends that support them.
 - **MQTT transport:** nice4iot supports telemetry, logging and file transfer via MQTT for always-on devices. This library currently implements the HTTP transport only, which remains the best fit for deep-sleep cycles; an optional MQTT transport is future work.
 
