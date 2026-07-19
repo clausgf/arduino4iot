@@ -107,3 +107,4 @@ The following topics are known limitations that are being addressed on the serve
 - `apiSetConnectionTimeout()` / `apiSetRequestTimeout()` are deprecated in favor of `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.
 - `IotApi::apiRequest()` now takes the response header keys to collect as a `std::vector<String>` instead of a C array plus count.
 - HTTP 403 no longer clears the device token (only 401 does).
+- **`iot.postTelemetry()`, `iot.postSystemTelemetry()` and `api.apiForward()` now return `IotResult`** instead of a raw `int` status code. `IotResult` separates success (2xx), HTTP errors and transport errors and converts to `bool` in a boolean context, so `if (!iot.postTelemetry(...))` reads correctly. The raw status is still available via `.httpStatus` / `.transportError`. The low-level `api.apiGet()/apiPost()/apiPut()/apiHead()/apiRequest()` methods still return `int`, which `IotResult` accepts implicitly.

@@ -13,6 +13,8 @@
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 
+#include "iot_result.h"
+
 // *****************************************************************************
 
 class IotApi
@@ -308,9 +310,9 @@ public:
      * @param forwardingName the name of the forwarding entry in the project config
      * @param remainingPath path suffix appended to the configured upstream URL, may be empty
      * @param body an optional request body passed to the upstream service
-     * @return the HTTP response status code
+     * @return the result of the request, wrapping the HTTP status code
      */
-    int apiForward(String& oResponse, const String& forwardingName, const String& remainingPath = "",
+    IotResult apiForward(String& oResponse, const String& forwardingName, const String& remainingPath = "",
         const String& body = "", const std::map<String, String>& headers = {});
 
     /**

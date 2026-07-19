@@ -18,6 +18,7 @@
 #include <iot_logger.h>
 #include <iot_config.h>
 #include <iot_telemetry.h>
+#include <iot_result.h>
 
 // *****************************************************************************
 
@@ -164,7 +165,7 @@ public:
      *
      * This method is similar to apiGet().
      */
-    int postTelemetry(const String& kind, const String& jsonData, const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postTelemetry(const String& kind, const String& jsonData, const String& apiPath = "telemetry/{project}/{device}/{kind}");
 
     /**
      * Post telemetry data built with an IotTelemetry builder to the API.
@@ -172,9 +173,9 @@ public:
      * Example:
      *   IotTelemetry telemetry;
      *   telemetry.add("temperature", 22.5);
-     *   iot.postTelemetry("sensors", telemetry);
+     *   if (!iot.postTelemetry("sensors", telemetry)) { ... }
      */
-    int postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath = "telemetry/{project}/{device}/{kind}");
 
     /**
      * Post system telemetry (battery voltage if configured, WiFi RSSI,
@@ -183,7 +184,7 @@ public:
      *
      * This method is similar to apiGet().
      */
-    int postSystemTelemetry(const String& kind = "system", const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postSystemTelemetry(const String& kind = "system", const String& apiPath = "telemetry/{project}/{device}/{kind}");
 
 
     // **********************************************************************

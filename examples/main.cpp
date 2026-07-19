@@ -48,7 +48,12 @@ void setup()
     IotTelemetry telemetry;
     telemetry.add("temperature", 22.5);
     telemetry.add("humidity", 40);
-    iot.postTelemetry("sensors", telemetry);
+    IotResult result = iot.postTelemetry("sensors", telemetry);
+    if (!result)
+    {
+        logger.warn("app", "telemetry post failed (http=%d, transport=%d)",
+            result.httpStatus, result.transportError);
+    }
 
     // sleep until the next cycle (duration from config value "sleep_s")
     iot.deepSleep();

@@ -500,7 +500,7 @@ int IotApi::apiPut(String& response, const String& apiPath, const String& body, 
 
 // *****************************************************************************
 
-int IotApi::apiForward(String& oResponse, const String& forwardingName, const String& remainingPath,
+IotResult IotApi::apiForward(String& oResponse, const String& forwardingName, const String& remainingPath,
     const String& body, const std::map<String, String>& headers)
 {
     String apiPath = "forward/{project}/{device}/" + forwardingName;

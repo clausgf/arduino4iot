@@ -372,7 +372,7 @@ bool Iot::syncNtpTime()
 // API
 // *****************************************************************************
 
-int Iot::postTelemetry(const String& kind, const String& jsonData, const String& apiPath)
+IotResult Iot::postTelemetry(const String& kind, const String& jsonData, const String& apiPath)
 {
     if (jsonData.length() > IOT_MAX_TELEMETRY_SIZE)
     {
@@ -388,7 +388,7 @@ int Iot::postTelemetry(const String& kind, const String& jsonData, const String&
 
 // *****************************************************************************
 
-int Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath)
+IotResult Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath)
 {
     String jsonData;
     telemetry.serializeTo(jsonData);
@@ -397,7 +397,7 @@ int Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, const 
 
 // *****************************************************************************
 
-int Iot::postSystemTelemetry(const String& kind, const String& apiPath)
+IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
 {
     IotTelemetry telemetry;
     if (_batteryPin.get() >= 0)
