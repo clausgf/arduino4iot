@@ -226,7 +226,7 @@ public:
      * It also adds the API base URL.
      *
      * @param apiPath the path relative to the API base URL, e.g. "/foo/{device}/bar"
-     * @return the full URL, e.g. "https://api.example.com/api/foo/e32-123/bar"
+     * @return the full URL, e.g. "https://api.example.com/api/foo/e32_123/bar"
      */
     String getApiUrlForPath(const String& apiPath);
 

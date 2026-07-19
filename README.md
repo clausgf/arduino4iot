@@ -101,6 +101,7 @@ The following topics are known limitations that are being addressed on the serve
 
 ## Migration to version 2.x
 
+- **Default device name changed from `e32-<mac>` to `e32_<mac>`** (hyphen → underscore). The newest nice4iot validates device and project names against `^[a-zA-Z_][a-zA-Z0-9_]*$`, which forbids the hyphen. Existing devices will provision under the new name and appear as new device records on the server; migrate server-side data or set an explicit device name via `api.setDeviceName()` if you need to keep the old identity.
 - **ArduinoJson 7** is now a declared dependency (was an undeclared ArduinoJson 6 requirement before).
 - **arduino-esp32 3.x** (ESP-IDF 5) is supported and used in CI; arduino-esp32 2.x should continue to work.
 - `apiSetConnectionTimeout()` / `apiSetRequestTimeout()` are deprecated in favor of `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.

@@ -85,7 +85,8 @@ public:
 
     /**
      * Return a unique device ID which is derived from the WiFi MAC address,
-     * e.g. "e32-123456780abc"
+     * e.g. "e32_123456780abc". The underscore separator keeps the ID a valid
+     * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$).
      */
     String getDeviceId();
 

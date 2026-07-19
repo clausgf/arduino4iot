@@ -225,9 +225,12 @@ String Iot::getDeviceId()
         uint8_t mac[6];
         esp_wifi_get_mac(WIFI_IF_STA, mac);
 
+        // The device id doubles as the device name for the API. nice4iot
+        // requires device names to match ^[a-zA-Z_][a-zA-Z0-9_]*$ (no hyphen),
+        // so use an underscore separator, e.g. "e32_aabbccddeeff".
         const int ID_MAXLEN = 17;
         static char id_buf[ID_MAXLEN];
-        snprintf(id_buf, ID_MAXLEN, "e32-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        snprintf(id_buf, ID_MAXLEN, "e32_%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
         _deviceId = id_buf;
         WiFi.setHostname(id_buf);

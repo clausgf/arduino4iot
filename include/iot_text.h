@@ -44,7 +44,7 @@ inline void replaceAll(std::string& str, const std::string& from, const std::str
  * @param apiPath the path relative to the base URL, e.g. "/foo/{device}/bar"
  * @param project the value substituted for {project}
  * @param device the value substituted for {device}
- * @return the full URL, e.g. "https://host/api/foo/e32-123/bar"
+ * @return the full URL, e.g. "https://host/api/foo/e32_123/bar"
  */
 inline std::string buildApiUrl(const std::string& baseUrl, const std::string& apiPath,
     const std::string& project, const std::string& device)
