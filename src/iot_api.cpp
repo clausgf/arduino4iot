@@ -466,9 +466,9 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
         log_e("HTTP %s url=%s -> status=%d UNAUTHORIZED - device token invalid or expired",
             requestType, url.c_str(), httpStatusCode);
     } else if (httpStatusCode == HTTP_CODE_FORBIDDEN) {
-        // 403 signals a configuration problem (project inactive, device inactive
-        // or not approved) - re-provisioning would not help, keep the token
-        log_e("HTTP %s url=%s -> status=%d FORBIDDEN - check project/device configuration on the server",
+        // 403 is not an auth-token problem (nice4iot returns 401 for those on the
+        // device endpoints) - re-provisioning would not help, so keep the token
+        log_e("HTTP %s url=%s -> status=%d FORBIDDEN - access refused by the server",
             requestType, url.c_str(), httpStatusCode);
     } else if (httpStatusCode < 200 || httpStatusCode >= 400) {
         log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s",
