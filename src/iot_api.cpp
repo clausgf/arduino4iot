@@ -36,6 +36,9 @@ IotApi::IotApi()
     _wifiClientSecurePtr = nullptr;
     _wifiClientPtr = nullptr;
     _httpClientPtr = nullptr;
+
+    _tlsServerTrustConfigured = false;
+    _tlsTrustWarningLogged = false;
 }
 
 void IotApi::begin()
@@ -143,8 +146,26 @@ void IotApi::setCACert(const char *server_certificate)
     {
         _wifiClientSecurePtr->setCACert(server_certificate);
         ota.setServerCert(server_certificate, false);
+        _tlsServerTrustConfigured = true;
     } else {
         log_e("setCACert: WiFiClientSecure not used");
+    }
+}
+
+void IotApi::setCACertBundle()
+{
+    // symbols of the certificate bundle embedded by the build
+    // (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y, default for arduino-esp32)
+    extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+    extern const uint8_t rootca_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
+    if (_isWiFiClientSecure())
+    {
+        _wifiClientSecurePtr->setCACertBundle(rootca_crt_bundle_start,
+            rootca_crt_bundle_end - rootca_crt_bundle_start);
+        ota.setServerCertBundle(true);
+        _tlsServerTrustConfigured = true;
+    } else {
+        log_e("setCACertBundle: WiFiClientSecure not used");
     }
 }
 
@@ -168,11 +189,24 @@ void IotApi::setCertInsecure()
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
+        _tlsServerTrustConfigured = true;
     } else {
         log_e("setCertInsecure: WiFiClientSecure not used");
     }
     ota.setServerCert(nullptr, true);
     ota.setClientCert(nullptr, nullptr, nullptr);
+}
+
+void IotApi::_warnIfTlsTrustMissing()
+{
+    if (_isWiFiClientSecure() && !_tlsServerTrustConfigured && !_tlsTrustWarningLogged)
+    {
+        _tlsTrustWarningLogged = true;
+        log_e("TLS: https API URL but no server trust configured - the handshake "
+              "will fail with an opaque transport error. Call setCACert() with "
+              "your server's CA, setCACertBundle() for public CAs, or (development "
+              "only) setCertInsecure().");
+    }
 }
 
 void IotApi::closeConnection()
@@ -253,30 +287,30 @@ void IotApi::clearDeviceToken()
 
 // *****************************************************************************
 
-bool IotApi::updateProvisioningOk(const String& apiPath)
+IotResult IotApi::updateProvisioning(const String& apiPath)
 {
     if (!_deviceToken.isEmpty())
     {
         if (_deviceTokenExpiresAt <= 0)
         {
             // token lifetime unknown (e.g. provisioned by an older library version)
-            log_i("updateProvisioningOk: already provisioned, token lifetime unknown");
-            return true;
+            log_i("updateProvisioning: already provisioned, token lifetime unknown");
+            return IotResult(HTTP_CODE_OK);
         }
         int64_t now = (int64_t)time(nullptr);
         if (!iot.isTimePlausible() || now + _deviceTokenExpiryMargin_s < _deviceTokenExpiresAt)
         {
-            log_i("updateProvisioningOk: already provisioned, token valid for %lld s",
+            log_i("updateProvisioning: already provisioned, token valid for %lld s",
                 _deviceTokenExpiresAt - now);
-            return true;
+            return IotResult(HTTP_CODE_OK);
         }
-        log_i("updateProvisioningOk: device token expired or expiring soon, re-provisioning");
+        log_i("updateProvisioning: device token expired or expiring soon, re-provisioning");
     }
 
     if (_provisioningToken.isEmpty())
     {
-        log_e("updateProvisioningOk: no provisioning token available");
-        return false;
+        log_e("updateProvisioning: no provisioning token available");
+        return IotResult(IotResult::STATUS_NO_PROVISIONING_TOKEN);
     }
 
     // execute HTTP POST request
@@ -293,8 +327,14 @@ bool IotApi::updateProvisioningOk(const String& apiPath)
     _inProvisioning = false;
     if (httpStatusCode != HTTP_CODE_OK || response.isEmpty())
     {
-        log_i("updateProvisioningOk: status=%d or no response", httpStatusCode);
-        return false;
+        log_i("updateProvisioning: status=%d or no response", httpStatusCode);
+        // a 2xx with an empty body is not a usable success - flag it as malformed;
+        // otherwise pass the transport/HTTP status through unchanged
+        if (httpStatusCode >= 200 && httpStatusCode < 300)
+        {
+            return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
+        }
+        return IotResult(httpStatusCode);
     }
 
     // parse response
@@ -302,18 +342,18 @@ bool IotApi::updateProvisioningOk(const String& apiPath)
     DeserializationError error = deserializeJson(doc, response);
     if (error)
     {
-        log_i("updateProvisioningOk: JSON deserialization failed: %s", error.c_str());
-        return false;
+        log_i("updateProvisioning: JSON deserialization failed: %s", error.c_str());
+        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
     }
     if (!doc["accessToken"].is<const char*>())
     {
-        log_i("updateProvisioningOk: no accessToken");
-        return false;
+        log_i("updateProvisioning: no accessToken");
+        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
     }
     if (!doc["tokenType"].is<const char*>())
     {
-        log_i("updateProvisioningOk: no tokenType");
-        return false;
+        log_i("updateProvisioning: no tokenType");
+        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
     }
 
     // determine token expiry from expiresIn (seconds); requires plausible system time
@@ -327,12 +367,12 @@ bool IotApi::updateProvisioningOk(const String& apiPath)
     setDeviceToken(deviceToken, expiresAt);
     if (expiresAt > 0)
     {
-        log_i("updateProvisioningOk: new device token for api access, expires at %s",
+        log_i("updateProvisioning: new device token for api access, expires at %s",
             iot.getTimeIso(expiresAt).c_str());
     } else {
-        log_i("updateProvisioningOk: new device token for api access");
+        log_i("updateProvisioning: new device token for api access");
     }
-    return true;
+    return IotResult(httpStatusCode);
 }
 
 
@@ -382,6 +422,7 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
     log_i("HTTP %s url=%s", requestType, url.c_str());
 
     // prepare HTTP request
+    _warnIfTlsTrustMissing();
     _getHttpClient().begin(*(_getWiFiClientPtr()), url);
     _addRequestHeader(_getHttpClient(), requestHeader);
     std::vector<const char *> headerKeys;
@@ -413,8 +454,14 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
     // evaluate HTTP response
     if (httpStatusCode < 0)
     {
-        log_e("HTTP %s url=%s -> status=%d error=%s",
-            requestType, url.c_str(), httpStatusCode, _getHttpClient().errorToString(httpStatusCode).c_str());
+        // a missing TLS server trust is a common, hard-to-attribute cause of
+        // transport errors on https - point at it explicitly
+        const char *tlsHint = (_isWiFiClientSecure() && !_tlsServerTrustConfigured)
+            ? " (no TLS server trust configured: call setCACert(), setCACertBundle() or setCertInsecure())"
+            : "";
+        log_e("HTTP %s url=%s -> status=%d error=%s%s",
+            requestType, url.c_str(), httpStatusCode,
+            _getHttpClient().errorToString(httpStatusCode).c_str(), tlsHint);
     } else if (httpStatusCode == HTTP_CODE_UNAUTHORIZED) {
         log_e("HTTP %s url=%s -> status=%d UNAUTHORIZED - device token invalid or expired",
             requestType, url.c_str(), httpStatusCode);

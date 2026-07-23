@@ -92,6 +92,25 @@ public:
     void setClientCertificateAndKey(const char *clientCert, const char *clientKey);
 
     /**
+     * Use the ESP-IDF attested Mozilla root CA bundle to verify the server
+     * certificate, analogous to a browser trust store. This is convenient for
+     * servers with a certificate signed by a well-known public CA (e.g. Let's
+     * Encrypt) without pinning a specific CA via setCACert().
+     *
+     * Note that a self-hosted nice4iot server with a private/self-signed
+     * certificate is usually NOT covered by the public bundle - use setCACert()
+     * with your own CA in that case.
+     *
+     * Requires the certificate bundle to be embedded in the build, which is the
+     * default for arduino-esp32 (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y). The
+     * bundle is applied to both API requests and OTA firmware downloads.
+     *
+     * This method silently fails if the WiFi client is not an instance
+     * of WiFiClientSecure.
+     */
+    void setCACertBundle();
+
+    /**
      * Deactivate checking the server certificate for TLS connections.
      *
      * WARNING: this disables server authentication. The connection is still
@@ -211,9 +230,30 @@ public:
      * The token expiry is determined from the *expiresIn* field of the
      * provisioning response and stored in NVRAM.
      *
+     * @return a typed result. Ok if provisioning information is current (with
+     *         or without a new token). On failure the cause is distinguishable:
+     *         - isTransportError(): TLS/connectivity problem (e.g. no CA cert
+     *           configured, server unreachable); see .transportError;
+     *         - .httpStatus == 403: server rejected provisioning (project/device
+     *           inactive or not approved, HTTP API disabled);
+     *         - .httpStatus == 401: provisioning token invalid;
+     *         - .httpStatus == IotResult::STATUS_NO_PROVISIONING_TOKEN: no
+     *           provisioning token configured on the device;
+     *         - .httpStatus == IotResult::STATUS_MALFORMED_RESPONSE: 2xx but the
+     *           response body lacked a valid accessToken/tokenType.
+     */
+    IotResult updateProvisioning(const String& apiPath = "provision");
+
+    /**
+     * Convenience wrapper around updateProvisioning() for callers that only
+     * need a yes/no answer.
+     *
      * @return true if provisioning information is current (with or without update)
      */
-    bool updateProvisioningOk(const String& apiPath = "provision");
+    bool updateProvisioningOk(const String& apiPath = "provision")
+    {
+        return updateProvisioning(apiPath).isOk();
+    }
 
 
     // **********************************************************************
@@ -376,6 +416,9 @@ private:
     WiFiClient * _wifiClientPtr;
     HTTPClient * _httpClientPtr;
 
+    bool _tlsServerTrustConfigured; ///< set by setCACert/setCACertBundle/setCertInsecure
+    bool _tlsTrustWarningLogged;    ///< guard so the missing-trust warning is logged once
+
     /**
      * @return a WiFiClient instance, either secure or insecure, depending
      * on the API base URL. The instance is created on the first call.
@@ -386,6 +429,14 @@ private:
      * @return wheter the WiFiClient instance is secure or insecure.
      */
     bool _isWiFiClientSecure();
+
+    /**
+     * Log a single clear error if the API URL is https but no TLS server trust
+     * was configured (neither setCACert(), setCACertBundle() nor
+     * setCertInsecure()). Without it the TLS handshake fails with an opaque
+     * transport error that is hard to attribute.
+     */
+    void _warnIfTlsTrustMissing();
 
     /**
      * @return a HTTPClient instance. The instance is created on the first call.

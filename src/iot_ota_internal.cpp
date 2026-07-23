@@ -8,6 +8,7 @@
 #include "esp_tls.h"
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
+#include "esp_crt_bundle.h"
 
 #include "iot_ota_internal.h"
 
@@ -23,6 +24,7 @@ IotOtaInternal::IotOtaInternal():
     _client_key_password(nullptr),
     _server_cert_pem(nullptr),
     _skip_server_common_name_check(false),
+    _use_cert_bundle(false),
     _timeout_ms(10000)
 {
 }
@@ -40,6 +42,16 @@ void IotOtaInternal::setServerCert(const char * cert_pem, bool skip_common_name_
 {
     _server_cert_pem = cert_pem;
     _skip_server_common_name_check = skip_common_name_check;
+    _use_cert_bundle = false;
+}
+
+void IotOtaInternal::setServerCertBundle(bool use_bundle)
+{
+    _use_cert_bundle = use_bundle;
+    if (use_bundle)
+    {
+        _server_cert_pem = nullptr;
+    }
 }
 
 // ***************************************************************************
@@ -112,6 +124,11 @@ bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDat
     http_cfg.client_key_password = _client_key_password;
     http_cfg.cert_pem = _server_cert_pem;
     http_cfg.skip_cert_common_name_check = _skip_server_common_name_check;
+    if (_use_cert_bundle)
+    {
+        // verify against the ESP-IDF attested CA bundle (see IotApi::setCACertBundle)
+        http_cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    }
     http_cfg.timeout_ms = _timeout_ms;
     http_cfg.keep_alive_enable = true;
 

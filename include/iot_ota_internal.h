@@ -25,6 +25,7 @@ public:
     void setTimeout(int timeout_ms) { _timeout_ms = timeout_ms; }
     void setClientCert(const char * cert_pem, const char * key_pem, const char * key_password);
     void setServerCert(const char * cert_pem, bool skip_common_name_check);
+    void setServerCertBundle(bool use_bundle);
 
     bool updateFirmwareFromUrl(std::string& oEtag, std::string& oDate, const char * url, std::map<std::string, std::string> * headerPtr);
 
@@ -34,5 +35,6 @@ private:
     const char * _client_key_password;
     const char * _server_cert_pem;
     bool _skip_server_common_name_check;
+    bool _use_cert_bundle;
     int _timeout_ms;
 };

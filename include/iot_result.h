@@ -22,6 +22,14 @@ struct IotResult
 {
     enum Kind { Ok, HttpError, TransportError };
 
+    // Synthetic status codes for client-side failures that never reach the
+    // network. They are chosen above the real HTTP range (>= 600) so that
+    // IotResult classifies them as HttpError and they never collide with a
+    // server status (1xx-5xx) or a (negative) transport error. Callers can
+    // test for them via .httpStatus.
+    static constexpr int STATUS_NO_PROVISIONING_TOKEN = 600; ///< no provisioning token configured
+    static constexpr int STATUS_MALFORMED_RESPONSE    = 601; ///< 2xx but missing/invalid body
+
     Kind kind;
     int httpStatus;      ///< HTTP status code for Ok/HttpError, 0 otherwise
     int transportError;  ///< negative ESP HTTPClient error for TransportError, 0 otherwise

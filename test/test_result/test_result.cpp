@@ -69,6 +69,35 @@ void test_implicit_conversion_from_int()
     TEST_ASSERT_TRUE(r.isOk());
 }
 
+void test_no_provisioning_token_sentinel()
+{
+    // client-side "no token" signal: not Ok, not a transport error, and
+    // carried in httpStatus so a caller can identify it specifically
+    IotResult r(IotResult::STATUS_NO_PROVISIONING_TOKEN);
+    TEST_ASSERT_FALSE((bool)r);
+    TEST_ASSERT_TRUE(r.isHttpError());
+    TEST_ASSERT_FALSE(r.isTransportError());
+    TEST_ASSERT_EQUAL_INT(IotResult::STATUS_NO_PROVISIONING_TOKEN, r.httpStatus);
+}
+
+void test_malformed_response_sentinel_distinct_from_ok()
+{
+    // a 2xx with a broken body must not read as success
+    IotResult r(IotResult::STATUS_MALFORMED_RESPONSE);
+    TEST_ASSERT_FALSE(r.isOk());
+    TEST_ASSERT_TRUE(r.isHttpError());
+    TEST_ASSERT_EQUAL_INT(IotResult::STATUS_MALFORMED_RESPONSE, r.httpStatus);
+}
+
+void test_sentinels_outside_real_http_range()
+{
+    // sentinels live above the real HTTP range so they never collide with a
+    // server status code
+    TEST_ASSERT_TRUE(IotResult::STATUS_NO_PROVISIONING_TOKEN >= 600);
+    TEST_ASSERT_TRUE(IotResult::STATUS_MALFORMED_RESPONSE >= 600);
+    TEST_ASSERT_TRUE(IotResult::STATUS_NO_PROVISIONING_TOKEN != IotResult::STATUS_MALFORMED_RESPONSE);
+}
+
 // *****************************************************************************
 
 int main(int argc, char **argv)
@@ -81,5 +110,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_negative_is_transport_error);
     RUN_TEST(test_default_constructed_is_not_ok);
     RUN_TEST(test_implicit_conversion_from_int);
+    RUN_TEST(test_no_provisioning_token_sentinel);
+    RUN_TEST(test_malformed_response_sentinel_distinct_from_ok);
+    RUN_TEST(test_sentinels_outside_real_http_range);
     return UNITY_END();
 }
