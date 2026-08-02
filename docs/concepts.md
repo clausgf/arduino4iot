@@ -104,6 +104,26 @@ re-entrancy hazard (logging from inside an API request).
 - If the buffer would exceed the server's size limit it is flushed early; if
   there is no connectivity the buffer is kept for the next successful flush.
 
+## Fast WiFi reconnect
+
+The WiFi connect dominates the radio-on time of a wakeup — the all-channel scan
+(~0.3–1.5 s) and DHCP (~0.3–1 s) repeat every wake even though the device almost
+always reassociates with the same AP on the same channel with the same IP. Two
+opt-in optimizations cut this, both with automatic fallback:
+
+- **Fast reconnect (on by default):** the last-good BSSID + channel are cached in
+  RTC RAM; the next connect targets that AP directly (`WiFi.begin(ssid, pw,
+  channel, bssid)`), skipping the scan. On a timeout or a roamed/moved AP the
+  cache is discarded and a plain full-scan connect is retried (`setFastReconnect()`).
+- **Static IP:** `iot.setStaticIp(...)` calls `WiFi.config()` before connecting,
+  skipping DHCP. Note the device then gets no DNS from DHCP — pass DNS servers if
+  the API URL uses a hostname.
+
+The connect also sets `WiFi.persistent(false)` so the WiFi stack does not write
+credentials to NVS on every connect (flash wear). The measured connect duration
+is available via `iot.getWifiConnectDuration_ms()` and posted as the
+`wifi_connect_ms` system-telemetry metric, so the saving is verifiable per device.
+
 ## Persistence: NVRAM vs. RTC RAM
 
 Two storage tiers survive a deep-sleep cycle:
