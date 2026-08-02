@@ -29,6 +29,7 @@ struct IotResult
     // test for them via .httpStatus.
     static constexpr int STATUS_NO_PROVISIONING_TOKEN = 600; ///< no provisioning token configured
     static constexpr int STATUS_MALFORMED_RESPONSE    = 601; ///< 2xx but missing/invalid body
+    static constexpr int STATUS_UPDATE_FAILED         = 602; ///< update was available but could not be downloaded/applied
 
     Kind kind;
     int httpStatus;      ///< HTTP status code for Ok/HttpError, 0 otherwise
@@ -71,4 +72,14 @@ struct IotResult
     bool isOk() const { return kind == Ok; }
     bool isHttpError() const { return kind == HttpError; }
     bool isTransportError() const { return kind == TransportError; }
+
+    /// @return true for HTTP 304 Not Modified. For cache-aware requests (config
+    /// and firmware use ETag/If-None-Match) this is not an error but means "the
+    /// resource is unchanged, nothing to do".
+    bool isNotModified() const { return httpStatus == 304; }
+
+    /// @return true if the operation neither failed nor changed anything, i.e.
+    /// success (2xx) or Not Modified (304). Convenient for cache-aware calls
+    /// where "up to date" is a normal outcome: `if (!r.isOkOrNotModified())`.
+    bool isOkOrNotModified() const { return isOk() || isNotModified(); }
 };

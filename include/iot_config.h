@@ -10,6 +10,8 @@
 #include "Arduino.h"
 #include <Preferences.h>
 
+#include "iot_result.h"
+
 // *****************************************************************************
 
 class IotConfig;
@@ -97,14 +99,21 @@ public:
     void registerConfigValuePtr(const char *configKey, IotPersistableConfigValue* configValuePtr);
 
     /**
-     * Check if the server has a new configuration, based on the ETag and 
+     * Check if the server has a new configuration, based on the ETag and
      * Last-Modified headers.
      * If available the new configuration is downloaded and stored in NVRAM.
      * It is available via @see getConfigString and @see getConfigInt32.
-     * 
-     * @return true if a new configuration was downloaded
+     *
+     * @return a typed result:
+     *         - Ok: a new configuration was downloaded and applied;
+     *         - isNotModified() (304): configuration unchanged, nothing to do;
+     *         - .httpStatus == IotResult::STATUS_MALFORMED_RESPONSE: 2xx but the
+     *           body was not valid JSON;
+     *         - other HttpError / TransportError (e.g. not initialized -> a
+     *           transport error): the update failed.
+     *         Use isOkOrNotModified() to test for "no error".
      */
-    bool updateConfig();
+    IotResult updateConfig();
 
     /// @return the Etag of the current configuration for diagnostics
     String getConfigHttpEtag() { return getConfigString(_nvramEtagKey, ""); }

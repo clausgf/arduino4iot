@@ -60,10 +60,18 @@ void setup()
         }
     }
 
-    // fetch configuration and firmware updates, post system telemetry
+    // fetch configuration and firmware updates, post system telemetry.
+    // updateConfig()/updateFirmware() return IotResult: isOkOrNotModified()
+    // means "no error" (downloaded a change, or already up to date), so a real
+    // failure (server unreachable, rejected) is easy to single out.
     config.updateConfig();
     iot.resetWatchdog();
-    api.updateFirmware();
+    IotResult fw = api.updateFirmware();
+    if (!fw.isOkOrNotModified())
+    {
+        logger.warn("app", "firmware update failed (http=%d, transport=%d)",
+            fw.httpStatus, fw.transportError);
+    }
     iot.postSystemTelemetry();
 
     // measure something and post it as telemetry

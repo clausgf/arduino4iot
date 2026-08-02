@@ -98,6 +98,37 @@ void test_sentinels_outside_real_http_range()
     TEST_ASSERT_TRUE(IotResult::STATUS_NO_PROVISIONING_TOKEN != IotResult::STATUS_MALFORMED_RESPONSE);
 }
 
+void test_304_is_not_modified()
+{
+    // 304 is an HttpError (not 2xx) but not a real failure for cache-aware calls
+    IotResult r(304);
+    TEST_ASSERT_TRUE(r.isNotModified());
+    TEST_ASSERT_FALSE(r.isOk());
+    TEST_ASSERT_TRUE(r.isOkOrNotModified());
+    TEST_ASSERT_FALSE((bool)r);
+}
+
+void test_2xx_is_ok_or_not_modified_but_not_not_modified()
+{
+    IotResult r(200);
+    TEST_ASSERT_TRUE(r.isOkOrNotModified());
+    TEST_ASSERT_FALSE(r.isNotModified());
+}
+
+void test_real_http_error_is_not_not_modified()
+{
+    IotResult r(404);
+    TEST_ASSERT_FALSE(r.isNotModified());
+    TEST_ASSERT_FALSE(r.isOkOrNotModified());
+}
+
+void test_transport_error_is_not_not_modified()
+{
+    IotResult r(-11);
+    TEST_ASSERT_FALSE(r.isNotModified());
+    TEST_ASSERT_FALSE(r.isOkOrNotModified());
+}
+
 // *****************************************************************************
 
 int main(int argc, char **argv)
@@ -113,5 +144,9 @@ int main(int argc, char **argv)
     RUN_TEST(test_no_provisioning_token_sentinel);
     RUN_TEST(test_malformed_response_sentinel_distinct_from_ok);
     RUN_TEST(test_sentinels_outside_real_http_range);
+    RUN_TEST(test_304_is_not_modified);
+    RUN_TEST(test_2xx_is_ok_or_not_modified_but_not_not_modified);
+    RUN_TEST(test_real_http_error_is_not_not_modified);
+    RUN_TEST(test_transport_error_is_not_not_modified);
     return UNITY_END();
 }

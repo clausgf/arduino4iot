@@ -137,12 +137,12 @@ void IotConfig::registerConfigValuePtr(const char *configKey, IotPersistableConf
 
 // *****************************************************************************
 
-bool IotConfig::updateConfig()
+IotResult IotConfig::updateConfig()
 {
     if (_apiPath == nullptr || _nvramSection == nullptr || _nvramEtagKey == nullptr || _nvramDateKey == nullptr || !_isOpen)
     {
         log_e("IotConfig not initialized - call begin() first");
-        return false;
+        return IotResult(); // default: transport error, no request was made
     }
 
     // get etag and last-modified date from the open preferences handle
@@ -168,7 +168,8 @@ bool IotConfig::updateConfig()
         } else {
             log_e("HTTP GET failed status=%d", httpStatusCode);
         }
-        return false;
+        // 304 -> isNotModified(), any other non-2xx -> transport/HTTP error
+        return IotResult(httpStatusCode);
     }
 
     // decode JSON payload
@@ -177,7 +178,7 @@ bool IotConfig::updateConfig()
     if (error)
     {
         log_e("Config JSON deserialization failed error=%s", error.c_str());
-        return false;
+        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
     }
 
     // store config in the open preferences handle
@@ -246,7 +247,7 @@ bool IotConfig::updateConfig()
 
     // the preferences handle stays open until end()
     log_i("Configuration data update finished");
-    return true;
+    return IotResult(HTTP_CODE_OK);
 }
 
 // *****************************************************************************

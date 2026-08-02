@@ -571,7 +571,7 @@ IotResult IotApi::uploadFile(const String& filename, const String& content, cons
 
 // *****************************************************************************
 
-bool IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
+IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
 {
     // get etag and date from preferences
     Preferences preferences;
@@ -582,12 +582,12 @@ bool IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key
 
     String response = "";
     std::map<String, String> responseHeader;
-    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", {
+    // Ok (2xx) means an update is available, isNotModified() (304) means the
+    // resource is unchanged; both are non-errors
+    return apiRequest(response, responseHeader, "HEAD", apiPath, "", {
         {"If-None-Match", etag},
         {"If-Modified-Since", date}
     });
-
-    return (httpStatusCode >= 200) && (httpStatusCode < 300);
 }
 
 
@@ -615,7 +615,7 @@ String IotApi::getFirmwareHttpDate()
 
 // *****************************************************************************
 
-bool IotApi::updateFirmware(const String& apiPath, const std::map<String, String>& header)
+IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, String>& header)
 {
     // get etag and date from preferences
     Preferences preferences;
@@ -640,11 +640,12 @@ bool IotApi::updateFirmware(const String& apiPath, const std::map<String, String
     int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", h);
     h["Authorization"] = _deviceToken;
 
-    // return if no update available
+    // return if no update available: 304 -> up to date (isNotModified), any
+    // other non-2xx -> pass the transport/HTTP status through as an error
     if (httpStatusCode != HTTP_CODE_OK)
     {
         log_i("No firmware update available status=%d", httpStatusCode);
-        return false;
+        return IotResult(httpStatusCode);
     }
 
     std::map<std::string, std::string> hh;
@@ -670,10 +671,12 @@ bool IotApi::updateFirmware(const String& apiPath, const std::map<String, String
         preferences.putString(_nvram_firmware_date_key, newDate.c_str());
         preferences.end();
         log_i("Firmware update successful");
-    } else {
-        log_e("Firmware update failed");
+        return IotResult(HTTP_CODE_OK);
     }
-    return success;
+    // an update was available (HEAD 200) but the download or flash did not
+    // complete - report a distinct, non-transient failure
+    log_e("Firmware update failed");
+    return IotResult(IotResult::STATUS_UPDATE_FAILED);
 }
 
 // *****************************************************************************

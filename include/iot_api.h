@@ -374,8 +374,12 @@ public:
      * Send a HEAD request to the given URL and check if the server has an
      * update, based on the ETag or Last-Modified headers. The ETag and
      * Last-Modified headers are stored in NVRAM under the given keys.
+     *
+     * @return a typed result: Ok (2xx) if an update is available,
+     *         isNotModified() (304) if the resource is unchanged, otherwise an
+     *         HTTP or transport error.
      */
-    bool apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key);
+    IotResult apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key);
 
 
     // **********************************************************************
@@ -387,9 +391,16 @@ public:
 
     /**
      * Update the firmware from the given API path.
-     * @return true if firmware was updated
+     *
+     * @return a typed result:
+     *         - Ok: new firmware was downloaded and flashed (runs on next boot);
+     *         - isNotModified() (304): firmware already up to date, nothing done;
+     *         - .httpStatus == IotResult::STATUS_UPDATE_FAILED: an update was
+     *           available but the download/flash did not complete;
+     *         - other HttpError / TransportError: the update check failed.
+     *         Use isOkOrNotModified() to test for "no error".
      */
-    bool updateFirmware(const String& apiPath = "file/{project}/{device}/firmware.bin", const std::map<String, String>& header = {});
+    IotResult updateFirmware(const String& apiPath = "file/{project}/{device}/firmware.bin", const std::map<String, String>& header = {});
 
 
     // **********************************************************************
