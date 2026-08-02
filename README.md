@@ -80,6 +80,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
 ## Tips
 
+- Read [docs/concepts.md](docs/concepts.md) for the core concepts (wakeup cycle, the four singletons, provisioning, telemetry, config, persistence, TLS trust, `IotResult`).
 - Browse the header files of the library, there is some doxygen style documentation.
 - To distribute new firmware to the server for OTA updates via ssh, add the following lines to your `platformio.ini` (adjust the target path to your nice4iot data directory):
   ```ini
@@ -114,4 +115,5 @@ The following topics are known limitations that are being addressed on the serve
 - `IotApi::apiRequest()` now takes the response header keys to collect as a `std::vector<String>` instead of a C array plus count.
 - HTTP 403 no longer clears the device token (only 401 does).
 - **`iot.postTelemetry()`, `iot.postSystemTelemetry()` and `api.apiForward()` now return `IotResult`** instead of a raw `int` status code. `IotResult` separates success (2xx), HTTP errors and transport errors and converts to `bool` in a boolean context, so `if (!iot.postTelemetry(...))` reads correctly. The raw status is still available via `.httpStatus` / `.transportError`. The low-level `api.apiGet()/apiPost()/apiPut()/apiHead()/apiRequest()` methods still return `int`, which `IotResult` accepts implicitly.
+- **`api.uploadFile()` now returns `IotResult`** instead of `bool`, so a failed upload is diagnosable (e.g. `.httpStatus == 413` for an oversized file). `if (!api.uploadFile(...))` keeps working.
 - **`api.updateProvisioning()`** is a new variant of `api.updateProvisioningOk()` that returns `IotResult` so a headless device can tell apart the failure causes: a transport/TLS error (`isTransportError()`), a rejected provisioning (`.httpStatus == 403`), an invalid token (`.httpStatus == 401`), a missing provisioning token (`.httpStatus == IotResult::STATUS_NO_PROVISIONING_TOKEN`) or a malformed response body (`.httpStatus == IotResult::STATUS_MALFORMED_RESPONSE`). `api.updateProvisioningOk()` is unchanged (now a thin wrapper returning `bool`).

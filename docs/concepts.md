@@ -1,0 +1,158 @@
+# arduino4iot — Core concepts
+
+This document explains the ideas the library is built on. For a task-oriented
+quick start see the [README](../README.md); for API details read the doxygen
+comments in the header files.
+
+## The wakeup cycle
+
+arduino4iot is designed around **battery-powered, deep-sleep devices**. The
+mental model is not a long-running `loop()` but a short *wakeup cycle*:
+
+1. wake from deep sleep (or power-on),
+2. connect WiFi and sync time (NTP),
+3. provision / refresh the API token,
+4. fetch configuration and firmware updates,
+5. take measurements and post telemetry,
+6. flush logs,
+7. go back to deep sleep.
+
+A full cycle can complete in well under a second, so the radio and CPU are
+active only briefly. Everything in the library is optimized for this: a single
+reused TLS connection per cycle, logs buffered and sent in one request, tokens
+and cache validators persisted across sleep. Code typically lives in `setup()`;
+`loop()` is never reached because `setup()` ends in `iot.deepSleep()`.
+
+Always-on (non-sleeping) use is possible too, but the API and its trade-offs are
+tuned for the cycle model.
+
+## The four singletons
+
+The library exposes four global objects. You configure them, then drive them
+through the cycle:
+
+| Object   | Type        | Responsibility |
+|----------|-------------|----------------|
+| `iot`    | `Iot`       | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery supervision, panic/backoff. |
+| `api`    | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
+| `config` | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
+| `logger` | `IotLogger` | Buffered remote logging plus local serial logging. |
+
+`iot.begin()` initializes the other three, so most programs only call
+`iot.begin(ssid, password)` after setting the `api` parameters.
+
+Two value types round out the surface: `IotTelemetry` (a telemetry builder) and
+`IotResult` (a typed operation result). Neither is a singleton — you create them
+where needed. Both are intentionally Arduino-free so they can be unit-tested on
+the host (see `test/`).
+
+## Provisioning and tokens
+
+The device authenticates to the server with a short-lived **bearer token**. It
+is obtained by exchanging a long-lived **provisioning token** at `/api/provision`.
+
+- The provisioning token is set once (`api.setProvisioningTokenIfEmpty(...)`) and
+  stored in NVRAM.
+- `api.updateProvisioning()` returns the device token if the current one is still
+  valid, or requests a new one when it is missing or about to expire. The expiry
+  is read from the server's `expiresIn` field; the renewal margin is configurable
+  (`api.setDeviceTokenExpiryMargin_s()`, default 1 h). Choose a margin larger than
+  your sleep interval so a device never wakes up with an already-expired token.
+- If a request is rejected with **HTTP 401**, the library clears the token,
+  re-provisions once and retries the request automatically.
+
+See [the auth section in the README](../README.md#server-api-notes) for the
+401/403 semantics of the current nice4iot server.
+
+## Telemetry
+
+Telemetry is a **flat JSON object of numeric values** (the server's time-series
+backend expects this). `IotTelemetry` guarantees that shape:
+
+```cpp
+IotTelemetry t;
+t.add("temperature", 22.5).add("humidity", 40);
+iot.postTelemetry("sensors", t);
+```
+
+`iot.postSystemTelemetry()` posts a set of device-health values (uptime/sleep
+bookkeeping, battery voltage if configured, firmware version, …). Bodies are
+capped at 8 KiB by the server.
+
+## Configuration
+
+`config` mirrors a server-side JSON file into NVRAM. `config.updateConfig()`
+downloads it using `ETag`/`If-None-Match` (and `Last-Modified`), so an unchanged
+file is not transferred again. Values are read back with
+`config.getConfigInt32/Bool/String(...)`.
+
+`IotConfigValue<T>` binds a C++ variable to a config key: it reads from the
+config/NVRAM on construction and can be assigned back, which keeps the library's
+own tunables (log level, sleep duration, panic parameters, …) configurable from
+the server without extra plumbing.
+
+## Logging
+
+`logger` writes to the serial console and, unless disabled, **buffers** log
+messages in RAM and sends them to the server in a single request. This keeps the
+active window short (one request instead of one per line) and avoids a
+re-entrancy hazard (logging from inside an API request).
+
+- `logger.setBuffered(false)` sends each line immediately.
+- `logger.flush()` forces the buffer out; it is called automatically at all
+  cycle exit points (`deepSleep`/`restart`/`shutdown`/`end`) and from `panic()`.
+- If the buffer would exceed the server's size limit it is flushed early; if
+  there is no connectivity the buffer is kept for the next successful flush.
+
+## Persistence: NVRAM vs. RTC RAM
+
+Two storage tiers survive a deep-sleep cycle:
+
+- **NVRAM (flash / Preferences):** survives power loss. Holds the provisioning
+  and device tokens, config values and cache validators (ETag/Last-Modified). The
+  NVS handle is opened once and kept open to avoid flash churn.
+- **RTC RAM:** survives deep sleep but not power loss; cheap and fast. Used for
+  short-lived bookkeeping across cycles (e.g. sleep accounting).
+
+## Firmware updates (OTA)
+
+`api.updateFirmware()` does a conditional check (ETag/Last-Modified) and streams
+a new image only when one is available. The same TLS trust configuration used
+for API calls applies to the OTA download.
+
+## TLS server trust
+
+For an `https://` API URL you must pick exactly how the server certificate is
+verified: `api.setCACert()` (pin your CA — the usual choice for a self-hosted
+server), `api.setCACertBundle()` (verify against the public Mozilla root bundle),
+or `api.setCertInsecure()` (development only — no verification). If none is set,
+the handshake fails; the library detects this and logs an explicit, one-time
+diagnostic instead of leaving you with an opaque transport error.
+
+## IotResult: three outcomes, not one int
+
+The low-level `api.*` request methods return a raw `int`: negative values are ESP
+transport errors (e.g. connection refused, timeout), non-negative values are HTTP
+status codes. That single int conflates three genuinely different outcomes, which
+is why raw status codes are easy to ignore.
+
+`IotResult` disentangles them into **`Ok` (2xx) / `HttpError` / `TransportError`**,
+keeps the underlying `.httpStatus` / `.transportError` available, and provides an
+explicit `operator bool` so `if (!iot.postTelemetry(...))` reads correctly. The
+high-level operations whose notion of success is simply "2xx" return `IotResult`:
+`postTelemetry()`, `postSystemTelemetry()`, `apiForward()`, `updateProvisioning()`
+and `uploadFile()`.
+
+Because `IotResult` is implicitly constructible from an `int`, any low-level call
+can be viewed as a result without a new API — `IotResult r = api.apiGet(...)`. Two
+synthetic statuses (`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`,
+both ≥ 600 so they never collide with real codes) let provisioning report
+client-side failures through the same type.
+
+## Failure handling: panic and backoff
+
+`iot.panic(...)` is the library's escalating failure strategy for a device with
+nobody to look at it. It logs, flushes, and goes back to deep sleep for an
+increasing duration (configurable base, factor and cap), so a device that cannot
+reach its server backs off instead of hammering it or draining its battery.
+`iot.startWatchdog()`/`resetWatchdog()` guard against a hung wakeup cycle.
