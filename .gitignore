@@ -33,3 +33,7 @@
 
 # PlatformIO
 .pio/
+
+# Build-time secrets (copy secrets-example.ini -> secrets.ini)
+secrets.ini
+

@@ -43,13 +43,63 @@ IotApi::IotApi()
 
 void IotApi::begin()
 {
-    // read preferences
+    // load the seeded API configuration and the runtime tokens from NVS
     Preferences preferences;
     preferences.begin("iot", true);
+    _setApiUrl(preferences.getString(_nvram_api_url_key, ""));
+    _projectName = preferences.getString(_nvram_project_key, "");
     _provisioningToken = preferences.getString(_nvram_provisioning_token_key, "");
     _deviceToken = preferences.getString(_nvram_device_token_key, "");
     _deviceTokenExpiresAt = preferences.getLong64(_nvram_device_token_expiry_key, 0);
+    uint8_t tlsMode = preferences.getUChar(_nvram_tls_mode_key, (uint8_t)IotTlsMode::None);
+    _caCertPem = preferences.getString(_nvram_ca_cert_key, "");
+    _clientCertPem = preferences.getString(_nvram_client_cert_key, "");
+    _clientKeyPem = preferences.getString(_nvram_client_key_key, "");
     preferences.end();
+
+    // apply TLS after the base URL is known (the secure client is created lazily
+    // from the https:// URL)
+    _applyTls((IotTlsMode)tlsMode);
+}
+
+void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force)
+{
+    iotSeedString(preferences, _nvram_api_url_key, cfg.apiUrl, force);
+    iotSeedString(preferences, _nvram_project_key, cfg.projectName, force);
+    iotSeedString(preferences, _nvram_provisioning_token_key, cfg.provisioningToken, force);
+    iotSeedString(preferences, _nvram_ca_cert_key, cfg.caCertPem, force);
+    iotSeedString(preferences, _nvram_client_cert_key, cfg.clientCertPem, force);
+    iotSeedString(preferences, _nvram_client_key_key, cfg.clientKeyPem, force);
+    if (cfg.tlsMode != IotTlsMode::None && (force || !preferences.isKey(_nvram_tls_mode_key)))
+    {
+        preferences.putUChar(_nvram_tls_mode_key, (uint8_t)cfg.tlsMode);
+    }
+}
+
+void IotApi::_applyTls(IotTlsMode mode)
+{
+    switch (mode)
+    {
+        case IotTlsMode::Bundle:
+            _applyCACertBundle();
+            break;
+        case IotTlsMode::Insecure:
+            _applyCertInsecure();
+            break;
+        case IotTlsMode::CaPin:
+            if (!_caCertPem.isEmpty())
+            {
+                _applyCACert(_caCertPem.c_str());
+            }
+            if (!_clientCertPem.isEmpty() && !_clientKeyPem.isEmpty())
+            {
+                _applyClientCertificateAndKey(_clientCertPem.c_str(), _clientKeyPem.c_str());
+            }
+            break;
+        case IotTlsMode::None:
+        default:
+            break;
+    }
 }
 
 void IotApi::end()
@@ -116,18 +166,13 @@ HTTPClient & IotApi::_getHttpClient()
 // API configuration
 // *****************************************************************************
 
-void IotApi::setApiUrl(const String& apiBaseurl)
+void IotApi::_setApiUrl(const String& apiBaseurl)
 {
     _baseUrl = apiBaseurl;
-    if (!_baseUrl.endsWith("/"))
+    if (!_baseUrl.isEmpty() && !_baseUrl.endsWith("/"))
     {
         _baseUrl += "/";
     }
-}
-
-void IotApi::setProjectName(const String& project)
-{
-    _projectName = project;
 }
 
 void IotApi::setDeviceName(const String& device)
@@ -140,7 +185,7 @@ void IotApi::setApiHeader(const std::map<String, String>& header)
     _defaultRequestHeader = header;
 }
 
-void IotApi::setCACert(const char *server_certificate)
+void IotApi::_applyCACert(const char *server_certificate)
 {
     if (_isWiFiClientSecure())
     {
@@ -148,11 +193,11 @@ void IotApi::setCACert(const char *server_certificate)
         ota.setServerCert(server_certificate, false);
         _tlsServerTrustConfigured = true;
     } else {
-        log_e("setCACert: WiFiClientSecure not used");
+        log_e("_applyCACert: WiFiClientSecure not used");
     }
 }
 
-void IotApi::setCACertBundle()
+void IotApi::_applyCACertBundle()
 {
     // symbols of the certificate bundle embedded by the build
     // (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y, default for arduino-esp32)
@@ -165,11 +210,11 @@ void IotApi::setCACertBundle()
         ota.setServerCertBundle(true);
         _tlsServerTrustConfigured = true;
     } else {
-        log_e("setCACertBundle: WiFiClientSecure not used");
+        log_e("_applyCACertBundle: WiFiClientSecure not used");
     }
 }
 
-void IotApi::setClientCertificateAndKey(const char *client_certificate, const char *client_key)
+void IotApi::_applyClientCertificateAndKey(const char *client_certificate, const char *client_key)
 {
     if (_isWiFiClientSecure())
     {
@@ -177,21 +222,21 @@ void IotApi::setClientCertificateAndKey(const char *client_certificate, const ch
         _wifiClientSecurePtr->setPrivateKey(client_key);
         ota.setClientCert(client_certificate, client_key, nullptr);
     } else {
-        log_e("setClientCertificateAndKey: WiFiClientSecure not used");
+        log_e("_applyClientCertificateAndKey: WiFiClientSecure not used");
     }
 }
 
-void IotApi::setCertInsecure()
+void IotApi::_applyCertInsecure()
 {
-    log_w("setCertInsecure: TLS server authentication is DISABLED - the connection "
-          "is encrypted but the server identity is not verified. Do not use in "
-          "production; provide a CA certificate via setCACert() instead.");
+    log_w("TLS server authentication is DISABLED (seeded tlsMode Insecure) - the "
+          "connection is encrypted but the server identity is not verified. Do not "
+          "use in production; seed a CA certificate (tlsMode CaPin) instead.");
     if (_isWiFiClientSecure())
     {
         _wifiClientSecurePtr->setInsecure();
         _tlsServerTrustConfigured = true;
     } else {
-        log_e("setCertInsecure: WiFiClientSecure not used");
+        log_e("_applyCertInsecure: WiFiClientSecure not used");
     }
     ota.setServerCert(nullptr, true);
     ota.setClientCert(nullptr, nullptr, nullptr);
@@ -202,10 +247,10 @@ void IotApi::_warnIfTlsTrustMissing()
     if (_isWiFiClientSecure() && !_tlsServerTrustConfigured && !_tlsTrustWarningLogged)
     {
         _tlsTrustWarningLogged = true;
-        log_e("TLS: https API URL but no server trust configured - the handshake "
-              "will fail with an opaque transport error. Call setCACert() with "
-              "your server's CA, setCACertBundle() for public CAs, or (development "
-              "only) setCertInsecure().");
+        log_e("TLS: https API URL but no server trust seeded - the handshake will "
+              "fail with an opaque transport error. Seed a TLS mode via "
+              "iot.seedCredentials() (CaPin with your CA, Bundle for public CAs, "
+              "or - development only - Insecure).");
     }
 }
 
@@ -235,34 +280,8 @@ void IotApi::setRequestTimeout_ms(uint16_t timeout_ms)
 // Provisioning
 // *****************************************************************************
 
-void IotApi::setProvisioningToken(const String& provisioningToken)
-{
-    if (_provisioningToken == provisioningToken)
-    {
-        return;
-    }
-    _provisioningToken = provisioningToken;
-
-    Preferences preferences;
-    preferences.begin("iot", false);
-    preferences.putString(_nvram_provisioning_token_key, _provisioningToken.c_str());
-    preferences.end();
-}
-
-bool IotApi::setProvisioningTokenIfEmpty(const String& provisioningToken)
-{
-    if (!_provisioningToken.isEmpty())
-    {
-        return false;
-    }
-    setProvisioningToken(provisioningToken);
-    return true;
-}
-
-void IotApi::clearProvisioningToken()
-{
-    setProvisioningToken("");
-}
+// The provisioning token is seeded into NVS by Iot::seedCredentials() and loaded
+// by begin(); it is no longer set at runtime.
 
 void IotApi::setDeviceToken(const String& deviceToken, time_t expiresAt)
 {
@@ -457,7 +476,7 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
         // a missing TLS server trust is a common, hard-to-attribute cause of
         // transport errors on https - point at it explicitly
         const char *tlsHint = (_isWiFiClientSecure() && !_tlsServerTrustConfigured)
-            ? " (no TLS server trust configured: call setCACert(), setCACertBundle() or setCertInsecure())"
+            ? " (no TLS server trust seeded: set tlsMode via iot.seedCredentials())"
             : "";
         log_e("HTTP %s url=%s -> status=%d error=%s%s",
             requestType, url.c_str(), httpStatusCode,

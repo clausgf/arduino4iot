@@ -51,8 +51,8 @@ the host (see `test/`).
 The device authenticates to the server with a short-lived **bearer token**. It
 is obtained by exchanging a long-lived **provisioning token** at `/api/provision`.
 
-- The provisioning token is set once (`api.setProvisioningTokenIfEmpty(...)`) and
-  stored in NVRAM.
+- The provisioning token is seeded from a build-time default into NVRAM (see
+  *Configuration & secrets* below).
 - `api.updateProvisioning()` returns the device token if the current one is still
   valid, or requests a new one when it is missing or about to expire. The expiry
   is read from the server's `expiresIn` field; the renewal margin is configurable
@@ -79,7 +79,30 @@ iot.postTelemetry("sensors", t);
 bookkeeping, battery voltage if configured, firmware version, …). Bodies are
 capped at 8 KiB by the server.
 
-## Configuration
+## Configuration & secrets (seeding)
+
+There are two distinct kinds of configuration, and it matters which is which:
+
+- **Bootstrap values** a device needs *before* it can reach the server — WiFi
+  credentials, API endpoint, project name, provisioning token and TLS trust.
+  These cannot come from `config.json` (you need them to fetch it in the first
+  place), so they are **seeded** from build-time `-D` defaults into NVS by
+  `iot.seedCredentials({...})`, called once before `begin()`. Each value is
+  written only if its NVS key is absent, or when `IotSeedConfig::seedGeneration`
+  exceeds the value stored in NVS (a deliberate re-seed via a new firmware).
+- **Runtime config** — everything in `config.json`, handled by `config` below.
+
+Because a secretless build passes empty defaults (a no-op), the seeded values in
+NVS survive a firmware update built without secrets — this is what lets a public
+CI produce update images. `iot.begin()` loads WiFi and the API/TLS configuration
+from NVS; `iot.factoryReset()` erases all persisted state. For https, the TLS
+trust (CA-pin PEM, the public bundle, insecure, optional client cert/key) is
+seeded via the same struct and applied by `begin()`; the seeded PEMs are held in
+`api` members for the object lifetime because the TLS stack keeps the pointers
+rather than copying. None of the bootstrap values are changeable via `config.json`.
+See [examples/README.md](../examples/README.md) for the build wiring.
+
+## Configuration (runtime, config.json)
 
 `config` mirrors a server-side JSON file into NVRAM. `config.updateConfig()`
 downloads it using `ETag`/`If-None-Match` (and `Last-Modified`), so an unchanged
@@ -142,10 +165,11 @@ for API calls applies to the OTA download.
 
 ## TLS server trust
 
-For an `https://` API URL you must pick exactly how the server certificate is
-verified: `api.setCACert()` (pin your CA — the usual choice for a self-hosted
-server), `api.setCACertBundle()` (verify against the public Mozilla root bundle),
-or `api.setCertInsecure()` (development only — no verification). If none is set,
+For an `https://` API URL you must seed exactly how the server certificate is
+verified, via the `tlsMode` field of `seedCredentials()`: `IotTlsMode::CaPin`
+with `caCertPem` (pin your CA — the usual choice for a self-hosted server),
+`IotTlsMode::Bundle` (verify against the public Mozilla root bundle), or
+`IotTlsMode::Insecure` (development only — no verification). If none is seeded,
 the handshake fails; the library detects this and logs an explicit, one-time
 diagnostic instead of leaving you with an opaque transport error.
 

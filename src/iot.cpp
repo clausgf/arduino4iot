@@ -123,9 +123,9 @@ Iot::Iot() :
     }
 }
 
-void Iot::begin()
+void Iot::_initSubsystems()
 {
-    setLed(true);  
+    setLed(true);
 
     // initialize persistent variables
     _bootCount.begin();
@@ -169,12 +169,57 @@ void Iot::begin()
     api.begin();
 }
 
-bool Iot::begin(const char *ssid, const char *password, unsigned long timeout_ms)
+bool Iot::begin(unsigned long timeout_ms)
 {
-    bool success = connectWifi(ssid, password, timeout_ms);
-    begin();
+    // WiFi credentials were seeded into NVS by seedCredentials()
+    Preferences preferences;
+    preferences.begin("iot", true);
+    String ssid = preferences.getString("wifiSsid", "");
+    String password = preferences.getString("wifiPass", "");
+    preferences.end();
+
+    bool success = connectWifi(ssid.c_str(), password.c_str(), timeout_ms);
+    _initSubsystems();
     success = success && syncNtpTime();
     return success;
+}
+
+void Iot::seedCredentials(const IotSeedConfig& cfg)
+{
+    Preferences preferences;
+    if (!preferences.begin("iot", false))
+    {
+        log_e("seedCredentials: cannot open NVS");
+        return;
+    }
+    uint32_t storedGeneration = preferences.getUInt("seedGen", 0);
+    bool force = cfg.seedGeneration > storedGeneration;
+
+    iotSeedString(preferences, "wifiSsid", cfg.wifiSsid, force);
+    iotSeedString(preferences, "wifiPass", cfg.wifiPassword, force);
+    api._seedFromConfig(preferences, cfg, force);
+
+    if (force)
+    {
+        preferences.putUInt("seedGen", cfg.seedGeneration);
+        log_w("seedCredentials: applied seed generation %u", (unsigned)cfg.seedGeneration);
+    }
+    preferences.end();
+}
+
+void Iot::factoryReset()
+{
+    log_w("factoryReset: erasing all persisted NVS state");
+    const char* namespaces[] = { "iot", "iot-cfg", "iot-var" };
+    for (const char* ns : namespaces)
+    {
+        Preferences preferences;
+        if (preferences.begin(ns, false))
+        {
+            preferences.clear();
+            preferences.end();
+        }
+    }
 }
 
 void Iot::end()

@@ -22,7 +22,7 @@
 
 // *****************************************************************************
 
-#define IOT_VERSION_MAJOR 2
+#define IOT_VERSION_MAJOR 3
 #define IOT_VERSION_MINOR 0
 #define IOT_VERSION_PATCH 0
 
@@ -38,38 +38,39 @@ public:
     Iot();
 
     /**
-     * Initialize the IoT system including all subsystems 
-     * and complete its setup.
-     * 
-     * Call begin() after setting all parameters and 
-     * before calling any other function. It configures the system
-     * by reading configuration values (class IotConfigValue) and
-     * persistent values (class IotPersistableValue) used within the
-     * library from RTC RAM and/or NVRAM.The application can modify these
-     * values afterwards.
-     * 
-     * The log level is configured using IotLogger::setLogLevel() according
-     * to the configuration value *log_level*.
-     * 
-     * If battery voltage measurement is enabled as configured using
-     * setBattery(), setBatteryMin_mV(), the battery voltage is
-     * measured and checked. Undervoltage triggers a panic().
-     * 
-     * begin() starts watchdog supervision for the application main task, startWatchdog().
-     * 
-     * If you need persistent
-     * persistent storage other than RTC RAM, call
-     * setPreferedPersistentStorage() before calling begin().
-     * 
-     * WiFi must be connected before calling begin() or the device
-     * name will not be determined correctly.
+     * Connect WiFi (using the seeded credentials from NVS), initialize the IoT
+     * system and sync the NTP time.
+     *
+     * Call seedCredentials() before this (once, with build-time defaults) so the
+     * WiFi credentials and API configuration are present in NVS. begin() reads
+     * configuration values (class IotConfigValue) and persistent values from RTC
+     * RAM / NVRAM, sets the log level from the *log_level* config value, checks
+     * the battery (undervoltage triggers panic()), and starts the watchdog.
+     *
+     * @param timeout_ms the WiFi connect timeout in milliseconds
+     * @return true if WiFi connected and NTP sync succeeded
      */
-    void begin();
+    bool begin(unsigned long timeout_ms = 10000);
 
     /**
-     * Connect WiFi, initialize the IoT system, and sync the NTP time.
+     * Seed the build-time bootstrap configuration (WiFi credentials, API
+     * endpoint, project name, provisioning token, TLS trust) into NVS.
+     *
+     * Each non-empty value is written only if the corresponding NVS key is
+     * absent (or if cfg.seedGeneration exceeds the value stored in NVS, which
+     * forces an overwrite - see IotSeedConfig). A secretless firmware built
+     * without the -D defaults passes empty values and thus leaves NVS untouched,
+     * which is what allows flashing updates without secrets. Call once, before
+     * begin(). Use factoryReset() to clear everything.
      */
-    bool begin(const char *ssid, const char *password, unsigned long timeout_ms = 10000);
+    void seedCredentials(const IotSeedConfig& cfg);
+
+    /**
+     * Erase all persisted state (seeded configuration, tokens, config values and
+     * persistent variables) from NVS. After this the device must boot a firmware
+     * that re-seeds the configuration. Does not touch RTC RAM.
+     */
+    void factoryReset();
 
     /**
      * Shut down the IoT system.
@@ -524,6 +525,10 @@ private:
     IotConfigValue<int32_t> _panicSleepDurationMax_s;
 
     static void _ntpSyncCallback(struct timeval *tv);
+
+    /// Initialize all subsystems (config, logger, api, watchdog, battery check)
+    /// after WiFi is connected. Called by begin().
+    void _initSubsystems();
 };
 
 extern Iot iot;

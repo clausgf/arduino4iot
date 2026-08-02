@@ -30,7 +30,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
 ## Getting started
 
-1. Add the platform and the library to your `platformio.ini`. The library requires arduino-esp32 3.x, which is available for PlatformIO through the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform (the registry version of the `espressif32` platform only ships arduino-esp32 2.x):
+1. Add the platform and the library to your `platformio.ini`. The library requires arduino-esp32 3.x (via the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform — the registry `espressif32` only ships 2.x) and C++20:
    ```ini
    [env:esp32dev]
    platform = https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20/platform-espressif32.zip
@@ -38,13 +38,20 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
    framework = arduino
    lib_deps =
        https://github.com/clausgf/arduino4iot
+   build_flags = -std=gnu++20
    ```
-2. Initialize the library and do something useful in your `setup()` function (see `examples/main.cpp` for a complete example):
+2. Provide the deployment-specific configuration at build time and initialize the library in `setup()` (see [`examples/`](examples/) for a complete project including the secrets wiring):
    ```cpp
-   api.setApiUrl("http://192.168.178.20:8000/api");
-   api.setProjectName("my-project");
-   api.setProvisioningTokenIfEmpty("P-102-FX61O...==");
-   if (!iot.begin(WIFI_SSID, WIFI_PASSWORD))
+   // values come from -D defines (empty on a secretless build), seeded into NVS
+   iot.seedCredentials({
+       .wifiSsid          = IOT_WIFI_SSID,
+       .wifiPassword      = IOT_WIFI_PASSWORD,
+       .apiUrl            = IOT_API_URL,
+       .projectName       = IOT_PROJECT,
+       .provisioningToken = IOT_PROVISIONING_TOKEN,
+       .seedGeneration    = IOT_SEED_GENERATION,
+   });
+   if (!iot.begin())                     // WiFi from NVS, subsystems, NTP
    {
        iot.panic("*** PANIC *** WiFi connection or NTP sync failed");
    }
@@ -64,6 +71,17 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
    iot.deepSleep();
    ```
+
+## Configuration & secrets
+
+Deployment-specific values a device needs *before* it can reach the server — WiFi credentials, API endpoint, project name, provisioning token and TLS trust — are **not** set at runtime and **cannot** be changed via `config.json`. They are provided once at build time via `-D` defines, written into NVS by `iot.seedCredentials()` on the first boot (each value only if absent, or on a `seedGeneration` bump), and then left untouched. Because a secretless build passes empty defaults (a no-op), you can flash firmware updates without secrets — e.g. from a public CI — and the device reuses the values already in its NVS.
+
+- **Initial flash:** build with the secrets (see [`examples/secrets-example.ini`](examples/secrets-example.ini)) once to seed NVS.
+- **Updates:** build without secrets; NVS is preserved.
+- **Reset:** bump `IOT_SEED_GENERATION` (overwrite via a new firmware) or call `iot.factoryReset()` (erase all NVS state).
+- **https:** seed a TLS mode/cert via the `tlsMode` / `caCertPem` fields (`CaPin` / `Bundle` / `Insecure`).
+
+See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/README.md) for details.
 
 ## Server API notes
 
@@ -106,6 +124,13 @@ The following topics are known limitations that are being addressed on the serve
 - **Telemetry backend (nice4iot):** non-numeric telemetry fields are silently dropped by the server, and measurements are always timestamped with the server arrival time — devices cannot backfill buffered measurements with their own timestamps. Both are being improved in nice4iot; the library already sends non-numeric system telemetry fields (`time`, `firmware_version`, `firmware_sha256`) for backends that support them.
 - **Offline buffering of telemetry (to be discussed):** if the server or WiFi is temporarily unreachable, the measurements of a whole wakeup cycle are lost. A small ring buffer in RTC RAM (survives deep sleep) could hold a few telemetry payloads and re-send them on the next successful cycle. This is coupled to the device-timestamp topic above — re-sent measurements need their original timestamp, otherwise they all collapse onto the server arrival time. Design questions still open: buffer location and size, eviction policy, and interaction with the flat-JSON telemetry format.
 - **MQTT transport:** nice4iot supports telemetry, logging and file transfer via MQTT for always-on devices. This library currently implements the HTTP transport only, which remains the best fit for deep-sleep cycles; an optional MQTT transport is future work.
+
+## Migration to version 3.x
+
+- **Configuration is now seeded from build-time defaults into NVS.** The runtime setters `api.setApiUrl()`, `api.setProjectName()`, `api.setProvisioningToken()/setProvisioningTokenIfEmpty()` and the TLS setters `api.setCACert()/setCACertBundle()/setCertInsecure()/setClientCertificateAndKey()` are **removed from the public API**. Instead, call `iot.seedCredentials({...})` once with `-D` defaults; the values (including WiFi credentials and TLS trust) are loaded from NVS by `begin()`. None of these can be changed via `config.json`.
+- **`iot.begin(ssid, password)` is replaced by `iot.begin(timeout_ms = 10000)`**, which reads the WiFi credentials from NVS (seeded via `seedCredentials()`). The former no-argument `iot.begin()` (subsystem init only) is now internal.
+- **New:** `iot.factoryReset()` erases all persisted NVS state; `IotSeedConfig::seedGeneration` forces a re-seed of changed values via a new firmware.
+- **C++20 is now required** (`-std=gnu++20`); the seed struct uses designated initializers.
 
 ## Migration to version 2.x
 

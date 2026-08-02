@@ -14,8 +14,11 @@
 #include <WiFiClientSecure.h>
 
 #include "iot_result.h"
+#include "iot_seed.h"
 
 // *****************************************************************************
+
+class Iot; // for friend access to the seeding internals
 
 class IotApi
 {
@@ -25,6 +28,11 @@ public:
     IotApi& operator=(const IotApi&) = delete;
 
     IotApi();
+
+    /**
+     * Load the API configuration (endpoint, project, provisioning/device token,
+     * TLS trust) from NVS, where it was placed by Iot::seedCredentials().
+     */
     void begin();
     void end();
 
@@ -32,28 +40,6 @@ public:
     // **********************************************************************
     // API configuration
     // **********************************************************************
-
-    /**
-     * Set the host and the base URL for API calls.
-     *
-     * Base URLs starting with "https://" are considered secure and
-     * use TLS via WiFiClientSecure.
-     * Base URLs starting with "http://" are considered insecure
-     * and use plain HTTP via WifiClient.
-     *
-     * This method must be called before any other API call.
-     *
-     * @param apiBaseurl the full base URL, e.g. "https://api.example.com/api/"
-     */
-    void setApiUrl(const String& apiBaseurl);
-
-    /**
-     * Set the project name, e.g. "my-project".
-     *
-     * The project name is replaced for {project} in actual urls generated
-     * for API calls, @see getApiUrlForPath().
-     */
-    void setProjectName(const String& project);
 
     /**
      * Set the device name, e.g. "my-device".
@@ -75,54 +61,10 @@ public:
      */
     void setApiHeader(const std::map<String, String>& header = {});
 
-    /**
-     * Provide the CA certificate for checking server certificates
-     * in TLS connections.
-     * This method silently fails if the WiFi client is not an instance
-     * of WiFiClientSecure.
-     */
-    void setCACert(const char *serverCert);
-
-    /**
-     * Optionally provide a client certificate and key for TLS
-     * connections.
-     * This method silently fails if the WiFi client is not an instance
-     * of WiFiClientSecure.
-     */
-    void setClientCertificateAndKey(const char *clientCert, const char *clientKey);
-
-    /**
-     * Use the ESP-IDF attested Mozilla root CA bundle to verify the server
-     * certificate, analogous to a browser trust store. This is convenient for
-     * servers with a certificate signed by a well-known public CA (e.g. Let's
-     * Encrypt) without pinning a specific CA via setCACert().
-     *
-     * Note that a self-hosted nice4iot server with a private/self-signed
-     * certificate is usually NOT covered by the public bundle - use setCACert()
-     * with your own CA in that case.
-     *
-     * Requires the certificate bundle to be embedded in the build, which is the
-     * default for arduino-esp32 (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y). The
-     * bundle is applied to both API requests and OTA firmware downloads.
-     *
-     * This method silently fails if the WiFi client is not an instance
-     * of WiFiClientSecure.
-     */
-    void setCACertBundle();
-
-    /**
-     * Deactivate checking the server certificate for TLS connections.
-     *
-     * WARNING: this disables server authentication. The connection is still
-     * encrypted, but the server identity is not verified, so the device is
-     * vulnerable to man-in-the-middle attacks. Do not use in production;
-     * provide a CA certificate via setCACert() instead. This method logs a
-     * warning on every call.
-     *
-     * This method silently fails if the WiFi client is not an instance
-     * of WiFiClientSecure.
-     */
-    void setCertInsecure();
+    // Note: the API endpoint, project name, provisioning token and TLS trust
+    // (CA cert / bundle / insecure / client cert) are no longer set at runtime.
+    // They are seeded from build-time defaults into NVS via
+    // Iot::seedCredentials() and loaded by begin(). See docs/concepts.md.
 
     /**
      * Close the HTTP connection to the server.
@@ -159,31 +101,9 @@ public:
     // Provisioning
     // **********************************************************************
 
-    /**
-     * Set the provisioning token, e.g. "1234567890abcdef".
-     *
-     * This information is stored in non-volatile NVRAM and restored on the
-     * next startup.
-     */
-    void setProvisioningToken(const String& provisioningToken);
-
-    /**
-     * Set the provisioning key like @see setProvisioningToken() if no
-     * other provisioning key is set yet.
-     *
-     * The method does not overwrite an existing provisioning token.
-     * This is useful to have a default for first-time provisioning
-     * which can be overwritten at runtime.
-     *
-     * @return true if new token was set, if an existing
-     * provisioning token was not replaced.
-     */
-    bool setProvisioningTokenIfEmpty(const String& provisioningToken);
-
-    /**
-     * Clear the provisioning token
-     */
-    void clearProvisioningToken();
+    // Note: the provisioning token is seeded from a build-time default into NVS
+    // via Iot::seedCredentials() and loaded by begin(); it is no longer set at
+    // runtime.
 
     /**
      * Set the device token for API access.
@@ -407,12 +327,20 @@ public:
     // P r i v a t e
     // **********************************************************************
 
+    friend class Iot; // Iot::seedCredentials() writes the seeded API config
+
 private:
     const char * _nvram_provisioning_token_key = "provToken";
     const char * _nvram_device_token_key = "deviceToken";
     const char * _nvram_device_token_expiry_key = "deviceTokExp";
     const char * _nvram_firmware_etag_key = "firmwareEtag";
     const char * _nvram_firmware_date_key = "firmwareDate";
+    const char * _nvram_api_url_key = "apiUrl";
+    const char * _nvram_project_key = "project";
+    const char * _nvram_tls_mode_key = "tlsMode";
+    const char * _nvram_ca_cert_key = "caCert";
+    const char * _nvram_client_cert_key = "cliCert";
+    const char * _nvram_client_key_key = "cliKey";
 
     String _baseUrl;
     std::map<String, String> _defaultRequestHeader;
@@ -428,8 +356,28 @@ private:
     WiFiClient * _wifiClientPtr;
     HTTPClient * _httpClientPtr;
 
-    bool _tlsServerTrustConfigured; ///< set by setCACert/setCACertBundle/setCertInsecure
+    // seeded TLS material kept alive for the object lifetime: the core stores the
+    // cert pointers (it does not copy them), so these members must outlive use
+    String _caCertPem;
+    String _clientCertPem;
+    String _clientKeyPem;
+
+    bool _tlsServerTrustConfigured; ///< set when a TLS trust was applied in begin()
     bool _tlsTrustWarningLogged;    ///< guard so the missing-trust warning is logged once
+
+    /// Write the seeded API config (endpoint, project, token, TLS) to NVS.
+    /// Called by Iot::seedCredentials() with a shared open "iot" handle.
+    void _seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force);
+
+    /// Set the base URL in RAM, normalizing a trailing slash.
+    void _setApiUrl(const String& apiBaseurl);
+
+    /// Apply the seeded TLS trust to the WiFiClientSecure and the OTA client.
+    void _applyTls(IotTlsMode mode);
+    void _applyCACert(const char *serverCert);
+    void _applyCACertBundle();
+    void _applyCertInsecure();
+    void _applyClientCertificateAndKey(const char *clientCert, const char *clientKey);
 
     /**
      * @return a WiFiClient instance, either secure or insecure, depending
@@ -444,9 +392,8 @@ private:
 
     /**
      * Log a single clear error if the API URL is https but no TLS server trust
-     * was configured (neither setCACert(), setCACertBundle() nor
-     * setCertInsecure()). Without it the TLS handshake fails with an opaque
-     * transport error that is hard to attribute.
+     * was seeded (tlsMode None with an https endpoint). Without it the TLS
+     * handshake fails with an opaque transport error that is hard to attribute.
      */
     void _warnIfTlsTrustMissing();
 
