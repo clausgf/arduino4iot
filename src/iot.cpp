@@ -296,8 +296,11 @@ String Iot::getDeviceId()
         // The device id doubles as the device name for the API. nice4iot
         // requires device names to match ^[a-zA-Z_][a-zA-Z0-9_]*$ (no hyphen),
         // so use an underscore separator, e.g. "e32_aabbccddeeff".
+        // local (not static) buffer: it is copied into _deviceId immediately,
+        // and esp_netif_set_hostname() copies the string too, so no shared
+        // state is left to race between tasks
         const int ID_MAXLEN = 17;
-        static char id_buf[ID_MAXLEN];
+        char id_buf[ID_MAXLEN];
         snprintf(id_buf, ID_MAXLEN, "e32_%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
         _deviceId = id_buf;
@@ -318,10 +321,12 @@ String Iot::getTimeIso(time_t time)
     struct tm timeinfo;
     gmtime_r(&time, &timeinfo);
 
+    // local (not static) buffer: it is copied into the returned String right
+    // away, so there is no shared state to race between concurrent callers
     const int BUFLEN = 32;
-    static char buf[BUFLEN];
-    snprintf(buf, BUFLEN, "%04d-%02d-%02dT%02d:%02d:%02dZ", 
-        (timeinfo.tm_year + 1900) % 10000, (timeinfo.tm_mon + 1) % 100, timeinfo.tm_mday % 100, 
+    char buf[BUFLEN];
+    snprintf(buf, BUFLEN, "%04d-%02d-%02dT%02d:%02d:%02dZ",
+        (timeinfo.tm_year + 1900) % 10000, (timeinfo.tm_mon + 1) % 100, timeinfo.tm_mday % 100,
         timeinfo.tm_hour % 100, timeinfo.tm_min % 100, timeinfo.tm_sec % 100);
     return buf;
 }
