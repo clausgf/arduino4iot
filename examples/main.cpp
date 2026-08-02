@@ -29,6 +29,13 @@ void setup()
     //   api.setCACertBundle();      // verify against the public Mozilla root bundle
     //   api.setCertInsecure();      // development only: no server verification
 
+    // shorten the per-wakeup radio-on time (both optional, both fall back
+    // automatically). Fast reconnect (BSSID/channel cache) is on by default;
+    // a static IP additionally skips DHCP - pass DNS too if the API URL uses a
+    // hostname instead of an IP literal:
+    //   iot.setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
+    //                   IPAddress(255,255,255,0));
+
     // connect WiFi, initialize all subsystems, sync NTP time
     if (!iot.begin(WIFI_SSID, WIFI_PASSWORD))
     {

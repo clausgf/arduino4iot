@@ -28,6 +28,9 @@ RTC_DATA_ATTR static int64_t rtcActiveDuration_ms = 0;
 RTC_DATA_ATTR static int32_t rtcLastSleepDuration_s = 0;
 RTC_DATA_ATTR static int64_t rtcNtpLastSyncTime = 0;
 RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s = -1;
+// last-good AP for a scan-free reconnect; channel 0 means "no valid cache"
+RTC_DATA_ATTR static int32_t rtcWifiChannel = 0;
+RTC_DATA_ATTR static uint8_t rtcWifiBssid[6] = {0};
 
 bool Iot::_isWatchdogEnabled = false;
 
@@ -83,6 +86,9 @@ Iot::Iot() :
     // initialize variables
     _deviceId = "";
     _battery_mV = -1;
+    _fastReconnect = true;
+    _staticIpConfigured = false;
+    _wifiConnectDuration_ms = 0;
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
     _firmwareSha256 = "";
@@ -182,6 +188,31 @@ void Iot::end()
 
 // *****************************************************************************
 
+void Iot::setStaticIp(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
+{
+    _ip = ip;
+    _gw = gateway;
+    _mask = subnet;
+    _dns1 = dns1;
+    _dns2 = dns2;
+    _staticIpConfigured = true;
+}
+
+void Iot::setFastReconnect(bool enabled)
+{
+    _fastReconnect = enabled;
+}
+
+// wait until connected or the deadline (absolute millis()) is reached
+static bool _waitForWifi(unsigned long deadline)
+{
+    while ( (WiFi.status() != WL_CONNECTED) && ((long)(millis() - deadline) < 0) )
+    {
+        delay(50);
+    }
+    return WiFi.status() == WL_CONNECTED;
+}
+
 bool Iot::connectWifi(const char *ssid, const char *password, unsigned long timeout_ms)
 {
     // immediately return if already connected
@@ -192,14 +223,46 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
     }
 
     log_i("Connecting to WiFi network ssid=%s timeout=%lu ms", ssid, timeout_ms);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-
-    // wait for connection
     unsigned long startTime = millis();
-    while ( (WiFi.status() != WL_CONNECTED) && ((millis() - startTime) < timeout_ms) )
+    unsigned long deadline = startTime + timeout_ms;
+
+    // avoid NVS wear: do not let the WiFi stack persist credentials on connect
+    WiFi.persistent(false);
+    WiFi.mode(WIFI_STA);
+    if (_staticIpConfigured)
     {
-        delay(50);
+        // skip DHCP
+        if (!WiFi.config(_ip, _gw, _mask, _dns1, _dns2))
+        {
+            log_e("WiFi static IP config failed, falling back to DHCP");
+        }
+    }
+
+    // 1. targeted reconnect to the cached AP (skips the all-channel scan)
+    bool triedFast = false;
+    if (_fastReconnect && rtcWifiChannel != 0)
+    {
+        triedFast = true;
+        log_i("Fast reconnect: channel=%ld bssid=%02x:%02x:%02x:%02x:%02x:%02x",
+            (long)rtcWifiChannel, rtcWifiBssid[0], rtcWifiBssid[1], rtcWifiBssid[2],
+            rtcWifiBssid[3], rtcWifiBssid[4], rtcWifiBssid[5]);
+        WiFi.begin(ssid, password, rtcWifiChannel, rtcWifiBssid);
+        // give the fast attempt at most half of the budget before falling back
+        _waitForWifi(startTime + timeout_ms / 2);
+    }
+
+    // 2. fallback: plain full-scan connect with the remaining time budget
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        if (triedFast)
+        {
+            log_w("Fast reconnect failed, retrying with a full scan");
+            rtcWifiChannel = 0; // invalidate the stale cache
+            WiFi.begin(ssid, password);
+        } else {
+            WiFi.begin(ssid, password);
+        }
+        _waitForWifi(deadline);
     }
 
     // check for failed connection due to timeout
@@ -209,7 +272,12 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
         return false;
     }
 
-    log_i("WiFi connected ip=%s", WiFi.localIP().toString().c_str());
+    // refresh the cache for the next wakeup
+    rtcWifiChannel = WiFi.channel();
+    memcpy(rtcWifiBssid, WiFi.BSSID(), 6);
+    _wifiConnectDuration_ms = millis() - startTime;
+
+    log_i("WiFi connected ip=%s after %lu ms", WiFi.localIP().toString().c_str(), _wifiConnectDuration_ms);
     return true;
 }
 
@@ -405,6 +473,7 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
         telemetry.add("battery_V", getBatteryVoltage_mV() / 1000.0);
     }
     telemetry.add("wifi_rssi", WiFi.RSSI());
+    telemetry.add("wifi_connect_ms", (int32_t)getWifiConnectDuration_ms());
     telemetry.add("boot_count", getBootCount());
     telemetry.add("active_ms", getActiveDuration_ms());
     telemetry.add("lastSleep_s", getLastSleepDuration_s());

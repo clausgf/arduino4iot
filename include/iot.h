@@ -78,11 +78,43 @@ public:
 
     /**
      * Connect to the given WiFi network and return true if successful.
-     * This function uses the standard Arduino WiFi library and blocks 
-     * until the connection is established or 
+     * This function uses the standard Arduino WiFi library and blocks
+     * until the connection is established or
      * the timeout (in milliseconds) is reached.
+     *
+     * For deep-sleep clients the connect dominates the radio-on time. Two opt-in
+     * optimizations shorten it (see setFastReconnect() and setStaticIp()); both
+     * fall back automatically to a plain full-scan/DHCP connect on failure.
      */
     bool connectWifi(const char *ssid, const char *password, unsigned long timeout_ms = 10000);
+
+    /**
+     * Configure a static IP so the connect can skip DHCP (a large part of the
+     * radio-on time each wakeup). When unset, DHCP is used as before.
+     *
+     * With a static IP the device no longer learns a DNS server from DHCP: pass
+     * dns1/dns2 if the API URL uses a hostname (not needed for an IP literal).
+     */
+    void setStaticIp(IPAddress ip, IPAddress gateway, IPAddress subnet,
+                     IPAddress dns1 = IPAddress((uint32_t)0), IPAddress dns2 = IPAddress((uint32_t)0));
+
+    /**
+     * Cache the last-good AP (BSSID + channel) in RTC RAM so the next connect
+     * after deep sleep can skip the all-channel scan. Enabled by default.
+     *
+     * Degrades gracefully: on a connect timeout the cache is discarded and a
+     * plain full-scan connect is retried, so roaming, an AP channel change or a
+     * moved device are handled transparently (at the cost of that one slow
+     * connect). Disable to always do a full scan.
+     */
+    void setFastReconnect(bool enabled);
+
+    /**
+     * @return the duration of the last successful WiFi connect in milliseconds,
+     * or 0 if not connected this cycle. Useful to verify the fast-reconnect and
+     * static-IP savings via telemetry (also posted as "wifi_connect_ms").
+     */
+    unsigned long getWifiConnectDuration_ms() { return _wifiConnectDuration_ms; }
 
     /**
      * Return a unique device ID which is derived from the WiFi MAC address,
@@ -449,6 +481,12 @@ private:
     String _firmwareVersion;
     String _firmwareSha256;
     static bool _isWatchdogEnabled;
+
+    // WiFi fast-connect
+    bool _fastReconnect;
+    bool _staticIpConfigured;
+    IPAddress _ip, _gw, _mask, _dns1, _dns2;
+    unsigned long _wifiConnectDuration_ms;
     std::function<void(int)> _deepSleepHandler;
     std::function<void()> _restartHandler;
     std::function<void()> _shutdownHandler;
