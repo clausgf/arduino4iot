@@ -365,9 +365,10 @@ public:
      * @param filename the target filename on the server
      * @param content the file content
      * @param contentType the content type, defaults to "application/octet-stream"
-     * @return true if the upload was successful
+     * @return a typed result: Ok on 2xx, otherwise inspect .httpStatus (e.g. 413
+     *         if the file exceeds the server's size limit) or .transportError
      */
-    bool uploadFile(const String& filename, const String& content, const String& contentType = "application/octet-stream");
+    IotResult uploadFile(const String& filename, const String& content, const String& contentType = "application/octet-stream");
 
     /**
      * Send a HEAD request to the given URL and check if the server has an

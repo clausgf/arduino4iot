@@ -560,12 +560,13 @@ IotResult IotApi::apiForward(String& oResponse, const String& forwardingName, co
 
 // *****************************************************************************
 
-bool IotApi::uploadFile(const String& filename, const String& content, const String& contentType)
+IotResult IotApi::uploadFile(const String& filename, const String& content, const String& contentType)
 {
     String response;
-    int httpStatusCode = apiPut(response, "file/{project}/{device}/" + filename, content,
+    // apiPut returns a raw status code; IotResult classifies it (negative ->
+    // TransportError, 2xx -> Ok, else HttpError, e.g. 413 for an oversized file)
+    return apiPut(response, "file/{project}/{device}/" + filename, content,
         {{"Content-Type", contentType}});
-    return (httpStatusCode >= 200) && (httpStatusCode < 300);
 }
 
 // *****************************************************************************
