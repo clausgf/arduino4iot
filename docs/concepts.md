@@ -144,10 +144,28 @@ high-level operations whose notion of success is simply "2xx" return `IotResult`
 and `uploadFile()`.
 
 Because `IotResult` is implicitly constructible from an `int`, any low-level call
-can be viewed as a result without a new API — `IotResult r = api.apiGet(...)`. Two
-synthetic statuses (`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`,
-both ≥ 600 so they never collide with real codes) let provisioning report
-client-side failures through the same type.
+can be viewed as a result without a new API — `IotResult r = api.apiGet(...)`.
+Synthetic statuses (all ≥ 600 so they never collide with real codes) let the
+library report client-side conditions through the same type:
+`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`.
+
+Cache-aware calls (`updateConfig()`, `updateFirmware()`, `apiCheckForUpdate()`)
+return `IotResult` too, but for them **HTTP 304 Not Modified is a normal
+outcome**, not a failure: "the resource is unchanged, nothing to do". Test these
+with `isNotModified()` (unchanged) and `isOkOrNotModified()` ("no error", i.e.
+changed *or* unchanged) rather than the plain `operator bool`, which — following
+the strict 2xx rule — reports 304 as not-ok:
+
+```cpp
+IotResult r = api.updateFirmware();
+if (!r.isOkOrNotModified()) { /* real failure: unreachable, rejected, ... */ }
+else if (r.isNotModified()) { /* firmware already up to date */ }
+else                        { /* new firmware flashed */ }
+```
+
+This keeps a single result type across the whole library instead of a separate
+type per endpoint; the one HTTP nuance the cache-aware endpoints need (304) lives
+in `IotResult` as a pair of predicates.
 
 ## Failure handling: panic and backoff
 
