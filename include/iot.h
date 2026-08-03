@@ -23,7 +23,7 @@
 // *****************************************************************************
 
 #define IOT_VERSION_MAJOR 3
-#define IOT_VERSION_MINOR 1
+#define IOT_VERSION_MINOR 2
 #define IOT_VERSION_PATCH 0
 
 // *****************************************************************************
@@ -559,6 +559,10 @@ private:
     IotConfigValue<int32_t> _panicSleepDurationMax_s;
 
     static void _ntpSyncCallback(struct timeval *tv);
+
+    /// Single manual SNTP request/response that bypasses the lwIP SNTP daemon's
+    /// randomized startup delay. Returns true on success (system time set).
+    bool _syncNtpOneShot(unsigned long timeout_ms);
 
     /// Initialize all subsystems (config, logger, api, watchdog, battery check)
     /// after WiFi is connected. Called by begin().

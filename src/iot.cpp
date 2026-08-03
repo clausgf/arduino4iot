@@ -14,7 +14,9 @@
 #include <nvs_flash.h>
 #include <esp_sntp.h>
 #include <esp_idf_version.h>
+#include <sys/time.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
@@ -449,6 +451,102 @@ void Iot::_ntpSyncCallback(struct timeval *tv)
 
 // *****************************************************************************
 
+bool Iot::_syncNtpOneShot(unsigned long timeout_ms)
+{
+    // A single SNTP request/response, bypassing the lwIP SNTP daemon whose
+    // randomized 0-5 s startup delay (CONFIG_LWIP_SNTP_STARTUP_DELAY) dominates
+    // the sync time. Tries each configured server until one answers.
+    const uint32_t NTP_UNIX_OFFSET = 2208988800UL; // seconds between 1900 and 1970
+    const uint16_t NTP_PORT = 123;
+    const time_t plausibleThreshold = 50 * 365 * 24 * 3600L;
+
+    WiFiUDP udp;
+    if (!udp.begin(2390))
+    {
+        log_i("NTP one-shot: UDP begin failed");
+        return false;
+    }
+
+    const char* servers[3] = {
+        __ntpServer1.c_str(),
+        __ntpServer2.isEmpty() ? nullptr : __ntpServer2.c_str(),
+        __ntpServer3.isEmpty() ? nullptr : __ntpServer3.c_str(),
+    };
+
+    bool ok = false;
+    uint8_t packet[48];
+    for (const char* server : servers)
+    {
+        if (server == nullptr || server[0] == '\0')
+        {
+            continue;
+        }
+
+        // build the client request (LI=0, VN=3, Mode=3)
+        memset(packet, 0, sizeof(packet));
+        packet[0] = 0x1B;
+
+        if (!udp.beginPacket(server, NTP_PORT))
+        {
+            log_i("NTP one-shot: cannot resolve/reach %s", server);
+            continue;
+        }
+        udp.write(packet, sizeof(packet));
+        if (!udp.endPacket())
+        {
+            continue;
+        }
+
+        // wait for the reply
+        unsigned long start = millis();
+        int len = 0;
+        while ((millis() - start) < timeout_ms)
+        {
+            len = udp.parsePacket();
+            if (len >= (int)sizeof(packet))
+            {
+                break;
+            }
+            delay(10);
+        }
+        if (len < (int)sizeof(packet))
+        {
+            continue;
+        }
+        udp.read(packet, sizeof(packet));
+
+        // transmit timestamp (seconds since 1900) is at bytes 40..43, big-endian
+        uint32_t ntpSecs = ((uint32_t)packet[40] << 24) | ((uint32_t)packet[41] << 16)
+                         | ((uint32_t)packet[42] << 8)  | (uint32_t)packet[43];
+        if (ntpSecs <= NTP_UNIX_OFFSET)
+        {
+            continue;
+        }
+        time_t unixSecs = (time_t)(ntpSecs - NTP_UNIX_OFFSET);
+        if (unixSecs < plausibleThreshold)
+        {
+            continue; // reject implausible responses
+        }
+
+        // fractional part (bytes 44..47) for sub-second accuracy
+        uint32_t frac = ((uint32_t)packet[44] << 24) | ((uint32_t)packet[45] << 16)
+                      | ((uint32_t)packet[46] << 8)  | (uint32_t)packet[47];
+        suseconds_t usec = (suseconds_t)(((uint64_t)frac * 1000000ULL) >> 32);
+
+        struct timeval tv;
+        tv.tv_sec = unixSecs;
+        tv.tv_usec = usec;
+        settimeofday(&tv, nullptr);
+        _ntpLastSyncTime = (int64_t)unixSecs;
+        log_i("NTP one-shot sync success (server=%s): %s", server, getTimeIso(unixSecs).c_str());
+        ok = true;
+        break;
+    }
+
+    udp.stop();
+    return ok;
+}
+
 bool Iot::syncNtpTime()
 {
     int64_t sinceLastSync_s = time(nullptr) - _ntpLastSyncTime.get();
@@ -458,7 +556,14 @@ bool Iot::syncNtpTime()
         return true;
     }
 
-    // initialize NTP
+    // fast path: a single manual SNTP query avoids the lwIP daemon startup delay
+    if (_syncNtpOneShot(_ntpTimeout_ms.get()))
+    {
+        return true;
+    }
+    log_i("NTP one-shot failed, falling back to the SNTP daemon");
+
+    // fallback: the lwIP SNTP daemon
     esp_netif_init();
     if (esp_sntp_enabled())
     {

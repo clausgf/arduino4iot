@@ -156,6 +156,15 @@ credentials to NVS on every connect (flash wear). The measured connect duration
 is available via `iot.getWifiConnectDuration_ms()` and posted as the
 `wifi_connect_ms` system-telemetry metric, so the saving is verifiable per device.
 
+The other big time sink is the NTP sync. The system clock has to be correct
+*before* the first HTTPS request (TLS certificate validity is checked against it),
+so the sync cannot be hidden behind other work. Instead `syncNtpTime()` sends a
+single manual SNTP request and sets the clock directly, bypassing the lwIP SNTP
+daemon's randomized 0–5 s startup delay; it falls back to the daemon if the
+one-shot query fails. Within the resync interval (`ntp_resync_s`) the sync is
+skipped entirely, relying on the RTC clock that survives deep sleep. Pointing
+`ntp_server1` at an IP or the local router additionally removes DNS from the path.
+
 ## Persistence: NVRAM vs. RTC RAM
 
 Two storage tiers survive a deep-sleep cycle:
