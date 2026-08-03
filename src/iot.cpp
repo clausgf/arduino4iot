@@ -93,7 +93,6 @@ Iot::Iot() :
     _wifiConnectDuration_ms = 0;
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
-    _firmwareCommit = "";
     _firmwareId = "";
     _firmwareSha256 = "";
     _deepSleepHandler = defaultDeepSleepHandler;
@@ -149,7 +148,7 @@ void Iot::_initSubsystems()
     log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, panicSleepDuration=%d s",
             getBootCount(), resetReasonToString(getResetReason()), wakeupCauseToString(getWakeupCause()), 
             getLastSleepDuration_s(), getPanicSleepDuration_s());
-    log_i("--- Firmware version %s commit %s", getFirmwareVersion().c_str(), getFirmwareCommit().c_str());
+    log_i("--- Firmware version %s", getFirmwareVersion().c_str());
     log_i("--- Firmware id %s", getFirmwareId().c_str());
     log_i("--- SHA256 %s", getFirmwareSha256().c_str());
 
@@ -645,11 +644,6 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
     {
         telemetry.add("firmware_version", firmwareVersion);
     }
-    String firmwareCommit = getFirmwareCommit();
-    if (!firmwareCommit.isEmpty())
-    {
-        telemetry.add("firmware_commit", firmwareCommit);
-    }
     telemetry.add("firmware_sha256", getFirmwareSha256());
     return postTelemetry(kind, telemetry, apiPath);
 }
@@ -793,25 +787,9 @@ String Iot::getFirmwareVersion()
     return _firmwareVersion;
 }
 
-String Iot::getFirmwareCommit()
-{
-    if (_firmwareCommit.isEmpty())
-    {
-#ifdef IOT_FW_COMMIT
-        _firmwareCommit = IOT_FW_COMMIT;
-#endif
-    }
-    return _firmwareCommit;
-}
-
 void Iot::setFirmwareVersion(const String& version)
 {
     _firmwareVersion = version;
-}
-
-void Iot::setFirmwareCommit(const String& commit)
-{
-    _firmwareCommit = commit;
 }
 
 String Iot::getFirmwareId()

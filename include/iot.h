@@ -23,8 +23,8 @@
 // *****************************************************************************
 
 #define IOT_VERSION_MAJOR 3
-#define IOT_VERSION_MINOR 2
-#define IOT_VERSION_PATCH 1
+#define IOT_VERSION_MINOR 3
+#define IOT_VERSION_PATCH 0
 
 // *****************************************************************************
 
@@ -353,27 +353,21 @@ public:
     // **********************************************************************
 
     /**
-     * @return the firmware version, e.g. "0.10.0". Derived at build time from
-     * the consuming project's git (IOT_FW_VERSION, injected by the library's
-     * pre-build script), or an override set via setFirmwareVersion(); empty if
-     * neither is available. Reported as the "firmware_version" telemetry field.
+     * @return the firmware version, derived at build time from the consuming
+     * project's git via `git describe --tags --dirty --always` (IOT_FW_VERSION,
+     * injected by the library's pre-build script), e.g. "0.10.0",
+     * "0.10.0-3-gcce20b9" or "0.10.0-3-gcce20b9-dirty". An override set via
+     * setFirmwareVersion() takes precedence; empty if neither is available.
+     * Reported as the "firmware_version" telemetry field.
      */
     String getFirmwareVersion();
 
     /**
-     * @return the firmware git commit, e.g. "cce20b9-dirty". Derived at build
-     * time (IOT_FW_COMMIT) or set via setFirmwareCommit(); empty if unavailable.
-     * Reported as the "firmware_commit" telemetry field.
-     */
-    String getFirmwareCommit();
-
-    /**
-     * Override the version / commit reported in telemetry (e.g. a CI-supplied
-     * value, or for non-git builds). Takes precedence over the injected
-     * IOT_FW_VERSION / IOT_FW_COMMIT build defines.
+     * Override the version reported in telemetry (e.g. a CI-supplied value, or
+     * for non-git builds). Takes precedence over the injected IOT_FW_VERSION
+     * build define.
      */
     void setFirmwareVersion(const String& version);
-    void setFirmwareCommit(const String& commit);
 
     /**
      * @return the composite firmware identifier from the ESP application
@@ -512,7 +506,6 @@ private:
     int _battery_mV;
     std::function<void()> _panicHandler;
     String _firmwareVersion;
-    String _firmwareCommit;
     String _firmwareId;
     String _firmwareSha256;
     static bool _isWatchdogEnabled;

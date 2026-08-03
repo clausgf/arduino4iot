@@ -79,14 +79,16 @@ iot.postTelemetry("sensors", t);
 bookkeeping, battery voltage if configured, WiFi/connect metrics, firmware
 identification, …). Bodies are capped at 8 KiB by the server.
 
-The firmware is reported as three fields: `firmware_id` (the composite ESP
+The firmware is reported as two fields: `firmware_id` (the composite ESP
 application descriptor — in a PlatformIO/Arduino build this identifies the
-framework, not the sketch), plus `firmware_version` and `firmware_commit` which
-the library derives from the **consuming project's git** at build time via a
-pre-build script (`scripts/git_version.py`, wired through `library.json`), so a
-firmware reports a meaningful version with no boilerplate. An app can override
-them with `iot.setFirmwareVersion()` / `iot.setFirmwareCommit()`, or skip git
-with `-DIOT_NO_GIT_VERSION`.
+framework, not the sketch) and `firmware_version`, which the library derives from
+the **consuming project's git** at build time via a pre-build script
+(`scripts/git_version.py`, wired through `library.json`), so a firmware reports a
+meaningful version with no boilerplate. The version is a single
+`git describe --tags --dirty --always` string — `0.10.0` exactly on a tag, else
+`0.10.0-3-gcce20b9` (with `-dirty` when the tree is modified), or the bare commit
+if there is no tag. An app can override it with `iot.setFirmwareVersion()`, or
+skip git with `-DIOT_NO_GIT_VERSION`.
 
 ## Configuration & secrets (seeding)
 
