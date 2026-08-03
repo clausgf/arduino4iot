@@ -23,7 +23,7 @@
 // *****************************************************************************
 
 #define IOT_VERSION_MAJOR 3
-#define IOT_VERSION_MINOR 0
+#define IOT_VERSION_MINOR 1
 #define IOT_VERSION_PATCH 0
 
 // *****************************************************************************
@@ -352,7 +352,39 @@ public:
     // System management: firmware
     // **********************************************************************
 
+    /**
+     * @return the firmware version, e.g. "0.10.0". Derived at build time from
+     * the consuming project's git (IOT_FW_VERSION, injected by the library's
+     * pre-build script), or an override set via setFirmwareVersion(); empty if
+     * neither is available. Reported as the "firmware_version" telemetry field.
+     */
     String getFirmwareVersion();
+
+    /**
+     * @return the firmware git commit, e.g. "cce20b9-dirty". Derived at build
+     * time (IOT_FW_COMMIT) or set via setFirmwareCommit(); empty if unavailable.
+     * Reported as the "firmware_commit" telemetry field.
+     */
+    String getFirmwareCommit();
+
+    /**
+     * Override the version / commit reported in telemetry (e.g. a CI-supplied
+     * value, or for non-git builds). Takes precedence over the injected
+     * IOT_FW_VERSION / IOT_FW_COMMIT build defines.
+     */
+    void setFirmwareVersion(const String& version);
+    void setFirmwareCommit(const String& commit);
+
+    /**
+     * @return the composite firmware identifier from the ESP application
+     * descriptor: "<project> <version> <date> <time> IDF <idf> sec <sec>
+     * ARDUINO x.y.z IOT a.b.c". In a PlatformIO/Arduino build the project/version
+     * come from the precompiled framework, so this identifies the build
+     * environment rather than the sketch - use getFirmwareVersion() for the
+     * actual firmware version. Reported as the "firmware_id" telemetry field.
+     */
+    String getFirmwareId();
+
     String getFirmwareSha256();
 
 
@@ -480,6 +512,8 @@ private:
     int _battery_mV;
     std::function<void()> _panicHandler;
     String _firmwareVersion;
+    String _firmwareCommit;
+    String _firmwareId;
     String _firmwareSha256;
     static bool _isWatchdogEnabled;
 

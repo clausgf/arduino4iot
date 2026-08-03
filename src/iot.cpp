@@ -91,6 +91,8 @@ Iot::Iot() :
     _wifiConnectDuration_ms = 0;
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
+    _firmwareCommit = "";
+    _firmwareId = "";
     _firmwareSha256 = "";
     _deepSleepHandler = defaultDeepSleepHandler;
     _restartHandler = defaultRestartHandler;
@@ -145,7 +147,8 @@ void Iot::_initSubsystems()
     log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, panicSleepDuration=%d s",
             getBootCount(), resetReasonToString(getResetReason()), wakeupCauseToString(getWakeupCause()), 
             getLastSleepDuration_s(), getPanicSleepDuration_s());
-    log_i("--- Firmware %s", getFirmwareVersion().c_str());
+    log_i("--- Firmware version %s commit %s", getFirmwareVersion().c_str(), getFirmwareCommit().c_str());
+    log_i("--- Firmware id %s", getFirmwareId().c_str());
     log_i("--- SHA256 %s", getFirmwareSha256().c_str());
 
     // read configuration again to allow overwriting hardcoded parameters with WiFi config
@@ -531,7 +534,17 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
     // non-numeric fields are ignored by the nice4iot telemetry backend,
     // but kept for backends which support them
     telemetry.add("time", getTimeIso());
-    telemetry.add("firmware_version", getFirmwareVersion());
+    telemetry.add("firmware_id", getFirmwareId());
+    String firmwareVersion = getFirmwareVersion();
+    if (!firmwareVersion.isEmpty())
+    {
+        telemetry.add("firmware_version", firmwareVersion);
+    }
+    String firmwareCommit = getFirmwareCommit();
+    if (!firmwareCommit.isEmpty())
+    {
+        telemetry.add("firmware_commit", firmwareCommit);
+    }
     telemetry.add("firmware_sha256", getFirmwareSha256());
     return postTelemetry(kind, telemetry, apiPath);
 }
@@ -665,23 +678,56 @@ void Iot::escalatingSleepPanicHandler()
 
 String Iot::getFirmwareVersion()
 {
+    // precedence: explicit setter (_firmwareVersion) > injected build define
     if (_firmwareVersion.isEmpty())
+    {
+#ifdef IOT_FW_VERSION
+        _firmwareVersion = IOT_FW_VERSION;
+#endif
+    }
+    return _firmwareVersion;
+}
+
+String Iot::getFirmwareCommit()
+{
+    if (_firmwareCommit.isEmpty())
+    {
+#ifdef IOT_FW_COMMIT
+        _firmwareCommit = IOT_FW_COMMIT;
+#endif
+    }
+    return _firmwareCommit;
+}
+
+void Iot::setFirmwareVersion(const String& version)
+{
+    _firmwareVersion = version;
+}
+
+void Iot::setFirmwareCommit(const String& commit)
+{
+    _firmwareCommit = commit;
+}
+
+String Iot::getFirmwareId()
+{
+    if (_firmwareId.isEmpty())
     {
         const esp_partition_t *running = esp_ota_get_running_partition();
         esp_app_desc_t app_info;
         if (esp_ota_get_partition_description(running, &app_info) == ESP_OK)
         {
-            _firmwareVersion = String(app_info.project_name) 
-                + " " + String(app_info.version) 
-                + " " + String(app_info.date) 
-                + " " + String(app_info.time) 
-                + " IDF " + String(app_info.idf_ver) 
+            _firmwareId = String(app_info.project_name)
+                + " " + String(app_info.version)
+                + " " + String(app_info.date)
+                + " " + String(app_info.time)
+                + " IDF " + String(app_info.idf_ver)
                 + " sec " + String(app_info.secure_version)
                 + " ARDUINO " + ESP_ARDUINO_VERSION_MAJOR + "." + ESP_ARDUINO_VERSION_MINOR + "." + ESP_ARDUINO_VERSION_PATCH
                 + " IOT " + IOT_VERSION_MAJOR + "." + IOT_VERSION_MINOR + "." + IOT_VERSION_PATCH;
         }
     }
-    return _firmwareVersion;
+    return _firmwareId;
 }
 
 String Iot::getFirmwareSha256()

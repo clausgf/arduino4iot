@@ -76,8 +76,17 @@ iot.postTelemetry("sensors", t);
 ```
 
 `iot.postSystemTelemetry()` posts a set of device-health values (uptime/sleep
-bookkeeping, battery voltage if configured, firmware version, …). Bodies are
-capped at 8 KiB by the server.
+bookkeeping, battery voltage if configured, WiFi/connect metrics, firmware
+identification, …). Bodies are capped at 8 KiB by the server.
+
+The firmware is reported as three fields: `firmware_id` (the composite ESP
+application descriptor — in a PlatformIO/Arduino build this identifies the
+framework, not the sketch), plus `firmware_version` and `firmware_commit` which
+the library derives from the **consuming project's git** at build time via a
+pre-build script (`scripts/git_version.py`, wired through `library.json`), so a
+firmware reports a meaningful version with no boilerplate. An app can override
+them with `iot.setFirmwareVersion()` / `iot.setFirmwareCommit()`, or skip git
+with `-DIOT_NO_GIT_VERSION`.
 
 ## Configuration & secrets (seeding)
 
