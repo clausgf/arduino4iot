@@ -24,7 +24,7 @@
 
 #define IOT_VERSION_MAJOR 3
 #define IOT_VERSION_MINOR 2
-#define IOT_VERSION_PATCH 0
+#define IOT_VERSION_PATCH 1
 
 // *****************************************************************************
 

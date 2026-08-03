@@ -5,8 +5,10 @@ build.extraScript).
 It derives the *firmware* version and commit from the consuming project's git
 repository at build time and injects them as the library-scoped preprocessor
 defines IOT_FW_VERSION / IOT_FW_COMMIT, which Iot::getFirmwareVersion() /
-getFirmwareCommit() report in system telemetry. This runs in the consumer's
-project directory, so git targets the firmware repo (not the framework).
+getFirmwareCommit() report in system telemetry. git is run against the project
+directory ($PROJECT_DIR) - not the process CWD, which PlatformIO points at the
+library's own libdeps checkout, so a bare "git" would report arduino4iot's
+version instead of the firmware's.
 
 Graceful fallback: without git (e.g. a tarball install) the defines are not set
 and the getters return empty / an app-provided override via setFirmwareVersion().
@@ -17,6 +19,9 @@ import os
 import subprocess
 
 Import("env")  # noqa: F821 - provided by PlatformIO
+
+# The firmware repo, not the process CWD (which is the library's libdeps checkout).
+PROJECT_DIR = env.subst("$PROJECT_DIR")
 
 
 def _has_define(name):
@@ -30,7 +35,7 @@ def _has_define(name):
 def _git(args, default=""):
     try:
         return subprocess.check_output(
-            ["git"] + args, stderr=subprocess.DEVNULL
+            ["git", "-C", PROJECT_DIR] + args, stderr=subprocess.DEVNULL
         ).decode().strip()
     except Exception:
         return default
