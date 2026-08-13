@@ -50,10 +50,13 @@ void setup()
     });
 
     // shorten the per-wakeup radio-on time (optional, falls back automatically).
-    // A static IP additionally skips DHCP - pass DNS too if the API URL uses a
-    // hostname instead of an IP literal:
+    // A static IP skips DHCP - pass DNS too if the API URL uses a hostname
+    // instead of an IP literal:
     //   iot.setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
     //                   IPAddress(255,255,255,0));
+    // Or cache the DHCP-assigned lease automatically (no per-device config) and
+    // reuse it for the next wakeups, renewing via DHCP every 20th connect:
+    //   iot.setDhcpCache(true);
 
     // connect WiFi (seeded credentials from NVS), init all subsystems, sync NTP
     if (!iot.begin())

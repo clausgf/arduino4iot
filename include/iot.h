@@ -23,7 +23,7 @@
 // *****************************************************************************
 
 #define IOT_VERSION_MAJOR 3
-#define IOT_VERSION_MINOR 3
+#define IOT_VERSION_MINOR 4
 #define IOT_VERSION_PATCH 0
 
 // *****************************************************************************
@@ -109,6 +109,30 @@ public:
      * connect). Disable to always do a full scan.
      */
     void setFastReconnect(bool enabled);
+
+    /**
+     * Cache the DHCP lease (IP/gateway/netmask/DNS) obtained via DHCP in RTC RAM
+     * so the next fast reconnect after deep sleep can skip the DHCP DORA exchange,
+     * like a static IP but learned automatically (no per-device configuration).
+     * Disabled by default because it trades a small correctness risk for speed.
+     *
+     * The lease is only reused on the scan-free fast-reconnect path (same cached
+     * AP, i.e. same subnet) and only for @p maxReuse consecutive wakeups, after
+     * which a real DHCP bind is forced so the device renews its lease and a
+     * reassigned address is detected. On a fast-reconnect timeout the cached lease
+     * is discarded and a plain DHCP connect is retried, so a stale or reassigned
+     * address costs at most one slow connect. Has no effect when a static IP is
+     * configured via setStaticIp(). Disabling clears the cache.
+     *
+     * Note: the DHCP lease time is not visible through the Arduino WiFi API, so
+     * @p maxReuse (a wakeup count, not a duration) is the renewal bound — keep it
+     * comfortably below (lease_time / wakeup_interval).
+     *
+     * @param enabled  enable or disable DHCP lease caching
+     * @param maxReuse consecutive reuses before a real DHCP renew (0 keeps the
+     *                 current value; default 20)
+     */
+    void setDhcpCache(bool enabled, uint32_t maxReuse = 20);
 
     /**
      * @return the duration of the last successful WiFi connect in milliseconds,
@@ -513,6 +537,8 @@ private:
     // WiFi fast-connect
     bool _fastReconnect;
     bool _staticIpConfigured;
+    bool _dhcpCache;
+    uint32_t _dhcpMaxReuse;
     IPAddress _ip, _gw, _mask, _dns1, _dns2;
     unsigned long _wifiConnectDuration_ms;
     std::function<void(int)> _deepSleepHandler;
@@ -556,6 +582,9 @@ private:
     /// Single manual SNTP request/response that bypasses the lwIP SNTP daemon's
     /// randomized startup delay. Returns true on success (system time set).
     bool _syncNtpOneShot(unsigned long timeout_ms);
+
+    /// Invalidate the cached DHCP lease (see setDhcpCache()).
+    void _invalidateDhcpCache();
 
     /// Initialize all subsystems (config, logger, api, watchdog, battery check)
     /// after WiFi is connected. Called by begin().

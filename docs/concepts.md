@@ -152,6 +152,18 @@ opt-in optimizations cut this, both with automatic fallback:
 - **Static IP:** `iot.setStaticIp(...)` calls `WiFi.config()` before connecting,
   skipping DHCP. Note the device then gets no DNS from DHCP — pass DNS servers if
   the API URL uses a hostname.
+- **DHCP lease cache (opt-in, `setDhcpCache()`):** a static IP without the manual
+  per-device configuration. The address DHCP hands out is cached in RTC RAM and
+  re-applied via `WiFi.config()` on the next wake, skipping the DHCP DORA exchange
+  (~0.3–0.5 s). It is reused only on the fast-reconnect path (same cached AP, so
+  the same subnet) and only for a bounded number of wakeups (`maxReuse`, default
+  20) before a real DHCP bind renews the lease — the DHCP lease *time* is not
+  visible through the Arduino API, so this wakeup count is the renewal guard;
+  keep it below `lease_time / wakeup_interval`. If the fast reconnect times out,
+  the cached lease is assumed stale, discarded, and a plain DHCP connect is
+  retried, so a reassigned address costs at most one slow connect. Off by default
+  because it trades a small correctness risk (a lease reassigned by the server
+  before the renewal bound) for speed.
 
 The connect also sets `WiFi.persistent(false)` so the WiFi stack does not write
 credentials to NVS on every connect (flash wear). The measured connect duration

@@ -33,6 +33,15 @@ RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s = -1;
 // last-good AP for a scan-free reconnect; channel 0 means "no valid cache"
 RTC_DATA_ATTR static int32_t rtcWifiChannel = 0;
 RTC_DATA_ATTR static uint8_t rtcWifiBssid[6] = {0};
+// last-good DHCP lease for a DORA-free reconnect; ip 0 means "no valid cache".
+// Reused only together with the fast-reconnect cache (same AP) and bounded by
+// rtcDhcpReuseCount so the device periodically renews via real DHCP.
+RTC_DATA_ATTR static uint32_t rtcDhcpIp = 0;
+RTC_DATA_ATTR static uint32_t rtcDhcpGw = 0;
+RTC_DATA_ATTR static uint32_t rtcDhcpMask = 0;
+RTC_DATA_ATTR static uint32_t rtcDhcpDns1 = 0;
+RTC_DATA_ATTR static uint32_t rtcDhcpDns2 = 0;
+RTC_DATA_ATTR static int32_t rtcDhcpReuseCount = 0;
 
 bool Iot::_isWatchdogEnabled = false;
 
@@ -90,6 +99,8 @@ Iot::Iot() :
     _battery_mV = -1;
     _fastReconnect = true;
     _staticIpConfigured = false;
+    _dhcpCache = false;
+    _dhcpMaxReuse = 20;
     _wifiConnectDuration_ms = 0;
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
@@ -252,6 +263,25 @@ void Iot::setFastReconnect(bool enabled)
     _fastReconnect = enabled;
 }
 
+void Iot::setDhcpCache(bool enabled, uint32_t maxReuse)
+{
+    _dhcpCache = enabled;
+    if (maxReuse > 0)
+    {
+        _dhcpMaxReuse = maxReuse;
+    }
+    if (!enabled)
+    {
+        _invalidateDhcpCache();
+    }
+}
+
+void Iot::_invalidateDhcpCache()
+{
+    rtcDhcpIp = 0;
+    rtcDhcpReuseCount = 0;
+}
+
 // wait until connected or the deadline (absolute millis()) is reached
 static bool _waitForWifi(unsigned long deadline)
 {
@@ -289,9 +319,25 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
 
     // 1. targeted reconnect to the cached AP (skips the all-channel scan)
     bool triedFast = false;
+    bool usedCachedLease = false;
     if (_fastReconnect && rtcWifiChannel != 0)
     {
         triedFast = true;
+        // Reuse the cached DHCP lease only on this fast-reconnect path: it targets
+        // the same cached AP, so the previously assigned address is still valid on
+        // the same subnet. Bounded by _dhcpMaxReuse to force periodic real DHCP.
+        if (!_staticIpConfigured && _dhcpCache && rtcDhcpIp != 0
+            && rtcDhcpReuseCount < (int32_t)_dhcpMaxReuse)
+        {
+            if (WiFi.config(IPAddress(rtcDhcpIp), IPAddress(rtcDhcpGw), IPAddress(rtcDhcpMask),
+                            IPAddress(rtcDhcpDns1), IPAddress(rtcDhcpDns2)))
+            {
+                usedCachedLease = true;
+                log_i("Fast reconnect: reusing cached DHCP lease ip=%s (reuse %ld/%lu)",
+                    IPAddress(rtcDhcpIp).toString().c_str(),
+                    (long)rtcDhcpReuseCount, (unsigned long)_dhcpMaxReuse);
+            }
+        }
         log_i("Fast reconnect: channel=%ld bssid=%02x:%02x:%02x:%02x:%02x:%02x",
             (long)rtcWifiChannel, rtcWifiBssid[0], rtcWifiBssid[1], rtcWifiBssid[2],
             rtcWifiBssid[3], rtcWifiBssid[4], rtcWifiBssid[5]);
@@ -307,10 +353,16 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
         {
             log_w("Fast reconnect failed, retrying with a full scan");
             rtcWifiChannel = 0; // invalidate the stale cache
-            WiFi.begin(ssid, password);
-        } else {
-            WiFi.begin(ssid, password);
         }
+        if (usedCachedLease)
+        {
+            // a stale lease may be the cause; revert to DHCP and drop the cache
+            log_w("Cached DHCP lease may be stale, reverting to DHCP");
+            WiFi.config(IPAddress((uint32_t)0), IPAddress((uint32_t)0), IPAddress((uint32_t)0));
+            _invalidateDhcpCache();
+            usedCachedLease = false;
+        }
+        WiFi.begin(ssid, password);
         _waitForWifi(deadline);
     }
 
@@ -324,6 +376,27 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
     // refresh the cache for the next wakeup
     rtcWifiChannel = WiFi.channel();
     memcpy(rtcWifiBssid, WiFi.BSSID(), 6);
+
+    // refresh the DHCP lease cache (only meaningful when DHCP is in use)
+    if (!_staticIpConfigured && _dhcpCache)
+    {
+        if (usedCachedLease)
+        {
+            rtcDhcpReuseCount++;
+        }
+        else
+        {
+            // a real DHCP bind happened: capture the fresh lease and reset the
+            // reuse counter so the next wakeups can skip DORA
+            rtcDhcpIp   = (uint32_t)WiFi.localIP();
+            rtcDhcpGw   = (uint32_t)WiFi.gatewayIP();
+            rtcDhcpMask = (uint32_t)WiFi.subnetMask();
+            rtcDhcpDns1 = (uint32_t)WiFi.dnsIP(0);
+            rtcDhcpDns2 = (uint32_t)WiFi.dnsIP(1);
+            rtcDhcpReuseCount = 0;
+        }
+    }
+
     _wifiConnectDuration_ms = millis() - startTime;
 
     log_i("WiFi connected ip=%s after %lu ms", WiFi.localIP().toString().c_str(), _wifiConnectDuration_ms);
