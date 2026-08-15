@@ -102,25 +102,25 @@ void IotPersistentValue<T>::begin(Preferences& preferences)
 template <>
 void IotPersistentValue<int32_t>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getInt(_key, _value);
+    _value = nvramGetInt(preferences, _key, _value);
 }
 
 template <>
 void IotPersistentValue<int64_t>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getLong64(_key, _value);
+    _value = nvramGetLong64(preferences, _key, _value);
 }
 
 template <>
 void IotPersistentValue<bool>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getBool(_key, _value);
+    _value = nvramGetBool(preferences, _key, _value);
 }
 
 template <>
 void IotPersistentValue<String>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getString(_key, _value);
+    _value = nvramGetString(preferences, _key, _value);
 }
 
 // *****************************************************************************

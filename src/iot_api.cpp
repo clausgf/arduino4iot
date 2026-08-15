@@ -46,15 +46,15 @@ void IotApi::begin()
     // load the seeded API configuration and the runtime tokens from NVS
     Preferences preferences;
     preferences.begin("iot", true);
-    _setApiUrl(preferences.getString(_nvram_api_url_key, ""));
-    _projectName = preferences.getString(_nvram_project_key, "");
-    _provisioningToken = preferences.getString(_nvram_provisioning_token_key, "");
-    _deviceToken = preferences.getString(_nvram_device_token_key, "");
-    _deviceTokenExpiresAt = preferences.getLong64(_nvram_device_token_expiry_key, 0);
-    uint8_t tlsMode = preferences.getUChar(_nvram_tls_mode_key, (uint8_t)IotTlsMode::None);
-    _caCertPem = preferences.getString(_nvram_ca_cert_key, "");
-    _clientCertPem = preferences.getString(_nvram_client_cert_key, "");
-    _clientKeyPem = preferences.getString(_nvram_client_key_key, "");
+    _setApiUrl(nvramGetString(preferences, _nvram_api_url_key, ""));
+    _projectName = nvramGetString(preferences, _nvram_project_key, "");
+    _provisioningToken = nvramGetString(preferences, _nvram_provisioning_token_key, "");
+    _deviceToken = nvramGetString(preferences, _nvram_device_token_key, "");
+    _deviceTokenExpiresAt = nvramGetLong64(preferences, _nvram_device_token_expiry_key, 0);
+    uint8_t tlsMode = nvramGetUChar(preferences, _nvram_tls_mode_key, (uint8_t)IotTlsMode::None);
+    _caCertPem = nvramGetString(preferences, _nvram_ca_cert_key, "");
+    _clientCertPem = nvramGetString(preferences, _nvram_client_cert_key, "");
+    _clientKeyPem = nvramGetString(preferences, _nvram_client_key_key, "");
     preferences.end();
 
     // apply TLS after the base URL is known (the secure client is created lazily
@@ -595,8 +595,8 @@ IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_eta
     // get etag and date from preferences
     Preferences preferences;
     preferences.begin("iot", true);
-    String etag = preferences.getString(nvram_etag_key, "");
-    String date = preferences.getString(nvram_date_key, "");
+    String etag = nvramGetString(preferences, nvram_etag_key, "");
+    String date = nvramGetString(preferences, nvram_date_key, "");
     preferences.end();
 
     String response = "";
@@ -618,7 +618,7 @@ String IotApi::getFirmwareHttpEtag()
 {
     Preferences preferences;
     preferences.begin("iot", true);
-    String etag = preferences.getString(_nvram_firmware_etag_key, "");
+    String etag = nvramGetString(preferences, _nvram_firmware_etag_key, "");
     preferences.end();
     return etag;
 }
@@ -627,7 +627,7 @@ String IotApi::getFirmwareHttpDate()
 {
     Preferences preferences;
     preferences.begin("iot", true);
-    String date = preferences.getString(_nvram_firmware_date_key, "");
+    String date = nvramGetString(preferences, _nvram_firmware_date_key, "");
     preferences.end();
     return date;
 }
@@ -639,8 +639,8 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
     // get etag and date from preferences
     Preferences preferences;
     preferences.begin("iot", true);
-    String etag = preferences.getString(_nvram_firmware_etag_key, "");
-    String date = preferences.getString(_nvram_firmware_date_key, "");
+    String etag = nvramGetString(preferences, _nvram_firmware_etag_key, "");
+    String date = nvramGetString(preferences, _nvram_firmware_date_key, "");
     preferences.end();
 
     // prepare header

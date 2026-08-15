@@ -11,6 +11,7 @@
 
 #include "iot_logger.h"
 #include "iot_api.h"
+#include "iot_util.h"
 
 // *****************************************************************************
 
@@ -45,19 +46,19 @@ IotConfigValue<T>::IotConfigValue(IotConfig& config, T value, const char *config
 template <>
 void IotConfigValue<int32_t>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getInt(_nvram_key, _value);
+    _value = nvramGetInt(preferences, _nvram_key, _value);
 }
 
 template <>
 void IotConfigValue<bool>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getBool(_nvram_key, _value);
+    _value = nvramGetBool(preferences, _nvram_key, _value);
 }
 
 template <>
 void IotConfigValue<String>::readFromNvram(Preferences& preferences)
 {
-    _value = preferences.getString(_nvram_key, _value);
+    _value = nvramGetString(preferences, _nvram_key, _value);
 }
 
 template <> bool IotConfigValue<int32_t>::isInt32() const { return true; }
@@ -146,8 +147,8 @@ IotResult IotConfig::updateConfig()
     }
 
     // get etag and last-modified date from the open preferences handle
-    String etag = _preferences.getString(_nvramEtagKey, "");
-    String date = _preferences.getString(_nvramDateKey, "");
+    String etag = nvramGetString(_preferences, _nvramEtagKey, "");
+    String date = nvramGetString(_preferences, _nvramDateKey, "");
 
     // get config from server
     String response = "";
@@ -255,7 +256,7 @@ IotResult IotConfig::updateConfig()
 int32_t IotConfig::getConfigInt32(const char *key, int32_t defaultValue)
 {
     if (!_isOpen) { return defaultValue; }
-    return _preferences.getInt(key, defaultValue);
+    return nvramGetInt(_preferences, key, defaultValue);
 }
 
 void IotConfig::setConfigInt32(const char *key, int32_t value)
@@ -267,7 +268,7 @@ void IotConfig::setConfigInt32(const char *key, int32_t value)
 bool IotConfig::getConfigBool(const char *key, bool defaultValue)
 {
     if (!_isOpen) { return defaultValue; }
-    return _preferences.getBool(key, defaultValue);
+    return nvramGetBool(_preferences, key, defaultValue);
 }
 
 void IotConfig::setConfigBool(const char *key, bool value)
@@ -279,7 +280,7 @@ void IotConfig::setConfigBool(const char *key, bool value)
 String IotConfig::getConfigString(const char *key, const String& defaultValue)
 {
     if (!_isOpen) { return defaultValue; }
-    return _preferences.getString(key, defaultValue);
+    return nvramGetString(_preferences, key, defaultValue);
 }
 
 void IotConfig::setConfigString(const char *key, const String& value)

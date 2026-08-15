@@ -189,8 +189,8 @@ bool Iot::begin(unsigned long timeout_ms)
     // WiFi credentials were seeded into NVS by seedCredentials()
     Preferences preferences;
     preferences.begin("iot", true);
-    String ssid = preferences.getString("wifiSsid", "");
-    String password = preferences.getString("wifiPass", "");
+    String ssid = nvramGetString(preferences, "wifiSsid", "");
+    String password = nvramGetString(preferences, "wifiPass", "");
     preferences.end();
 
     bool success = connectWifi(ssid.c_str(), password.c_str(), timeout_ms);
@@ -207,7 +207,7 @@ void Iot::seedCredentials(const IotSeedConfig& cfg)
         log_e("seedCredentials: cannot open NVS");
         return;
     }
-    uint32_t storedGeneration = preferences.getUInt("seedGen", 0);
+    uint32_t storedGeneration = nvramGetUInt(preferences, "seedGen", 0);
     bool force = cfg.seedGeneration > storedGeneration;
 
     iotSeedString(preferences, "wifiSsid", cfg.wifiSsid, force);
