@@ -47,6 +47,11 @@ public:
      * RAM / NVRAM, sets the log level from the *log_level* config value, checks
      * the battery (undervoltage triggers panic()), and starts the watchdog.
      *
+     * If no WiFi SSID is seeded in NVS, begin() hands off to
+     * apProvisioning.run() (SoftAP + captive-portal setup form) instead of
+     * attempting to connect - see docs/concepts.md, "First-time
+     * provisioning: SoftAP + captive portal". That call never returns.
+     *
      * @param timeout_ms the WiFi connect timeout in milliseconds
      * @return true if WiFi connected and NTP sync succeeded
      */
@@ -77,6 +82,16 @@ public:
      * that re-seeds the configuration. Does not touch RTC RAM.
      */
     void factoryReset();
+
+    /**
+     * Erase only the seed/provisioning state (the "iot" NVS namespace: WiFi
+     * credentials, API endpoint, project, provisioning token, TLS trust,
+     * device token, OTA cache, seed generation) - unlike factoryReset(), does
+     * not touch the "iot-cfg"/"iot-var" namespaces (server config mirror,
+     * library's own persisted runtime values). After this, an empty seeded
+     * WiFi SSID makes the next begin() enter AP provisioning mode.
+     */
+    void clearProvisioning();
 
     /**
      * Shut down the IoT system.

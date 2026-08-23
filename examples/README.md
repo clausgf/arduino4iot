@@ -36,6 +36,11 @@ sketch as a `const char[]` than to pass as a `-D` define.
   deliberately overwrite the seeded values.
 - `iot.factoryReset()` erases all persisted NVS state; the next boot must run a
   firmware that re-seeds.
+- `iot.clearProvisioning()` erases only the seed/provisioning state (WiFi,
+  API endpoint, project, provisioning token, TLS trust, device token) -
+  `iot-cfg`/`iot-var` (server config mirror, library runtime values) are left
+  alone. Since this empties the seeded WiFi SSID, the next `begin()` enters
+  AP provisioning mode (below).
 
 ### Provisioning without a firmware rebuild
 
@@ -45,6 +50,34 @@ building per-device firmware isn't practical. See
 [`nvs_seed_template.csv`](nvs_seed_template.csv) and
 [docs/concepts.md#nvs-schema-stable-interface](../docs/concepts.md#nvs-schema-stable-interface)
 for the key reference.
+
+### First-time provisioning: SoftAP + captive portal
+
+If no WiFi SSID is seeded (a factory-fresh device, or one after
+`iot.clearProvisioning()`), `iot.begin()` automatically opens a setup AP and
+serves a small web form instead of attempting to connect - see
+[docs/concepts.md](../docs/concepts.md), "First-time provisioning: SoftAP +
+captive portal", for the full design (trigger, no-popup UX, backoff policy).
+
+```cpp
+apProvisioning.setSsidPrefix("myproject-setup-");  // default "arduino4iot-setup-"
+apProvisioning.setIdleTimeout_s(300);              // default 300 (5 min)
+```
+
+Connect to the open `<prefix><last 4 MAC hex chars>` WiFi network and open
+`http://192.168.4.1/` in a normal browser (there is deliberately no
+captive-portal popup). A QR code encoding the same URL with query parameters
+pre-fills the form - e.g.
+`http://192.168.4.1/?apiUrl=https://api.example.com&project=my-project&provisioningToken=P-102-...`
+- the user still has to tap "Save" to actually commit it. If the 5-minute
+idle window elapses with nobody connecting, the device sleeps indefinitely;
+only a physical reset/power-cycle tries again.
+
+**Flash footprint**: on the `esp32dev` board's default (dual-OTA) partition
+scheme, this module adds roughly 42 KB (~3 percentage points) on top of an
+already-tight ~95% baseline for the plain library + a minimal sketch -
+budget a larger/custom partition table if you enable it on a flash-constrained
+board.
 
 ## Requirements
 

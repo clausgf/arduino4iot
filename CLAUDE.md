@@ -28,14 +28,15 @@ pio test -e native -f test_result  # run one test suite (test_result | test_tele
 
 ## Architecture
 
-### Four global singletons (declared `extern` in their headers)
+### Five global singletons (declared `extern` in their headers)
 
-| Object   | Header/impl        | Responsibility |
-|----------|--------------------|----------------|
-| `iot`    | `iot.{h,cpp}`      | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery, panic/backoff. |
-| `api`    | `iot_api.{h,cpp}`  | HTTP(S) transport: provisioning, requests, TLS trust, OTA, file upload/forward. |
-| `config` | `iot_config.{h,cpp}` | Server config mirrored into NVRAM (ETag-cached). |
-| `logger` | `iot_logger.{h,cpp}` | Buffered remote logging + serial logging. |
+| Object          | Header/impl        | Responsibility |
+|-----------------|--------------------|----------------|
+| `iot`           | `iot.{h,cpp}`      | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery, panic/backoff. |
+| `api`           | `iot_api.{h,cpp}`  | HTTP(S) transport: provisioning, requests, TLS trust, OTA, file upload/forward. |
+| `config`        | `iot_config.{h,cpp}` | Server config mirrored into NVRAM (ETag-cached). |
+| `logger`        | `iot_logger.{h,cpp}` | Buffered remote logging + serial logging. |
+| `apProvisioning`| `iot_ap.{h,cpp}`   | SoftAP + captive-portal first-time provisioning (see below). |
 
 `iot.begin()` initializes the other three (`_initSubsystems()`). `docs/concepts.md`
 is the authoritative design document — **read it before non-trivial changes**; it

@@ -26,20 +26,22 @@ and cache validators persisted across sleep. Code typically lives in `setup()`;
 Always-on (non-sleeping) use is possible too, but the API and its trade-offs are
 tuned for the cycle model.
 
-## The four singletons
+## The five singletons
 
-The library exposes four global objects. You configure them, then drive them
+The library exposes five global objects. You configure them, then drive them
 through the cycle:
 
-| Object   | Type        | Responsibility |
-|----------|-------------|----------------|
-| `iot`    | `Iot`       | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery supervision, panic/backoff. |
-| `api`    | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
-| `config` | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
-| `logger` | `IotLogger` | Buffered remote logging plus local serial logging. |
+| Object           | Type        | Responsibility |
+|------------------|-------------|----------------|
+| `iot`            | `Iot`       | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery supervision, panic/backoff. |
+| `api`            | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
+| `config`         | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
+| `logger`         | `IotLogger` | Buffered remote logging plus local serial logging. |
+| `apProvisioning` | `IotAp`     | SoftAP + captive-portal provisioning when no bootstrap credentials are seeded — see "First-time provisioning" below. |
 
-`iot.begin()` initializes the other three, so most programs only call
-`iot.begin(ssid, password)` after setting the `api` parameters.
+`iot.begin()` initializes `api`/`config`/`logger` (and, before that, hands
+off to `apProvisioning.run()` if no WiFi SSID is seeded), so most programs
+only call `iot.begin(ssid, password)` after setting the `api` parameters.
 
 Two value types round out the surface: `IotTelemetry` (a telemetry builder) and
 `IotResult` (a typed operation result). Neither is a singleton — you create them
@@ -169,6 +171,81 @@ pre-populated by external tooling: `deviceToken`/`deviceTokExp` (issued by
 SemVer-governed. Renaming a key, changing its NVS type/encoding, or
 repurposing it for a different meaning is a **breaking change** (major
 version bump); adding a new key is not.
+
+## First-time provisioning: SoftAP + captive portal
+
+A device with no seeded WiFi SSID (a factory-fresh device, or one after
+`iot.clearProvisioning()`/`iot.factoryReset()`) has no way to reach the
+server at all. `Iot::begin()` detects this — an empty `wifiSsid` in NVS is
+the single trigger — and hands off to `apProvisioning.run()` (`IotAp`,
+`iot_ap.{h,cpp}`) instead of attempting to connect. That call blocks and
+never returns: a successful setup ends in `iot.restart()`, an idle timeout
+ends in `iot.shutdown()`.
+
+The device opens its own **open** (no password) WiFi network,
+`<ssidPrefix><last 4 hex chars of the MAC>` (`setSsidPrefix()`, default
+`"arduino4iot-setup-"`), and serves a small web form for the same core
+bootstrap values `seedCredentials()` would otherwise take from build-time
+defines: WiFi SSID/password, apiUrl, project, provisioningToken. TLS trust is
+deliberately **not** part of the form — an `https://` device must already
+carry a build-seeded `tlsMode`/`caCert`, left untouched by re-seeding just
+these five fields (`iotSeedString()` only writes non-empty values). A
+successful submit force-overwrites via a bumped `seedGeneration`, then
+applies the already-documented rule above: **a runtime re-seed only updates
+NVS and needs a reboot**, hence the `iot.restart()`.
+
+**No captive-portal popup by design.** The onboard `WebServer` answers known
+OS connectivity-probe URLs (Android `generate_204`/`gen_204`, Apple
+`hotspot-detect.html`/`success.html`, Windows `connecttest.txt`/`ncsi.txt`,
+Firefox `success.txt`) truthfully, so the OS concludes there is real internet
+and does not launch its own restricted in-OS mini-browser. The SSID text is
+the only available hint; the user opens a normal browser and navigates to
+`http://192.168.4.1/` themselves. (Windows' separate DNS-only
+`dns.msftncsi.com` check is not specially handled — a documented, accepted
+limitation, since the wildcard captive-portal DNS server answers every name
+with the AP's own IP.)
+
+**QR-code deep link.** Rather than a vendored JS QR-decoder in the served
+page, the QR payload is simply the setup URL itself with the known fields as
+query parameters — a phone's native camera app already opens a scanned URL
+in the browser:
+
+```
+http://192.168.4.1/?wifiSsid=<ssid>&wifiPassword=<pw>&apiUrl=<url>&project=<name>&provisioningToken=<token>
+```
+
+All five parameters are independent/optional — a generator can supply just
+`apiUrl`/`project`/`provisioningToken` (the installer types WiFi manually) or
+all five (a combined per-site code). The phone must already be joined to the
+setup AP for the link to resolve (same precondition as the no-popup design
+above). `GET /` pre-fills the form from any given query args, but **nothing
+is written to NVS until the user taps "Save"** (`POST /save`) — a
+merely-opened link never silently reprovisions the device. Caveat:
+`provisioningToken`/`wifiPassword` end up in the phone browser's history as
+plain query-string text — acceptable for a short-lived, locally-scoped setup
+flow, but worth being aware of.
+
+**No backoff state, on purpose.** RTC RAM already doesn't survive a
+power-on-reset (only deep sleep — see "Persistence" below), so "start fresh
+after every physical reset" is already the natural platform behavior with
+zero bookkeeping. On an unfulfilled session (idle timeout, default 5 min via
+`setIdleTimeout_s()`, nobody connected/submitted), the device calls
+`iot.shutdown()` — indefinite deep sleep, no wake timer — so it never
+re-attempts AP mode on its own; only a physical reset restarts the check,
+immediately, on the very next boot. This is deliberately *not* the escalating
+panic/backoff pattern (see "Failure handling" below): since the triggering
+condition (no seed data) cannot resolve itself between wakeups, any
+timer-based retry would be provably useless — exactly the "battery drains in
+an open AP nobody is waiting for" scenario this avoids.
+
+**Flash footprint.** `DNSServer`/`WebServer` are arduino-esp32 core headers
+(no new `library.json` dependency), but they are not free: on the `esp32dev`
+board's default (dual-OTA) partition scheme, the library + a minimal sketch
+already used ~95% of the 1.25 MB app partition before this module: adding it
+costs roughly another 42 KB (~3 percentage points), leaving very little
+headroom for application code. Projects planning to enable AP provisioning on
+a flash-constrained board should budget for this — e.g. a larger/custom
+partition table — rather than relying on the stock `esp32dev` scheme.
 
 ## Configuration (runtime, config.json)
 
@@ -316,3 +393,8 @@ nobody to look at it. It logs, flushes, and goes back to deep sleep for an
 increasing duration (configurable base, factor and cap), so a device that cannot
 reach its server backs off instead of hammering it or draining its battery.
 `iot.startWatchdog()`/`resetWatchdog()` guard against a hung wakeup cycle.
+
+`apProvisioning`'s response to an unfulfilled setup session ("First-time
+provisioning" above) is a deliberately separate, simpler policy — indefinite
+sleep rather than this escalating pattern — since unlike a reachability
+failure, its triggering condition cannot resolve itself between wakeups.

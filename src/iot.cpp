@@ -20,6 +20,8 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
+#include "iot_ap.h"
+
 // *****************************************************************************
 
 Iot iot;
@@ -186,12 +188,24 @@ void Iot::_initSubsystems()
 
 bool Iot::begin(unsigned long timeout_ms)
 {
+    // the watchdog must already be running when apProvisioning.run() is
+    // reached below, since that call can block far longer than
+    // _watchdogTimeout_s; startWatchdog() is idempotent, so the call left in
+    // _initSubsystems() for the normal path is harmless
+    startWatchdog(_watchdogTimeout_s.get());
+
     // WiFi credentials were seeded into NVS by seedCredentials()
     Preferences preferences;
     preferences.begin("iot", true);
     String ssid = nvramGetString(preferences, "wifiSsid", "");
     String password = nvramGetString(preferences, "wifiPass", "");
     preferences.end();
+
+    if (ssid.isEmpty())
+    {
+        log_w("begin: no WiFi SSID seeded, entering AP provisioning mode");
+        apProvisioning.run(); // never returns
+    }
 
     bool success = connectWifi(ssid.c_str(), password.c_str(), timeout_ms);
     _initSubsystems();
@@ -222,19 +236,29 @@ void Iot::seedCredentials(const IotSeedConfig& cfg)
     preferences.end();
 }
 
+static void clearNvsNamespace(const char* ns)
+{
+    Preferences preferences;
+    if (preferences.begin(ns, false))
+    {
+        preferences.clear();
+        preferences.end();
+    }
+}
+
 void Iot::factoryReset()
 {
     log_w("factoryReset: erasing all persisted NVS state");
-    const char* namespaces[] = { "iot", "iot-cfg", "iot-var" };
-    for (const char* ns : namespaces)
+    for (const char* ns : { "iot", "iot-cfg", "iot-var" })
     {
-        Preferences preferences;
-        if (preferences.begin(ns, false))
-        {
-            preferences.clear();
-            preferences.end();
-        }
+        clearNvsNamespace(ns);
     }
+}
+
+void Iot::clearProvisioning()
+{
+    log_w("clearProvisioning: erasing seed/provisioning state ('iot' namespace only)");
+    clearNvsNamespace("iot");
 }
 
 void Iot::end()

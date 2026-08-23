@@ -99,7 +99,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 
 ## Tips
 
-- Read [docs/concepts.md](docs/concepts.md) for the core concepts (wakeup cycle, the four singletons, provisioning, telemetry, config, persistence, TLS trust, `IotResult`).
+- Read [docs/concepts.md](docs/concepts.md) for the core concepts (wakeup cycle, the five singletons, provisioning, telemetry, config, persistence, TLS trust, `IotResult`).
 - Browse the header files of the library, there is some doxygen style documentation.
 - To distribute new firmware to the server for OTA updates via ssh, add the following lines to your `platformio.ini` (adjust the target path to your nice4iot data directory):
   ```ini
