@@ -64,6 +64,10 @@ void IotApi::begin()
 
 void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force)
 {
+    String oldApiUrl = nvramGetString(preferences, _nvram_api_url_key, "");
+    String oldProjectName = nvramGetString(preferences, _nvram_project_key, "");
+    String oldProvisioningToken = nvramGetString(preferences, _nvram_provisioning_token_key, "");
+
     iotSeedString(preferences, _nvram_api_url_key, cfg.apiUrl, force);
     iotSeedString(preferences, _nvram_project_key, cfg.projectName, force);
     iotSeedString(preferences, _nvram_provisioning_token_key, cfg.provisioningToken, force);
@@ -73,6 +77,20 @@ void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg,
     if (cfg.tlsMode != IotTlsMode::None && (force || !preferences.isKey(_nvram_tls_mode_key)))
     {
         preferences.putUChar(_nvram_tls_mode_key, (uint8_t)cfg.tlsMode);
+    }
+
+    // a device token issued for the old project/endpoint/provisioning token is
+    // invalid under the newly seeded identity - drop it so updateProvisioning()
+    // re-provisions immediately instead of waiting for the stale token to expire
+    bool identityChanged =
+        nvramGetString(preferences, _nvram_api_url_key, "") != oldApiUrl ||
+        nvramGetString(preferences, _nvram_project_key, "") != oldProjectName ||
+        nvramGetString(preferences, _nvram_provisioning_token_key, "") != oldProvisioningToken;
+    if (identityChanged)
+    {
+        preferences.remove(_nvram_device_token_key);
+        preferences.remove(_nvram_device_token_expiry_key);
+        log_w("_seedFromConfig: apiUrl/project/provisioningToken changed, invalidating device token");
     }
 }
 
