@@ -90,6 +90,12 @@ meaningful version with no boilerplate. The version is a single
 if there is no tag. An app can override it with `iot.setFirmwareVersion()`, or
 skip git with `-DIOT_NO_GIT_VERSION`.
 
+A third, optional field, `board_id`, identifies the hardware variant (as
+opposed to the firmware): set `-DIOT_BOARD_ID="waveshare_esp32_driver"` per
+PlatformIO env and `iot.getBoardId()` returns it, omitted from telemetry if
+undefined. Unlike the seeded bootstrap values, this is a plain compile-time
+constant — not seeded, not persisted to NVS.
+
 ## Configuration & secrets (seeding)
 
 There are two distinct kinds of configuration, and it matters which is which:

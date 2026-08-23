@@ -718,6 +718,11 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
         telemetry.add("firmware_version", firmwareVersion);
     }
     telemetry.add("firmware_sha256", getFirmwareSha256());
+    String boardId = getBoardId();
+    if (!boardId.isEmpty())
+    {
+        telemetry.add("board_id", boardId);
+    }
     return postTelemetry(kind, telemetry, apiPath);
 }
 
@@ -904,6 +909,15 @@ String Iot::getFirmwareSha256()
         }
     }
     return _firmwareSha256;
+}
+
+String Iot::getBoardId()
+{
+#ifdef IOT_BOARD_ID
+    return String(IOT_BOARD_ID);
+#else
+    return String("");
+#endif
 }
 
 

@@ -411,6 +411,16 @@ public:
 
     String getFirmwareSha256();
 
+    /**
+     * @return the board identifier from the IOT_BOARD_ID build define (e.g.
+     * `-DIOT_BOARD_ID="waveshare_esp32_driver"` in a PlatformIO env), or empty
+     * if undefined. Unlike the seeded bootstrap values (see IotSeedConfig),
+     * this identifies the hardware variant the sketch was built for and is a
+     * plain compile-time constant, not persisted to NVS. Reported as the
+     * "board_id" telemetry field.
+     */
+    String getBoardId();
+
 
     // **********************************************************************
     // System management: watchdog
