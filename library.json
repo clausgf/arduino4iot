@@ -1,6 +1,6 @@
 {
   "name": "arduino4iot",
-  "version": "3.4.2",
+  "version": "3.5.0",
   "description": "ESP32 client library for the x4iot system: provisioning, telemetry, logging, configuration and OTA firmware updates with a nice4iot server",
   "keywords": ["iot", "api", "esp32", "arduino", "nice4iot", "telemetry", "ota"],
   "repository": {
