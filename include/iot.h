@@ -62,6 +62,12 @@ public:
      * without the -D defaults passes empty values and thus leaves NVS untouched,
      * which is what allows flashing updates without secrets. Call once, before
      * begin(). Use factoryReset() to clear everything.
+     *
+     * Calling this on an already-running device (e.g. from a runtime
+     * re-provisioning flow) only updates NVS: IotApi::begin() copies these
+     * values into RAM once and never reloads them, so a reboot is required
+     * before the new values take effect - restart the device after seeding
+     * rather than continuing the current wakeup cycle.
      */
     void seedCredentials(const IotSeedConfig& cfg);
 

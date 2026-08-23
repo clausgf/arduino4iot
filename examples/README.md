@@ -37,6 +37,15 @@ sketch as a `const char[]` than to pass as a `-D` define.
 - `iot.factoryReset()` erases all persisted NVS state; the next boot must run a
   firmware that re-seeds.
 
+### Provisioning without a firmware rebuild
+
+The seeded values can also be written directly into an NVS partition image
+with `nvs_partition_gen.py` - useful for initial/browser-based flashing where
+building per-device firmware isn't practical. See
+[`nvs_seed_template.csv`](nvs_seed_template.csv) and
+[docs/concepts.md#nvs-schema-stable-interface](../docs/concepts.md#nvs-schema-stable-interface)
+for the key reference.
+
 ## Requirements
 
 - arduino-esp32 3.x via the [pioarduino](https://github.com/pioarduino/platform-espressif32)

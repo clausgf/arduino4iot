@@ -113,6 +113,57 @@ seeded via the same struct and applied by `begin()`; the seeded PEMs are held in
 rather than copying. None of the bootstrap values are changeable via `config.json`.
 See [examples/README.md](../examples/README.md) for the build wiring.
 
+`seedCredentials()` only ever writes NVS; it never touches the in-RAM state
+`begin()` already loaded. `IotApi::begin()` reads the bootstrap values from
+NVS into RAM exactly once (`_baseUrl`, `_projectName`, `_provisioningToken`,
+TLS material, …) and has no reload path. So on an already-running device -
+e.g. a runtime re-provisioning flow (AP + form) that calls `seedCredentials()`
+again with new values - the new values sit in NVS but the device keeps acting
+on the old ones in RAM until it reboots. Any such re-seeding flow must restart
+the device (not just call `begin()` again in the same run) before the new
+identity/endpoint takes effect.
+
+### NVS schema (stable interface)
+
+The bootstrap values above live in NVS namespace **`iot`** under fixed key
+names. This schema is a public contract, not an implementation detail: a
+device doesn't have to be provisioned by a firmware rebuild — the same keys
+can be written directly into an NVS partition image with
+[`nvs_partition_gen.py`](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_partition_gen.html)
+(initial flash, or a browser-based flashing tool). A ready-to-fill template is
+at [`examples/nvs_seed_template.csv`](../examples/nvs_seed_template.csv).
+
+| NVS key     | Type   | Meaning                                             | `IotSeedConfig` field |
+|-------------|--------|------------------------------------------------------|------------------------|
+| `wifiSsid`  | string | WiFi SSID                                             | `wifiSsid`             |
+| `wifiPass`  | string | WiFi password                                         | `wifiPassword`         |
+| `apiUrl`    | string | API base URL                                          | `apiUrl`               |
+| `project`   | string | Project name (`^[a-zA-Z_][a-zA-Z0-9_]*$`)             | `projectName`          |
+| `provToken` | string | Provisioning token (secret)                           | `provisioningToken`    |
+| `tlsMode`   | u8     | `IotTlsMode`: 0=None, 1=Bundle, 2=Insecure, 3=CaPin   | `tlsMode`               |
+| `caCert`    | string | CA certificate PEM (for `tlsMode`=CaPin)              | `caCertPem`             |
+| `cliCert`   | string | Client certificate PEM (optional mTLS)                | `clientCertPem`         |
+| `cliKey`    | string | Client private key PEM (optional mTLS, secret)        | `clientKeyPem`          |
+
+A key is only ever written by `seedCredentials()` if the value is non-empty
+**and** the key is absent from NVS or `seedGeneration` was bumped (see above),
+so an externally written image is indistinguishable from one written by
+`seedCredentials()` and survives subsequent secretless firmware. Leave a key
+out of the image entirely rather than writing it empty — an empty *present*
+key still counts as "already seeded" and blocks a later non-forced seed from
+ever filling it in.
+
+Two more keys share the `iot` namespace but are **not** part of the seed
+schema — they are runtime-managed by the library and must not be
+pre-populated by external tooling: `deviceToken`/`deviceTokExp` (issued by
+`/provision`, see [Provisioning and tokens](#provisioning-and-tokens)) and
+`firmwareEtag`/`firmwareDate` (OTA cache).
+
+**Compatibility:** key names and value types/encodings in this table are
+SemVer-governed. Renaming a key, changing its NVS type/encoding, or
+repurposing it for a different meaning is a **breaking change** (major
+version bump); adding a new key is not.
+
 ## Configuration (runtime, config.json)
 
 `config` mirrors a server-side JSON file into NVRAM. `config.updateConfig()`

@@ -1,0 +1,33 @@
+# arduino4iot NVS seed template
+#
+# Writes the bootstrap values Iot::seedCredentials() would otherwise write at
+# build time (see docs/concepts.md#nvs-schema-stable-interface) directly into
+# an NVS partition image - for provisioning a device without a firmware
+# rebuild, e.g. from a browser-based flashing tool.
+#
+# Generate the binary image with ESP-IDF's nvs_partition_gen.py:
+#   python $IDF_PATH/components/nvs_flash/nvs_partition_gen/nvs_partition_gen.py \
+#       generate nvs_seed_template.csv nvs_seed.bin <size>
+# <size> must match the size of the "nvs" entry in the target's partition
+# table (see partitions.csv / the pioarduino board definition).
+#
+# Fill in the placeholder values below. Leave a key out entirely (do not set
+# it to an empty value) if it doesn't apply - an empty but present key blocks
+# a later firmware-side seed from ever filling it in.
+
+key,type,encoding,value
+iot,namespace,,
+wifiSsid,data,string,YOUR_WIFI_SSID
+wifiPass,data,string,YOUR_WIFI_PASSWORD
+apiUrl,data,string,https://api.example.com
+project,data,string,your_project
+provToken,data,string,YOUR_PROVISIONING_TOKEN
+
+# --- optional: only for an https:// apiUrl, uncomment one tlsMode ---
+# tlsMode,data,u8,1
+# 0=None 1=Bundle (public Mozilla roots) 2=Insecure (dev only) 3=CaPin
+# caCert,data,string,"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+
+# --- optional: mutual TLS (client certificate) ---
+# cliCert,data,string,"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+# cliKey,data,string,"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
