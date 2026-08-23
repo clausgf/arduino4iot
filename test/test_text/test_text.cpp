@@ -43,6 +43,19 @@ void test_url_multiple_device_occurrences()
     TEST_ASSERT_EQUAL_STRING("http://h/dev/x/dev", url.c_str());
 }
 
+void test_url_substitutes_board()
+{
+    std::string url = buildApiUrl("https://host/api/", "file/{project}/{device}/firmware-{board}.bin",
+        "proj", "dev", "waveshare_esp32_driver");
+    TEST_ASSERT_EQUAL_STRING("https://host/api/file/proj/dev/firmware-waveshare_esp32_driver.bin", url.c_str());
+}
+
+void test_url_board_defaults_to_empty()
+{
+    std::string url = buildApiUrl("https://host/api/", "firmware-{board}.bin", "proj", "dev");
+    TEST_ASSERT_EQUAL_STRING("https://host/api/firmware-.bin", url.c_str());
+}
+
 // *****************************************************************************
 // nextLogChunkLength
 // *****************************************************************************
@@ -105,6 +118,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_url_drops_leading_slash_of_path);
     RUN_TEST(test_url_without_placeholders);
     RUN_TEST(test_url_multiple_device_occurrences);
+    RUN_TEST(test_url_substitutes_board);
+    RUN_TEST(test_url_board_defaults_to_empty);
     RUN_TEST(test_chunk_shorter_than_limit_returns_all);
     RUN_TEST(test_chunk_splits_at_last_newline_within_limit);
     RUN_TEST(test_chunk_hard_split_when_no_newline);

@@ -420,7 +420,8 @@ IotResult IotApi::updateProvisioning(const String& apiPath)
 String IotApi::getApiUrlForPath(const String& apiPath)
 {
     std::string url = iot_text::buildApiUrl(
-        _baseUrl.c_str(), apiPath.c_str(), _projectName.c_str(), _deviceName.c_str());
+        _baseUrl.c_str(), apiPath.c_str(), _projectName.c_str(), _deviceName.c_str(),
+        iot.getBoardId().c_str());
     return String(url.c_str());
 }
 

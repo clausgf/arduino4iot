@@ -38,16 +38,18 @@ inline void replaceAll(std::string& str, const std::string& from, const std::str
  *
  * A leading slash of @p apiPath is dropped, then @p baseUrl (which is expected
  * to end with a slash) and the path are concatenated, and the placeholders
- * {device} and {project} are substituted.
+ * {device}, {project} and {board} are substituted.
  *
  * @param baseUrl the API base URL ending with a slash, e.g. "https://host/api/"
  * @param apiPath the path relative to the base URL, e.g. "/foo/{device}/bar"
  * @param project the value substituted for {project}
  * @param device the value substituted for {device}
+ * @param board the value substituted for {board}, e.g. the IOT_BOARD_ID build
+ *        default; empty if the board id is undefined
  * @return the full URL, e.g. "https://host/api/foo/e32_123/bar"
  */
 inline std::string buildApiUrl(const std::string& baseUrl, const std::string& apiPath,
-    const std::string& project, const std::string& device)
+    const std::string& project, const std::string& device, const std::string& board = "")
 {
     std::string path = apiPath;
     if (!path.empty() && path.front() == '/')
@@ -57,6 +59,7 @@ inline std::string buildApiUrl(const std::string& baseUrl, const std::string& ap
     std::string url = baseUrl + path;
     replaceAll(url, "{device}", device);
     replaceAll(url, "{project}", project);
+    replaceAll(url, "{board}", board);
     return url;
 }
 
