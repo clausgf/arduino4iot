@@ -313,11 +313,10 @@ public:
     /**
      * Update the firmware from the given API path.
      *
-     * The default path's {board} placeholder is substituted with the
+     * The {project}, {device} and {board} placeholders are substituted 
+     * as usual. {board} is subsituted with the
      * IOT_BOARD_ID build default (see Iot::getBoardId()), letting the server
-     * host per-hardware-variant firmware images side by side. If IOT_BOARD_ID
-     * is undefined, {board} substitutes to an empty string - pass an explicit
-     * apiPath without {board} in that case.
+     * host per-hardware-variant firmware images.
      *
      * @return a typed result:
      *         - Ok: new firmware was downloaded and flashed (runs on next boot);
@@ -327,7 +326,7 @@ public:
      *         - other HttpError / TransportError: the update check failed.
      *         Use isOkOrNotModified() to test for "no error".
      */
-    IotResult updateFirmware(const String& apiPath = "file/{project}/{device}/firmware-{board}.bin", const std::map<String, String>& header = {});
+    IotResult updateFirmware(const String& apiPath = "file/{project}/{device}/firmware.bin", const std::map<String, String>& header = {});
 
 
     // **********************************************************************

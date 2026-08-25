@@ -329,13 +329,12 @@ Two storage tiers survive a deep-sleep cycle:
 a new image only when one is available. The same TLS trust configuration used
 for API calls applies to the OTA download.
 
-The default apiPath is `file/{project}/{device}/firmware-{board}.bin`, where
-`{board}` substitutes to the `IOT_BOARD_ID` build default (see
+The default apiPath is `file/{project}/{device}/firmware.bin`. A `{board}` 
+parameter is supported and substitutes to the `IOT_BOARD_ID` build default (see
 [`board_id`](#telemetry) / `Iot::getBoardId()`) — this lets a project serve
 distinct firmware images per hardware variant from the same project/device
 namespace. If `IOT_BOARD_ID` is undefined, `{board}` substitutes to an empty
-string (`firmware-.bin`); pass an explicit `apiPath` without `{board}` in that
-case. `{board}` is available in **any** apiPath template, not just for
+string. `{board}` is available in **any** apiPath template, not just for
 firmware (see `IotApi::getApiUrlForPath()`).
 
 ## TLS server trust
