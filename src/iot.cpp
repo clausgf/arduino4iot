@@ -745,7 +745,7 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
     String boardId = getBoardId();
     if (!boardId.isEmpty())
     {
-        telemetry.add("board_id", boardId);
+        telemetry.add("board", boardId);
     }
     return postTelemetry(kind, telemetry, apiPath);
 }
