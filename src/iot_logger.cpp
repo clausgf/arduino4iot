@@ -65,7 +65,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
         vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
 
         // actual log output
-        log_i("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
+        log_v("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
         if (_buffered)
         {
             // flush before the buffer would exceed the server's size limit

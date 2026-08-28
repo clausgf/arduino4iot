@@ -24,7 +24,7 @@
 
 #define IOT_VERSION_MAJOR 3
 #define IOT_VERSION_MINOR 5
-#define IOT_VERSION_PATCH 1
+#define IOT_VERSION_PATCH 3
 
 // *****************************************************************************
 
@@ -60,6 +60,9 @@ public:
     /**
      * Seed the build-time bootstrap configuration (WiFi credentials, API
      * endpoint, project name, provisioning token, TLS trust) into NVS.
+    * There they survive a normal firmware update, making secretless
+     * builds an a public CI server sufficient for updates after initial
+     * initialization.
      *
      * Each non-empty value is written only if the corresponding NVS key is
      * absent (or if cfg.seedGeneration exceeds the value stored in NVS, which
@@ -71,8 +74,7 @@ public:
      * Calling this on an already-running device (e.g. from a runtime
      * re-provisioning flow) only updates NVS: IotApi::begin() copies these
      * values into RAM once and never reloads them, so a reboot is required
-     * before the new values take effect - restart the device after seeding
-     * rather than continuing the current wakeup cycle.
+     * before the new values take effect.
      */
     void seedCredentials(const IotSeedConfig& cfg);
 

@@ -34,6 +34,10 @@
 # PlatformIO
 .pio/
 
+# PlatformIO-generated VS Code configuration contains local paths.
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+
 # Build-time secrets (copy secrets-example.ini -> secrets.ini)
 secrets.ini
 
