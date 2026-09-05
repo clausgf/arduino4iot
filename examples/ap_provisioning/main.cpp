@@ -1,19 +1,20 @@
 /**
- * arduino4iot example: first-time provisioning over a SoftAP + captive portal.
+ * arduino4iot example: a fully equipped device.
  *
- * Same wakeup cycle as examples/main.cpp, plus a setup flow for a device with
- * no seeded WiFi credentials yet - a factory-fresh board, or one after
- * iot.clearProvisioning()/iot.factoryReset().
+ * The same wakeup cycle as examples/main.cpp, plus everything that is opt-in
+ * because the core never names it and the linker would otherwise drop it: an
+ * SNTP clock, a battery on an ADC pin, a SoftAP setup flow for a device with no
+ * seeded credentials, and the file-upload endpoint.
  *
- * The AP module is opt-in: it costs ~42 KB of flash (DNSServer + WebServer),
- * a lot on the stock esp32dev dual-OTA partition. Iot::begin() only calls a
- * handler and never names IotAp, so a firmware without the registration below
- * links none of it.
+ * examples/main.cpp is the same sketch without any of it - compare the two
+ * builds to see what each costs.
  */
 
 #include <Arduino.h>
 #include <iot.h>
-#include <iot_ap.h>   // pulls in DNSServer + WebServer: only referenced here
+#include <iot_ap.h>          // pulls in DNSServer + WebServer
+#include <iot_endpoints.h>   // iotUploadFile()
+#include <iot_esp_ports.h>   // IotNtpClock, IotAdcBattery
 
 #ifndef IOT_WIFI_SSID
 #define IOT_WIFI_SSID ""
@@ -57,6 +58,19 @@ void setup()
     apProvisioning.setIdleTimeout_s(600);
     iot.setNoCredentialsHandler([] { apProvisioning.run(); });
 
+    // A real clock. Needed for an https:// endpoint, whose certificate validity
+    // is checked against it. The servers and the resync interval are
+    // server-configurable (ntp_server1..3, ntp_resync_s).
+    static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
+    iot.setClock(ntpClock);
+
+    // Supply voltage behind a divider on an ADC pin, averaged over 4 samples.
+    // An I2C fuel gauge would go through IotCallbackBattery instead, without
+    // the library noticing the difference.
+    static IotAdcBattery battery({ .pin = 34, .factor = 2, .divider = 1, .samples = 4 });
+    iot.setBattery(battery);
+    iot.setBatteryMin_mV(3300);
+
     if (!iot.begin())
     {
         iot.panic("*** PANIC *** WiFi connection or NTP sync failed");
@@ -69,6 +83,12 @@ void setup()
 
     config.updateConfig();
     iot.postSystemTelemetry();
+
+    if (!iot.isTimePlausible())
+    {
+        iotUploadFile("clock.txt", "the clock never synchronized", "text/plain");
+    }
+
     iot.deepSleep();
 }
 

@@ -230,20 +230,20 @@ bool IotSystemClock::isPlausible() const
 // IotNtpClock
 // *****************************************************************************
 
-IotNtpClock::IotNtpClock(int64_t& lastSyncTime):
+IotNtpClock::IotNtpClock(int64_t& lastSyncTime, IotConfig& config):
     _lastSyncTime(lastSyncTime),
-    _resyncInterval_s(24 * 60 * 60)
+    _resyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s"),
+    _server{ { config, "pool.ntp.org", "ntp_server1" },
+             { config, "time.nist.gov", "ntp_server2" },
+             { config, "time.google.com", "ntp_server3" } }
 {
-    _server[0] = "pool.ntp.org";
-    _server[1] = "time.nist.gov";
-    _server[2] = "time.google.com";
 }
 
 void IotNtpClock::setServers(const char* server1, const char* server2, const char* server3)
 {
-    _server[0] = server1 != nullptr ? server1 : "";
-    _server[1] = server2 != nullptr ? server2 : "";
-    _server[2] = server3 != nullptr ? server3 : "";
+    _server[0].set(server1 != nullptr ? server1 : "");
+    _server[1].set(server2 != nullptr ? server2 : "");
+    _server[2].set(server3 != nullptr ? server3 : "");
 }
 
 int64_t IotNtpClock::now() const
@@ -259,7 +259,7 @@ bool IotNtpClock::isPlausible() const
 bool IotNtpClock::sync(uint32_t timeout_ms)
 {
     int64_t sinceLastSync_s = now() - _lastSyncTime;
-    if (isPlausible() && sinceLastSync_s >= 0 && sinceLastSync_s < _resyncInterval_s)
+    if (isPlausible() && sinceLastSync_s >= 0 && sinceLastSync_s < _resyncInterval_s.get())
     {
         log_i("IotNtpClock: no resync due (last sync %lld s ago)", (long long)sinceLastSync_s);
         return true;
@@ -289,9 +289,10 @@ bool IotNtpClock::_syncOneShot(uint32_t timeout_ms)
 
     bool ok = false;
     uint8_t packet[PACKET_SIZE];
-    for (const String& server : _server)
+    for (const IotConfigValue<std::string>& entry : _server)
     {
-        if (server.isEmpty())
+        const std::string& server = entry.get();
+        if (server.empty())
         {
             continue;
         }

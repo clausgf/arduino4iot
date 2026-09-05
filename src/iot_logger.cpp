@@ -4,7 +4,6 @@
  */
 
 #include "Arduino.h"
-#include <WiFi.h>
 
 #include "iot_api.h"
 #include "iot_logger.h"
@@ -65,7 +64,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
         vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
 
         // actual log output
-        log_i("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
+        log_v("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
         if (_buffered)
         {
             // flush before the buffer would exceed the server's size limit
@@ -81,7 +80,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
             }
             _logBuffer += logBuf;
             _logBuffer += '\n';
-        } else if (WiFi.status() == WL_CONNECTED) {
+        } else if (_network == nullptr || _network->isConnected()) {
             postLog(logBuf);
         }
     }
@@ -150,9 +149,9 @@ int IotLogger::flush()
     {
         return 0;
     }
-    if (WiFi.status() != WL_CONNECTED)
+    if (_network != nullptr && !_network->isConnected())
     {
-        log_w("IotLogger::flush: WiFi not connected, keeping %u buffered log bytes",
+        log_w("IotLogger::flush: no connectivity, keeping %u buffered log bytes",
             _logBuffer.length());
         return 0;
     }

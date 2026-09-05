@@ -33,7 +33,7 @@ through the cycle:
 
 | Object           | Type        | Responsibility |
 |------------------|-------------|----------------|
-| `iot`            | `Iot`       | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery supervision, panic/backoff. |
+| `iot`            | `Iot`       | Lifecycle façade: drives the ports, system telemetry, deep sleep, watchdog, undervoltage supervision, panic/backoff. |
 | `api`            | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
 | `config`         | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
 | `logger`         | `IotLogger` | Buffered remote logging plus local serial logging. |
@@ -44,6 +44,57 @@ through the cycle:
 the odd one out: the core never references it, so it exists only in firmware
 that opts in via `iot.setNoCredentialsHandler()` — the module costs ~42 KB and
 most devices never open a setup AP.
+
+## What `iot` is made of
+
+`Iot` drives three ports and owns none of the mechanisms behind them:
+
+| Port | Default | Replace with |
+|---|---|---|
+| `IotNetwork` | `IotWifiNetwork`, configured by `begin()` with the seeded credentials | `iot.setNetwork()` — Ethernet, LTE, a test double |
+| `IotClock` | `IotSystemClock`: reads the system time, **never synchronizes** | `iot.setClock(ntpClock)` — see *Clock* below |
+| `IotBattery` | none (`nullptr`) | `iot.setBattery()` — `IotAdcBattery`, `IotCallbackBattery`, or your own |
+
+Plus `IotPower` (`iot.setPower()`) for how the cycle ends. Optional adapters are
+only linked when an application names them: a firmware without `IotNtpClock`
+contains no SNTP code, one without `IotAdcBattery` no ADC code.
+
+## Clock
+
+There are three implementations of `IotClock`:
+
+- **`IotSystemClock`** (the default) reads the system time; `sync()` only
+  reports whether it is plausible. Enough for an `http://` endpoint, or a device
+  whose time comes from an external RTC chip or GPS. Links no SNTP code.
+- **`IotNtpClock`** sends a single manual SNTP request and sets the clock
+  directly, bypassing the lwIP SNTP daemon whose randomized 0–5 s startup delay
+  would otherwise dominate the wakeup. It syncs only when the clock is
+  implausible or the resync interval elapsed, so calling it every wakeup is
+  cheap. Servers and interval are server-configurable (`ntp_server1..3`,
+  `ntp_resync_s`).
+- **`IotFakeClock`** for host tests.
+
+**An `https://` endpoint needs `IotNtpClock`**: TLS checks certificate validity
+against the clock. `begin()` logs a warning when the clock is implausible, but
+its return value reflects the *network* only — a device on `http://` is
+perfectly healthy without a synchronized clock.
+
+```cpp
+static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
+iot.setClock(ntpClock);
+```
+
+## Battery
+
+The library needs one number — the supply voltage in millivolts — and does not
+care how it is obtained. `IotAdcBattery` covers a divider on an ADC pin
+(averaging several samples, optional enable pin so the divider can be switched
+off between measurements); `IotCallbackBattery` wraps any lambda, e.g. an I2C
+fuel gauge; anything else implements `IotBattery`.
+
+Without a battery there is no `battery_V` telemetry field and no undervoltage
+check. With one, `battery_min_mv` (server-configurable) makes `begin()` shut the
+device down below the threshold.
 
 Two value types round out the surface: `IotTelemetry` (a telemetry builder) and
 `IotResult` (a typed operation result). Neither is a singleton — you create them
@@ -467,7 +518,7 @@ is why raw status codes are easy to ignore.
 keeps the underlying `.httpStatus` / `.transportError` available, and provides an
 explicit `operator bool` so `if (!iot.postTelemetry(...))` reads correctly. The
 high-level operations whose notion of success is simply "2xx" return `IotResult`:
-`postTelemetry()`, `postSystemTelemetry()`, `apiForward()`, `updateProvisioning()`
+`postTelemetry()`, `postSystemTelemetry()`, `iotForward()`, `updateProvisioning()`
 and `uploadFile()`.
 
 Because `IotResult` is implicitly constructible from an `int`, any low-level call
