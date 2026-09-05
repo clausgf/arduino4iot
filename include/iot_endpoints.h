@@ -11,11 +11,24 @@
 #include "iot_result.h"
 
 // *****************************************************************************
-// Convenience wrappers for nice4iot endpoints that are not part of the wakeup
-// cycle. Free functions over api.apiRequest(), so the transport itself deals in
-// HTTP and does not carry the server's endpoint map; they are linked only when
-// an application references them.
+// The nice4iot endpoints: every server path the library knows, and the wrappers
+// for the ones outside the wakeup cycle. Free functions over api, so the
+// transport deals in HTTP and does not carry the endpoint map; they are linked
+// only when an application references them.
 // *****************************************************************************
+
+/// Server paths. {project}, {device} and {board} are substituted per request,
+/// {kind} by postTelemetry(). Pass a different path to override one.
+namespace iot_paths
+{
+    inline constexpr const char* PROVISION = "provision";
+    inline constexpr const char* TELEMETRY = "telemetry/{project}/{device}/{kind}";
+    inline constexpr const char* LOG       = "log/{project}/{device}";
+    inline constexpr const char* CONFIG    = "file/{project}/{device}/config.json";
+    inline constexpr const char* FIRMWARE  = "file/{project}/{device}/firmware.bin";
+    inline constexpr const char* FILE_DIR  = "file/{project}/{device}/";
+    inline constexpr const char* FORWARD   = "forward/{project}/{device}/";
+}
 
 /**
  * Send a request through the server's forwarding endpoint

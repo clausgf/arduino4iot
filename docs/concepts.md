@@ -527,7 +527,7 @@ Synthetic statuses (all ≥ 600 so they never collide with real codes) let the
 library report client-side conditions through the same type:
 `STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`.
 
-Cache-aware calls (`updateConfig()`, `updateFirmware()`, `apiCheckForUpdate()`)
+Cache-aware calls (`updateConfig()`, `updateFirmware()`)
 return `IotResult` too, but for them **HTTP 304 Not Modified is a normal
 outcome**, not a failure: "the resource is unchanged, nothing to do". Test these
 with `isNotModified()` (unchanged) and `isOkOrNotModified()` ("no error", i.e.

@@ -255,18 +255,6 @@ public:
      */
     int apiPut(std::string& oResponse, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& headers = {});
 
-    /**
-     * Send a HEAD request to the given URL and check if the server has an
-     * update, based on the ETag or Last-Modified headers. The ETag and
-     * Last-Modified headers are stored in NVRAM under the given keys.
-     *
-     * @return a typed result: Ok (2xx) if an update is available,
-     *         isNotModified() (304) if the resource is unchanged, otherwise an
-     *         HTTP or transport error.
-     */
-    IotResult apiCheckForUpdate(const std::string& apiPath, const char *nvram_etag_key, const char *nvram_date_key);
-
-
     // **********************************************************************
     // Firmware
     // **********************************************************************

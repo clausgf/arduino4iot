@@ -133,10 +133,9 @@ public:
     ///        so they can be changed from config.json
     explicit IotNtpClock(int64_t& lastSyncTime, IotConfig& config = ::config);
 
-    /// Up to three servers; empty entries are skipped. Defaults to
-    /// pool.ntp.org / time.nist.gov / time.google.com, config keys
-    /// *ntp_server1..3*.
-    void setServers(const char* server1, const char* server2 = "", const char* server3 = "");
+    /// A primary and one backup; an empty entry is skipped. Defaults to
+    /// pool.ntp.org / time.nist.gov, config keys *ntp_server1* and *ntp_server2*.
+    void setServers(const char* server1, const char* server2 = "");
 
     /// How long a sync stays valid. Default 24 h, config key *ntp_resync_s*.
     void setResyncInterval_s(int32_t resyncInterval_s) { _resyncInterval_s.set(resyncInterval_s); }
@@ -149,7 +148,7 @@ public:
 private:
     int64_t& _lastSyncTime;
     IotConfigValue<int32_t> _resyncInterval_s;
-    IotConfigValue<std::string> _server[3];
+    IotConfigValue<std::string> _server[2];
 
     bool _syncOneShot(uint32_t timeout_ms);
 };

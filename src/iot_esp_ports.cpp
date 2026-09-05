@@ -234,16 +234,14 @@ IotNtpClock::IotNtpClock(int64_t& lastSyncTime, IotConfig& config):
     _lastSyncTime(lastSyncTime),
     _resyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s"),
     _server{ { config, "pool.ntp.org", "ntp_server1" },
-             { config, "time.nist.gov", "ntp_server2" },
-             { config, "time.google.com", "ntp_server3" } }
+             { config, "time.nist.gov", "ntp_server2" } }
 {
 }
 
-void IotNtpClock::setServers(const char* server1, const char* server2, const char* server3)
+void IotNtpClock::setServers(const char* server1, const char* server2)
 {
     _server[0].set(server1 != nullptr ? server1 : "");
     _server[1].set(server2 != nullptr ? server2 : "");
-    _server[2].set(server3 != nullptr ? server3 : "");
 }
 
 int64_t IotNtpClock::now() const

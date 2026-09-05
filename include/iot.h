@@ -13,7 +13,6 @@
 #include <HTTPClient.h>
 #include <WiFiClient.h>
 
-#include <iot_util.h>
 #include <iot_api.h>
 #include <iot_logger.h>
 #include <iot_config.h>
@@ -34,6 +33,12 @@
 class Iot
 {
 public:
+    /// Lower bounds for the two config values that can render a fleet
+    /// unreachable if a config.json sets them too low: a zero sleep wakes the
+    /// device immediately, a tiny watchdog resets every cycle. Both are clamped.
+    static constexpr int32_t MIN_SLEEP_DURATION_S = 1;
+    static constexpr int32_t MIN_WATCHDOG_TIMEOUT_S = 5;
+
     // disallow copying & assignment
     Iot(const Iot&) = delete;
     Iot& operator=(const Iot&) = delete;
