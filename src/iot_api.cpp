@@ -21,17 +21,13 @@ static class IotOtaInternal ota;
 
 // *****************************************************************************
 
-IotApi::IotApi()
+IotApi::IotApi():
+    _store("iot")
 {
     _baseUrl = "";
     _defaultRequestHeader = {};
     _projectName = "";
     _deviceName = "";
-    _provisioningToken = "";
-    _deviceToken = "";
-    _deviceTokenExpiresAt = 0;
-    _deviceTokenExpiryMargin_s = 3600;
-    _inProvisioning = false;
 
     _wifiClientSecurePtr = nullptr;
     _wifiClientPtr = nullptr;
@@ -43,19 +39,19 @@ IotApi::IotApi()
 
 void IotApi::begin()
 {
-    // load the seeded API configuration and the runtime tokens from NVS
-    Preferences preferences;
-    preferences.begin("iot", true);
-    _setApiUrl(nvramGetString(preferences, _nvram_api_url_key, ""));
-    _projectName = nvramGetString(preferences, _nvram_project_key, "");
-    _provisioningToken = nvramGetString(preferences, _nvram_provisioning_token_key, "");
-    _deviceToken = nvramGetString(preferences, _nvram_device_token_key, "");
-    _deviceTokenExpiresAt = nvramGetLong64(preferences, _nvram_device_token_expiry_key, 0);
-    uint8_t tlsMode = nvramGetUChar(preferences, _nvram_tls_mode_key, (uint8_t)IotTlsMode::None);
-    _caCertPem = nvramGetString(preferences, _nvram_ca_cert_key, "");
-    _clientCertPem = nvramGetString(preferences, _nvram_client_cert_key, "");
-    _clientKeyPem = nvramGetString(preferences, _nvram_client_key_key, "");
-    preferences.end();
+    // one NVS handle for the whole wakeup cycle instead of an open/close pair
+    // per value, and every read guarded against the unfilterable "NOT_FOUND"
+    // error Preferences logs for absent keys
+    _store.begin();
+    _setApiUrl(String(_store.getString(_nvram_api_url_key, "").c_str()));
+    _projectName = _store.getString(_nvram_project_key, "").c_str();
+    _caCertPem = _store.getString(_nvram_ca_cert_key, "").c_str();
+    _clientCertPem = _store.getString(_nvram_client_cert_key, "").c_str();
+    _clientKeyPem = _store.getString(_nvram_client_key_key, "").c_str();
+    uint8_t tlsMode = (uint8_t)_store.getInt(_nvram_tls_mode_key, (int64_t)IotTlsMode::None);
+
+    // the credentials load themselves from the same store
+    _tokens.begin(_store);
 
     // apply TLS after the base URL is known (the secure client is created lazily
     // from the https:// URL)
@@ -64,13 +60,16 @@ void IotApi::begin()
 
 void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force)
 {
+    // seeding still goes through the shared Preferences handle opened by
+    // Iot::seedCredentials(); it runs before begin(), i.e. before _store exists.
+    // Moving the seed path onto IotStore belongs with the config rework.
     String oldApiUrl = nvramGetString(preferences, _nvram_api_url_key, "");
     String oldProjectName = nvramGetString(preferences, _nvram_project_key, "");
-    String oldProvisioningToken = nvramGetString(preferences, _nvram_provisioning_token_key, "");
+    String oldProvisioningToken = nvramGetString(preferences, IotTokenManager::KEY_PROVISIONING_TOKEN, "");
 
     iotSeedString(preferences, _nvram_api_url_key, cfg.apiUrl, force);
     iotSeedString(preferences, _nvram_project_key, cfg.projectName, force);
-    iotSeedString(preferences, _nvram_provisioning_token_key, cfg.provisioningToken, force);
+    iotSeedString(preferences, IotTokenManager::KEY_PROVISIONING_TOKEN, cfg.provisioningToken, force);
     iotSeedString(preferences, _nvram_ca_cert_key, cfg.caCertPem, force);
     iotSeedString(preferences, _nvram_client_cert_key, cfg.clientCertPem, force);
     iotSeedString(preferences, _nvram_client_key_key, cfg.clientKeyPem, force);
@@ -85,11 +84,11 @@ void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg,
     bool identityChanged =
         nvramGetString(preferences, _nvram_api_url_key, "") != oldApiUrl ||
         nvramGetString(preferences, _nvram_project_key, "") != oldProjectName ||
-        nvramGetString(preferences, _nvram_provisioning_token_key, "") != oldProvisioningToken;
+        nvramGetString(preferences, IotTokenManager::KEY_PROVISIONING_TOKEN, "") != oldProvisioningToken;
     if (identityChanged)
     {
-        preferences.remove(_nvram_device_token_key);
-        preferences.remove(_nvram_device_token_expiry_key);
+        preferences.remove(IotTokenManager::KEY_DEVICE_TOKEN);
+        preferences.remove(IotTokenManager::KEY_DEVICE_TOKEN_EXPIRY);
         log_w("_seedFromConfig: apiUrl/project/provisioningToken changed, invalidating device token");
     }
 }
@@ -122,6 +121,8 @@ void IotApi::_applyTls(IotTlsMode mode)
 
 void IotApi::end()
 {
+    _tokens.end();
+    _store.end();
 }
 
 
@@ -303,111 +304,77 @@ void IotApi::setRequestTimeout_ms(uint16_t timeout_ms)
 
 void IotApi::setDeviceToken(const String& deviceToken, time_t expiresAt)
 {
-    if (_deviceToken == deviceToken && _deviceTokenExpiresAt == (int64_t)expiresAt)
-    {
-        return;
-    }
-    _deviceToken = deviceToken;
-    _deviceTokenExpiresAt = expiresAt;
-
-    Preferences preferences;
-    preferences.begin("iot", false);
-    preferences.putString(_nvram_device_token_key, _deviceToken.c_str());
-    preferences.putLong64(_nvram_device_token_expiry_key, _deviceTokenExpiresAt);
-    preferences.end();
+    _tokens.setDeviceToken(std::string(deviceToken.c_str()), (int64_t)expiresAt);
 }
 
 void IotApi::clearDeviceToken()
 {
-    setDeviceToken("", 0);
+    _tokens.clearDeviceToken();
 }
 
 // *****************************************************************************
 
 IotResult IotApi::updateProvisioning(const String& apiPath)
 {
-    if (!_deviceToken.isEmpty())
+    // whether the current token still does the job is a decision, not I/O:
+    // IotTokenManager::needsNewToken() (unit tested in test/test_token)
+    if (!_tokens.needsNewToken((int64_t)time(nullptr), iot.isTimePlausible()))
     {
-        if (_deviceTokenExpiresAt <= 0)
-        {
-            // token lifetime unknown (e.g. provisioned by an older library version)
-            log_i("updateProvisioning: already provisioned, token lifetime unknown");
-            return IotResult(HTTP_CODE_OK);
-        }
-        int64_t now = (int64_t)time(nullptr);
-        if (!iot.isTimePlausible() || now + _deviceTokenExpiryMargin_s < _deviceTokenExpiresAt)
-        {
-            log_i("updateProvisioning: already provisioned, token valid for %lld s",
-                _deviceTokenExpiresAt - now);
-            return IotResult(HTTP_CODE_OK);
-        }
+        log_i("updateProvisioning: already provisioned, token still valid");
+        return IotResult(HTTP_CODE_OK);
+    }
+    if (_tokens.hasDeviceToken())
+    {
         log_i("updateProvisioning: device token expired or expiring soon, re-provisioning");
     }
+    return _requestDeviceToken(apiPath);
+}
 
-    if (_provisioningToken.isEmpty())
+IotResult IotApi::_requestDeviceToken(const String& apiPath)
+{
+    if (!_tokens.hasProvisioningToken())
     {
         log_e("updateProvisioning: no provisioning token available");
         return IotResult(IotResult::STATUS_NO_PROVISIONING_TOKEN);
     }
 
-    // execute HTTP POST request
     JsonDocument requestDoc;
     requestDoc["projectName"] = _projectName;
     requestDoc["deviceName"] = _deviceName;
-    requestDoc["provisioningToken"] = _provisioningToken;
+    requestDoc["provisioningToken"] = _tokens.provisioningToken();
     String request;
     serializeJson(requestDoc, request);
 
+    // the unauthenticated single-shot path: /provision authenticates with the
+    // provisioning token in the body, and a 401 from it must be reported rather
+    // than trigger another provisioning attempt
     String response;
-    _inProvisioning = true;
-    int httpStatusCode = apiPost(response, apiPath, request, {{"Authorization", ""}});
-    _inProvisioning = false;
-    if (httpStatusCode != HTTP_CODE_OK || response.isEmpty())
+    std::map<String, String> responseHeader;
+    int httpStatusCode = _performRequest(response, responseHeader, "POST", apiPath, request,
+        _requestHeaders({}, /*authenticated=*/false), {});
+
+    if (httpStatusCode < 200 || httpStatusCode >= 300)
     {
-        log_i("updateProvisioning: status=%d or no response", httpStatusCode);
-        // a 2xx with an empty body is not a usable success - flag it as malformed;
-        // otherwise pass the transport/HTTP status through unchanged
-        if (httpStatusCode >= 200 && httpStatusCode < 300)
-        {
-            return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
-        }
+        log_i("updateProvisioning: status=%d", httpStatusCode);
         return IotResult(httpStatusCode);
     }
 
-    // parse response
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-    if (error)
+    IotProvisioningResponse parsed;
+    if (!iotParseProvisioningResponse(response.c_str(), parsed))
     {
-        log_i("updateProvisioning: JSON deserialization failed: %s", error.c_str());
-        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
-    }
-    if (!doc["accessToken"].is<const char*>())
-    {
-        log_i("updateProvisioning: no accessToken");
-        return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
-    }
-    if (!doc["tokenType"].is<const char*>())
-    {
-        log_i("updateProvisioning: no tokenType");
+        // 2xx, but nothing usable in the body
+        log_i("updateProvisioning: malformed response body");
         return IotResult(IotResult::STATUS_MALFORMED_RESPONSE);
     }
 
-    // determine token expiry from expiresIn (seconds); requires plausible system time
-    time_t expiresAt = 0;
-    if (doc["expiresIn"].is<long>() && iot.isTimePlausible())
-    {
-        expiresAt = time(nullptr) + doc["expiresIn"].as<long>();
-    }
-
-    String deviceToken = doc["tokenType"].as<String>() + " " + doc["accessToken"].as<String>();
-    setDeviceToken(deviceToken, expiresAt);
+    int64_t expiresAt = _tokens.applyProvisioningResponse(
+        parsed, (int64_t)time(nullptr), iot.isTimePlausible());
     if (expiresAt > 0)
     {
         log_i("updateProvisioning: new device token for api access, expires at %s",
-            iot.getTimeIso(expiresAt).c_str());
+            iot.getTimeIso((time_t)expiresAt).c_str());
     } else {
-        log_i("updateProvisioning: new device token for api access");
+        log_i("updateProvisioning: new device token for api access, expiry unknown");
     }
     return IotResult(httpStatusCode);
 }
@@ -427,26 +394,26 @@ String IotApi::getApiUrlForPath(const String& apiPath)
 
 // *****************************************************************************
 
-void IotApi::_addRequestHeader(HTTPClient& http, const std::map<String, String> &header)
+std::map<String, String> IotApi::_mergeHeaders(std::map<String, String> base,
+    const std::map<String, String>& requestHeader) const
 {
-    // start with default header, then merge base header, then merge request header
-    std::map<String, String> h = {
+    for (auto const& kv : _defaultRequestHeader) { base[kv.first] = kv.second; }
+    for (auto const& kv : requestHeader) { base[kv.first] = kv.second; }
+    return base;
+}
+
+std::map<String, String> IotApi::_requestHeaders(const std::map<String, String>& requestHeader,
+    bool authenticated) const
+{
+    std::map<String, String> base = {
         { "Accept", "application/json" },
         { "Content-Type", "application/json" },
-        { "Authorization", _deviceToken }
     };
-    for (auto const& kv : _defaultRequestHeader) { h[kv.first] = kv.second; }
-    for (auto const& kv : header) { h[kv.first] = kv.second; }
-
-    // write headers to HTTPClient
-    for (auto const& kv : h)
+    if (authenticated)
     {
-        if ( !kv.second.isEmpty() )
-        {
-            log_d("  HTTP header: %s=%s", kv.first.c_str(), kv.second.c_str());
-            http.addHeader(kv.first.c_str(), kv.second.c_str());
-        }
+        base["Authorization"] = String(_tokens.deviceToken().c_str());
     }
+    return _mergeHeaders(std::move(base), requestHeader);
 }
 
 // *****************************************************************************
@@ -459,10 +426,17 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
     String url = getApiUrlForPath(apiPath);
     log_i("HTTP %s url=%s", requestType, url.c_str());
 
-    // prepare HTTP request
+    // prepare HTTP request; requestHeader is already the fully merged set
     _warnIfTlsTrustMissing();
     _getHttpClient().begin(*(_getWiFiClientPtr()), url);
-    _addRequestHeader(_getHttpClient(), requestHeader);
+    for (auto const& kv : requestHeader)
+    {
+        if (!kv.second.isEmpty())
+        {
+            log_d("  HTTP header: %s=%s", kv.first.c_str(), kv.second.c_str());
+            _getHttpClient().addHeader(kv.first.c_str(), kv.second.c_str());
+        }
+    }
     std::vector<const char *> headerKeys;
     for (auto const& key : collectResponseHeaderKeys)
     {
@@ -525,20 +499,26 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
     const std::map<String, String>& requestHeader,
     const std::vector<String>& collectResponseHeaderKeys)
 {
+    // The authentication policy on top of the transport: attach the device
+    // token, and on a rejection get a new one and try once more. _performRequest()
+    // itself stays unaware of all this, so there is no way for the retry to
+    // re-enter the request path (which is what _inProvisioning used to guard).
     int httpStatusCode = _performRequest(oResponse, oResponseHeader,
-        requestType, apiPath, requestBody, requestHeader, collectResponseHeaderKeys);
+        requestType, apiPath, requestBody,
+        _requestHeaders(requestHeader, /*authenticated=*/true), collectResponseHeaderKeys);
 
-    // on 401, re-provision and retry the request once
-    if (httpStatusCode == HTTP_CODE_UNAUTHORIZED && !_inProvisioning)
+    if (httpStatusCode == HTTP_CODE_UNAUTHORIZED && _tokens.hasProvisioningToken())
     {
-        clearDeviceToken();
-        if (!_provisioningToken.isEmpty() && updateProvisioningOk())
+        _tokens.clearDeviceToken();
+        if (_requestDeviceToken("provision").isOk())
         {
             log_i("HTTP %s url=%s retrying after re-provisioning", requestType, apiPath.c_str());
             oResponse = "";
             oResponseHeader.clear();
+            // rebuild the headers: they now carry the freshly issued token
             httpStatusCode = _performRequest(oResponse, oResponseHeader,
-                requestType, apiPath, requestBody, requestHeader, collectResponseHeaderKeys);
+                requestType, apiPath, requestBody,
+                _requestHeaders(requestHeader, /*authenticated=*/true), collectResponseHeaderKeys);
         }
     }
     return httpStatusCode;
@@ -611,12 +591,8 @@ IotResult IotApi::uploadFile(const String& filename, const String& content, cons
 
 IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
 {
-    // get etag and date from preferences
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String etag = nvramGetString(preferences, nvram_etag_key, "");
-    String date = nvramGetString(preferences, nvram_date_key, "");
-    preferences.end();
+    String etag = _store.getString(nvram_etag_key, "").c_str();
+    String date = _store.getString(nvram_date_key, "").c_str();
 
     String response = "";
     std::map<String, String> responseHeader;
@@ -635,48 +611,32 @@ IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_eta
 
 String IotApi::getFirmwareHttpEtag()
 {
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String etag = nvramGetString(preferences, _nvram_firmware_etag_key, "");
-    preferences.end();
-    return etag;
+    return String(_store.getString(_nvram_firmware_etag_key, "").c_str());
 }
 
 String IotApi::getFirmwareHttpDate()
 {
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String date = nvramGetString(preferences, _nvram_firmware_date_key, "");
-    preferences.end();
-    return date;
+    return String(_store.getString(_nvram_firmware_date_key, "").c_str());
 }
 
 // *****************************************************************************
 
 IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, String>& header)
 {
-    // get etag and date from preferences
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String etag = nvramGetString(preferences, _nvram_firmware_etag_key, "");
-    String date = nvramGetString(preferences, _nvram_firmware_date_key, "");
-    preferences.end();
-
-    // prepare header
-    std::map<String, String> h = {
-        { "If-None-Match", etag },
-        { "If-Modified-Since", date },
-        { "Authorization", _deviceToken }
+    // conditional request: only download what we do not already run
+    std::map<String, String> conditional = {
+        { "If-None-Match", getFirmwareHttpEtag() },
+        { "If-Modified-Since", getFirmwareHttpDate() },
     };
-    for (auto const& kv : _defaultRequestHeader) { h[kv.first] = kv.second; }
-    for (auto const& kv : header) { h[kv.first] = kv.second; }
+    for (auto const& kv : header) { conditional[kv.first] = kv.second; }
 
-    // HEAD request to check if update is available; a 401 triggers
-    // re-provisioning in apiRequest(), so refresh the Authorization header afterwards
+    // HEAD to check whether an update is available. apiRequest() adds the
+    // Authorization header and may replace the token on a 401 retry - which is
+    // why the OTA headers below are built *after* this call rather than patched
+    // up afterwards as they were up to 3.x.
     String response = "";
     std::map<String, String> responseHeader;
-    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", h);
-    h["Authorization"] = _deviceToken;
+    int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", conditional);
 
     // return if no update available: 304 -> up to date (isNotModified), any
     // other non-2xx -> pass the transport/HTTP status through as an error
@@ -686,8 +646,13 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
         return IotResult(httpStatusCode);
     }
 
+    // an OTA download wants the cache validators and the token, but none of the
+    // JSON content negotiation an API call gets
+    std::map<String, String> otaHeader = _mergeHeaders(
+        { { "Authorization", String(_tokens.deviceToken().c_str()) } }, conditional);
+
     std::map<std::string, std::string> hh;
-    for (auto const& kv : h)
+    for (auto const& kv : otaHeader)
     {
         if (!kv.second.isEmpty())
         {
@@ -703,11 +668,8 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
 
     if (success)
     {
-        Preferences preferences;
-        preferences.begin("iot", false);
-        preferences.putString(_nvram_firmware_etag_key, newEtag.c_str());
-        preferences.putString(_nvram_firmware_date_key, newDate.c_str());
-        preferences.end();
+        _store.putString(_nvram_firmware_etag_key, newEtag);
+        _store.putString(_nvram_firmware_date_key, newDate);
         log_i("Firmware update successful");
         return IotResult(HTTP_CODE_OK);
     }
