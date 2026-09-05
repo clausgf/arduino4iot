@@ -315,13 +315,41 @@ skipped entirely, relying on the RTC clock that survives deep sleep. Pointing
 
 ## Persistence: NVRAM vs. RTC RAM
 
-Two storage tiers survive a deep-sleep cycle:
+Two storage tiers survive a deep-sleep cycle, and they have genuinely different
+contracts — which is why they are two different things in the code rather than
+two interchangeable backends behind one interface:
 
-- **NVRAM (flash / Preferences):** survives power loss. Holds the provisioning
-  and device tokens, config values and cache validators (ETag/Last-Modified). The
-  NVS handle is opened once and kept open to avoid flash churn.
-- **RTC RAM:** survives deep sleep but not power loss; cheap and fast. Used for
-  short-lived bookkeeping across cycles (e.g. sleep accounting).
+|                     | NVRAM (`IotStore`)          | RTC RAM (`IotRtcState`)        |
+|---------------------|-----------------------------|--------------------------------|
+| Keys                | at runtime, dynamic         | static, at link time           |
+| Survives power loss | yes                         | no                             |
+| Survives SW reset   | yes                         | only with `RTC_NOINIT_ATTR`    |
+| Write cost          | flash cycles, limited       | none                           |
+| Failure mode        | open/write can fail         | none                           |
+| Capacity            | ~ partition                 | 8 KB, shared                   |
+
+- **NVRAM (flash / Preferences)** is reached through the `IotStore` port
+  (`iot_ports.h`) and its `IotNvsStore` adapter. Holds the provisioning and
+  device tokens, config values and cache validators (ETag/Last-Modified). The
+  NVS handle is opened once and kept open to avoid flash churn, and writes are
+  suppressed when the stored value is unchanged.
+- **RTC RAM** is one plain struct, `IotRtcState` (`iot_rtc_state.h`), in
+  `RTC_NOINIT_ATTR`. Deliberately *not* a port: RTC memory has no runtime keys,
+  no failure mode and no write cost, so a key/value interface over it would buy
+  a vtable and string keys and nothing else. Holds boot count, active/sleep
+  accounting, the failure backoff and the WiFi fast-reconnect caches. A magic
+  word detects that the contents did not survive (power-on reset, or a firmware
+  whose layout changed) and resets the struct.
+
+`RTC_NOINIT_ATTR` rather than `RTC_DATA_ATTR` matters: the bootloader
+reinitializes the `.rtc.data` section on a software or watchdog reset, which
+would clear the failure backoff exactly when it is needed.
+
+Which tier a value uses is decided **once, where the value is declared** — not
+by a global runtime switch that flips the storage of every value at the same
+time. That switch (`setPreferedPersistentStorage()`) and the `IotPersistentValue`
+class it steered are gone in 4.0; among other things they left values
+uninitialized until `begin()`, which the constructor's panic path then read.
 
 ## Firmware updates (OTA)
 
@@ -392,6 +420,28 @@ nobody to look at it. It logs, flushes, and goes back to deep sleep for an
 increasing duration (configurable base, factor and cap), so a device that cannot
 reach its server backs off instead of hammering it or draining its battery.
 `iot.startWatchdog()`/`resetWatchdog()` guard against a hung wakeup cycle.
+
+The strategy is split in two, along the same line as everywhere else in 4.0:
+
+- the **policy** — how long to sleep next — is `IotBackoffPolicy`
+  (`iot_lifecycle.h`), a plain value type with no I/O, unit-tested on the host
+  including the cases that used to be unreachable in a test (int32 overflow
+  after several escalations, a misconfiguration producing a zero-length sleep);
+- the **mechanism** — actually sleeping — is the `IotPower` port, so a host test
+  can reach a failure path and keep running. `IotLifecycle` ties the two
+  together and owns the backoff state in `IotRtcState`.
+
+An **abnormal reset is acted on in `iot.begin()`, not in the constructor.**
+Up to 3.x the `Iot` constructor inspected the reset reason and went straight
+into the panic handler — before `main()`, so before the sketch could open a
+serial console to see the diagnosis, while the persistent values being read were
+still uninitialized, and while the `logger`/`api` singletons of other
+translation units may not have been constructed yet.
+
+An application that must do something before the device sleeps supplies its own
+`IotPower` (`iot.setPower()`), or registers `iot.addExitHook()` to run at every
+exit — deep sleep, restart, shutdown and the backoff path alike. Both replace
+the 3.x trio `setDeepSleepHandler()`/`setRestartHandler()`/`setShutdownHandler()`.
 
 `apProvisioning`'s response to an unfulfilled setup session ("First-time
 provisioning" above) is a deliberately separate, simpler policy — indefinite

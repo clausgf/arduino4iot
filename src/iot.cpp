@@ -6,9 +6,7 @@
 #include "iot.h"
 
 #include "cstdio"
-#include <esp_system.h>
 #include <esp_task_wdt.h>
-#include <esp_sleep.h>
 #include <esp_wifi.h>
 #include <esp_ota_ops.h>
 #include <nvs_flash.h>
@@ -21,62 +19,40 @@
 #include <ArduinoJson.h>
 
 #include "iot_ap.h"
+#include "iot_esp_ports.h"
 
 // *****************************************************************************
 
 Iot iot;
 static const char *tag = "iot";
 
-RTC_DATA_ATTR static int32_t rtcBootCount = 0;
-RTC_DATA_ATTR static int64_t rtcActiveDuration_ms = 0;
-RTC_DATA_ATTR static int32_t rtcLastSleepDuration_s = 0;
-RTC_DATA_ATTR static int64_t rtcNtpLastSyncTime = 0;
-RTC_DATA_ATTR static int32_t rtcPanicSleepDuration_s = -1;
-// last-good AP for a scan-free reconnect; channel 0 means "no valid cache"
-RTC_DATA_ATTR static int32_t rtcWifiChannel = 0;
-RTC_DATA_ATTR static uint8_t rtcWifiBssid[6] = {0};
-// last-good DHCP lease for a DORA-free reconnect; ip 0 means "no valid cache".
-// Reused only together with the fast-reconnect cache (same AP) and bounded by
-// rtcDhcpReuseCount so the device periodically renews via real DHCP.
-RTC_DATA_ATTR static uint32_t rtcDhcpIp = 0;
-RTC_DATA_ATTR static uint32_t rtcDhcpGw = 0;
-RTC_DATA_ATTR static uint32_t rtcDhcpMask = 0;
-RTC_DATA_ATTR static uint32_t rtcDhcpDns1 = 0;
-RTC_DATA_ATTR static uint32_t rtcDhcpDns2 = 0;
-RTC_DATA_ATTR static int32_t rtcDhcpReuseCount = 0;
-
 bool Iot::_isWatchdogEnabled = false;
 
 // *****************************************************************************
+
+/**
+ * The default power adapter.
+ *
+ * A function-local static rather than a namespace-scope object: it is
+ * constructed on first use, so Iot's own constructor - which runs before
+ * main() and in an unspecified order relative to other translation units - can
+ * safely bind to it. Replaceable via Iot::setPower().
+ */
+static IotPower& defaultPower()
+{
+    static IotEspPower power;
+    return power;
+}
 
 static void defaultPanicHandler()
 {
     iot.escalatingSleepPanicHandler();
 }
 
-static void defaultDeepSleepHandler(int duration_s)
-{
-    esp_deep_sleep(duration_s * 1000ll * 1000ll);
-}
-
-static void defaultRestartHandler()
-{
-    esp_restart();
-}
-
-static void defaultShutdownHandler()
-{
-    esp_deep_sleep_start();
-}
-
 // *****************************************************************************
 
 Iot::Iot() :
-    _bootCount(&rtcBootCount),
-    _activeDuration_ms(&rtcActiveDuration_ms),
-    _lastSleepDuration_s(&rtcLastSleepDuration_s),
-    _ntpLastSyncTime("iot-var", "ntpLastSync", &rtcNtpLastSyncTime),
-    _panicSleepDuration_s("iot-var", "panicSlpDur", &rtcPanicSleepDuration_s),
+    _lifecycle(defaultPower(), iotRtcState()),
 
     _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level", "logLevel"),
     _sleepDuration_s(config, 5 * 60, "sleep_s", "sleepFor"),
@@ -108,34 +84,75 @@ Iot::Iot() :
     _firmwareVersion = "";
     _firmwareId = "";
     _firmwareSha256 = "";
-    _deepSleepHandler = defaultDeepSleepHandler;
-    _restartHandler = defaultRestartHandler;
-    _shutdownHandler = defaultShutdownHandler;
+    _exitHooksRegistered = false;
     __ntpServer1 = _ntpServer1.get();
     __ntpServer2 = _ntpServer2.get();
     __ntpServer3 = _ntpServer3.get();
 
-    // initialize NVRAM
+    // Nothing else happens here on purpose. Up to 3.x this constructor
+    // initialized NVS and, after an abnormal reset, went straight into the
+    // panic handler - before main(), before the sketch could open a serial
+    // console to see the diagnosis, while the persistent values it read were
+    // still uninitialized, and while the logger and api singletons of other
+    // translation units may not have been constructed yet. All of that now
+    // happens in begin().
+}
+
+void Iot::_registerExitHooks()
+{
+    if (_exitHooksRegistered)
+    {
+        return;
+    }
+    _exitHooksRegistered = true;
+
+    // runs before every deep sleep, restart, shutdown and backoff sleep.
+    // logger.flush() is a no-op without connectivity, so this is also safe on
+    // the early failure paths where no network was ever established.
+    _lifecycle.addExitHook([this] {
+        logger.flush();
+        api.closeConnection();
+        delay(10);  // give the serial log a chance to drain
+        setLed(false);
+    });
+}
+
+void Iot::_beginCycle()
+{
+    // NVS first: everything below reads Preferences
     esp_err_t err = nvs_flash_init();
     if (err != ESP_OK)
     {
         log_e("nvs_flash_init failed: %s", esp_err_to_name(err));
-        return;
     }
 
-    esp_reset_reason_t resetReason = getResetReason();
-    switch (resetReason)
+    _registerExitHooks();
+    _lifecycle.setBackoffPolicy(IotBackoffPolicy{
+        _panicSleepDurationInit_s.get(),
+        _panicSleepDurationFactor.get(),
+        _panicSleepDurationMax_s.get() });
+    _lifecycle.begin();
+
+    // the watchdog must already run before apProvisioning.run() is reached,
+    // since that call can block far longer than _watchdogTimeout_s
+    startWatchdog(_watchdogTimeout_s.get());
+
+    log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, backoff=%d s",
+        (unsigned long)getBootCount(),
+        iotResetReasonToString(_lifecycle.resetReason()),
+        iotWakeupCauseToString(_lifecycle.wakeupCause()),
+        getLastSleepDuration_s(), getPanicSleepDuration_s());
+    log_i("--- Firmware version %s", getFirmwareVersion().c_str());
+    log_i("--- Firmware id %s", getFirmwareId().c_str());
+    log_i("--- SHA256 %s", getFirmwareSha256().c_str());
+
+    // The previous cycle crashed, hung or browned out. Back off instead of
+    // retrying immediately - and do it here rather than in the constructor, so
+    // the message above has been printed first.
+    if (_lifecycle.isAbnormalStart())
     {
-        case ESP_RST_PANIC:
-        case ESP_RST_INT_WDT:
-        case ESP_RST_TASK_WDT:
-            panicEarly("Last reset was due to exception/panic or watchdog: %s", resetReasonToString(resetReason));
-            break;
-        case ESP_RST_BROWNOUT:
-            panicEarly("Last reset was due to brownout: %s", resetReasonToString(resetReason));
-            break;
-        default:
-            break;
+        panicEarly("*** PANIC *** Previous cycle ended abnormally: %s",
+            iotResetReasonToString(_lifecycle.resetReason()));
     }
 }
 
@@ -143,31 +160,20 @@ void Iot::_initSubsystems()
 {
     setLed(true);
 
-    // initialize persistent variables
-    _bootCount.begin();
-    _activeDuration_ms.begin();
-    _lastSleepDuration_s.begin();
-    _ntpLastSyncTime.begin();
-    _panicSleepDuration_s.begin();
-
-    _bootCount = _bootCount.get() + 1;
-
     if (WiFi.status() != WL_CONNECTED)
     {
         log_e("WiFi not connected yet. Connect WiFi first.");
     }
 
-    // startup logging
-    log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, panicSleepDuration=%d s",
-            getBootCount(), resetReasonToString(getResetReason()), wakeupCauseToString(getWakeupCause()), 
-            getLastSleepDuration_s(), getPanicSleepDuration_s());
-    log_i("--- Firmware version %s", getFirmwareVersion().c_str());
-    log_i("--- Firmware id %s", getFirmwareId().c_str());
-    log_i("--- SHA256 %s", getFirmwareSha256().c_str());
-
     // read configuration again to allow overwriting hardcoded parameters with WiFi config
     config.begin();
     logger.begin((IotLogger::LogLevel)_logLevel.get());
+
+    // the backoff parameters may have been changed by the server config
+    _lifecycle.setBackoffPolicy(IotBackoffPolicy{
+        _panicSleepDurationInit_s.get(),
+        _panicSleepDurationFactor.get(),
+        _panicSleepDurationMax_s.get() });
 
     // check the battery voltage
     if (_batteryPin.get() >= 0 && _batteryMin_mV.get() > 0)
@@ -188,11 +194,7 @@ void Iot::_initSubsystems()
 
 bool Iot::begin(unsigned long timeout_ms)
 {
-    // the watchdog must already be running when apProvisioning.run() is
-    // reached below, since that call can block far longer than
-    // _watchdogTimeout_s; startWatchdog() is idempotent, so the call left in
-    // _initSubsystems() for the normal path is harmless
-    startWatchdog(_watchdogTimeout_s.get());
+    _beginCycle();
 
     // WiFi credentials were seeded into NVS by seedCredentials()
     Preferences preferences;
@@ -249,7 +251,9 @@ static void clearNvsNamespace(const char* ns)
 void Iot::factoryReset()
 {
     log_w("factoryReset: erasing all persisted NVS state");
-    for (const char* ns : { "iot", "iot-cfg", "iot-var" })
+    // "iot-var" is gone in 4.0: the values it held (last NTP sync, backoff
+    // state) live in the RTC state now, which no longer costs flash writes
+    for (const char* ns : { "iot", "iot-cfg" })
     {
         clearNvsNamespace(ns);
     }
@@ -302,8 +306,8 @@ void Iot::setDhcpCache(bool enabled, uint32_t maxReuse)
 
 void Iot::_invalidateDhcpCache()
 {
-    rtcDhcpIp = 0;
-    rtcDhcpReuseCount = 0;
+    iotRtcState().dhcpIp = 0;
+    iotRtcState().dhcpReuseCount = 0;
 }
 
 // wait until connected or the deadline (absolute millis()) is reached
@@ -344,28 +348,28 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
     // 1. targeted reconnect to the cached AP (skips the all-channel scan)
     bool triedFast = false;
     bool usedCachedLease = false;
-    if (_fastReconnect && rtcWifiChannel != 0)
+    if (_fastReconnect && iotRtcState().wifiChannel != 0)
     {
         triedFast = true;
         // Reuse the cached DHCP lease only on this fast-reconnect path: it targets
         // the same cached AP, so the previously assigned address is still valid on
         // the same subnet. Bounded by _dhcpMaxReuse to force periodic real DHCP.
-        if (!_staticIpConfigured && _dhcpCache && rtcDhcpIp != 0
-            && rtcDhcpReuseCount < (int32_t)_dhcpMaxReuse)
+        if (!_staticIpConfigured && _dhcpCache && iotRtcState().dhcpIp != 0
+            && iotRtcState().dhcpReuseCount < (int32_t)_dhcpMaxReuse)
         {
-            if (WiFi.config(IPAddress(rtcDhcpIp), IPAddress(rtcDhcpGw), IPAddress(rtcDhcpMask),
-                            IPAddress(rtcDhcpDns1), IPAddress(rtcDhcpDns2)))
+            if (WiFi.config(IPAddress(iotRtcState().dhcpIp), IPAddress(iotRtcState().dhcpGw), IPAddress(iotRtcState().dhcpMask),
+                            IPAddress(iotRtcState().dhcpDns1), IPAddress(iotRtcState().dhcpDns2)))
             {
                 usedCachedLease = true;
                 log_i("Fast reconnect: reusing cached DHCP lease ip=%s (reuse %ld/%lu)",
-                    IPAddress(rtcDhcpIp).toString().c_str(),
-                    (long)rtcDhcpReuseCount, (unsigned long)_dhcpMaxReuse);
+                    IPAddress(iotRtcState().dhcpIp).toString().c_str(),
+                    (long)iotRtcState().dhcpReuseCount, (unsigned long)_dhcpMaxReuse);
             }
         }
         log_i("Fast reconnect: channel=%ld bssid=%02x:%02x:%02x:%02x:%02x:%02x",
-            (long)rtcWifiChannel, rtcWifiBssid[0], rtcWifiBssid[1], rtcWifiBssid[2],
-            rtcWifiBssid[3], rtcWifiBssid[4], rtcWifiBssid[5]);
-        WiFi.begin(ssid, password, rtcWifiChannel, rtcWifiBssid);
+            (long)iotRtcState().wifiChannel, iotRtcState().wifiBssid[0], iotRtcState().wifiBssid[1], iotRtcState().wifiBssid[2],
+            iotRtcState().wifiBssid[3], iotRtcState().wifiBssid[4], iotRtcState().wifiBssid[5]);
+        WiFi.begin(ssid, password, iotRtcState().wifiChannel, iotRtcState().wifiBssid);
         // give the fast attempt at most half of the budget before falling back
         _waitForWifi(startTime + timeout_ms / 2);
     }
@@ -376,7 +380,7 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
         if (triedFast)
         {
             log_w("Fast reconnect failed, retrying with a full scan");
-            rtcWifiChannel = 0; // invalidate the stale cache
+            iotRtcState().wifiChannel = 0; // invalidate the stale cache
         }
         if (usedCachedLease)
         {
@@ -398,26 +402,26 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
     }
 
     // refresh the cache for the next wakeup
-    rtcWifiChannel = WiFi.channel();
-    memcpy(rtcWifiBssid, WiFi.BSSID(), 6);
+    iotRtcState().wifiChannel = WiFi.channel();
+    memcpy(iotRtcState().wifiBssid, WiFi.BSSID(), 6);
 
     // refresh the DHCP lease cache (only meaningful when DHCP is in use)
     if (!_staticIpConfigured && _dhcpCache)
     {
         if (usedCachedLease)
         {
-            rtcDhcpReuseCount++;
+            iotRtcState().dhcpReuseCount++;
         }
         else
         {
             // a real DHCP bind happened: capture the fresh lease and reset the
             // reuse counter so the next wakeups can skip DORA
-            rtcDhcpIp   = (uint32_t)WiFi.localIP();
-            rtcDhcpGw   = (uint32_t)WiFi.gatewayIP();
-            rtcDhcpMask = (uint32_t)WiFi.subnetMask();
-            rtcDhcpDns1 = (uint32_t)WiFi.dnsIP(0);
-            rtcDhcpDns2 = (uint32_t)WiFi.dnsIP(1);
-            rtcDhcpReuseCount = 0;
+            iotRtcState().dhcpIp   = (uint32_t)WiFi.localIP();
+            iotRtcState().dhcpGw   = (uint32_t)WiFi.gatewayIP();
+            iotRtcState().dhcpMask = (uint32_t)WiFi.subnetMask();
+            iotRtcState().dhcpDns1 = (uint32_t)WiFi.dnsIP(0);
+            iotRtcState().dhcpDns2 = (uint32_t)WiFi.dnsIP(1);
+            iotRtcState().dhcpReuseCount = 0;
         }
     }
 
@@ -542,7 +546,7 @@ void Iot::_ntpSyncCallback(struct timeval *tv)
 {
     time_t now = time(nullptr);
     log_i("NTP time sync success, time=%s", iot.getTimeIso(now).c_str());
-    iot._ntpLastSyncTime = now;
+    iotRtcState().ntpLastSyncTime = (int64_t)now;
 }
 
 // *****************************************************************************
@@ -633,7 +637,7 @@ bool Iot::_syncNtpOneShot(unsigned long timeout_ms)
         tv.tv_sec = unixSecs;
         tv.tv_usec = usec;
         settimeofday(&tv, nullptr);
-        _ntpLastSyncTime = (int64_t)unixSecs;
+        iotRtcState().ntpLastSyncTime = (int64_t)unixSecs;
         log_i("NTP one-shot sync success (server=%s): %s", server, getTimeIso(unixSecs).c_str());
         ok = true;
         break;
@@ -645,7 +649,7 @@ bool Iot::_syncNtpOneShot(unsigned long timeout_ms)
 
 bool Iot::syncNtpTime()
 {
-    int64_t sinceLastSync_s = time(nullptr) - _ntpLastSyncTime.get();
+    int64_t sinceLastSync_s = time(nullptr) - iotRtcState().ntpLastSyncTime;
     if (isTimePlausible() && sinceLastSync_s >= 0 && sinceLastSync_s < _ntpResyncInterval_s.get())
     {
         log_i("NTP time should be good enough: time=%s", getTimeIso().c_str());
@@ -857,19 +861,10 @@ void Iot::panicEarly(const char* format...)
 
 void Iot::escalatingSleepPanicHandler()
 {
-    if (getPanicSleepDuration_s() <= 0)
-    {
-        // first panic, last run was successful: immediately restart
-        _panicSleepDuration_s = _panicSleepDurationInit_s.get();
-        deepSleep(getPanicSleepDuration_s(), true);
-    } else {
-        _panicSleepDuration_s = getPanicSleepDuration_s() * _panicSleepDurationFactor.get();
-        if (getPanicSleepDuration_s() > _panicSleepDurationMax_s.get())
-        {
-            _panicSleepDuration_s = _panicSleepDurationMax_s.get();
-        }
-        deepSleep(getPanicSleepDuration_s(), true);
-    }
+    // the escalation itself is IotBackoffPolicy (iot_lifecycle.h): plain,
+    // unit-tested logic rather than arithmetic scattered over this method
+    log_w("Entering failure backoff (current %d s)", _lifecycle.backoffDuration_s());
+    _lifecycle.enterBackoff();  // runs the exit hooks and does not return
 }
 
 
@@ -1009,19 +1004,16 @@ void Iot::setSleepDuration_s(int sleep_duration_s)
     _sleepDuration_s = sleep_duration_s;
 }
 
-void Iot::setDeepSleepHandler(std::function<void(int duration_s)> deepSleepHandler)
+void Iot::setPower(IotPower& power)
 {
-    _deepSleepHandler = deepSleepHandler;
+    _lifecycle.setPower(power);
 }
 
-void Iot::setRestartHandler(std::function<void()> restartHandler)
+void Iot::addExitHook(std::function<void()> hook)
 {
-    _restartHandler = restartHandler;
-}
-
-void Iot::setShutdownHandler(std::function<void()> shutdownHandler)
-{
-    _shutdownHandler = shutdownHandler;
+    // make sure the library's own hook (log flush, connection close) is first
+    _registerExitHooks();
+    _lifecycle.addExitHook(std::move(hook));
 }
 
 // *****************************************************************************
@@ -1031,59 +1023,36 @@ void Iot::deepSleep()
     deepSleep(_sleepDuration_s);
 }
 
+// The three exits below are thin: IotLifecycle records the cycle in the RTC
+// state, runs the exit hooks (log flush, connection close, LED off) and then
+// dispatches to the IotPower adapter. `panic` keeps its 3.x meaning - true
+// leaves the escalating backoff state untouched, false clears it because the
+// cycle ended in an orderly way.
+
 void Iot::deepSleep(int sleep_duration_s, bool panic)
 {
-    if (!panic)
-    {
-        _panicSleepDuration_s = -1; // regular shutdown, reset panic sleep duration
-    }
-
-    _lastSleepDuration_s = sleep_duration_s;
-    _activeDuration_ms = millis();
-    log_w("Active for %lld ms, going to deep sleep for %d s", getActiveDuration_ms(), sleep_duration_s);
-    logger.flush();
-    api.closeConnection();
-    delay(10);  // delay to allow log to be written
-    setLed(false);
-    _deepSleepHandler(sleep_duration_s);
+    _registerExitHooks();
+    log_w("Active for %lu ms, going to deep sleep for %d s",
+        (unsigned long)millis(), sleep_duration_s);
+    _lifecycle.deepSleep(sleep_duration_s > 0 ? (uint32_t)sleep_duration_s : 0, panic);
 }
 
 // *****************************************************************************
 
 void Iot::restart(bool panic)
 {
-    if (!panic)
-    {
-        _panicSleepDuration_s = -1; // regular shutdown, reset panic sleep duration
-    }
-
-    _lastSleepDuration_s = 0;
-    _activeDuration_ms = millis();
-    log_w("Active for %lld ms, restarting", getActiveDuration_ms());
-    logger.flush();
-    api.closeConnection();
-    delay(10);  // delay to allow log to be written
-    setLed(false);
-    _restartHandler();
+    _registerExitHooks();
+    log_w("Active for %lu ms, restarting", (unsigned long)millis());
+    _lifecycle.restart(panic);
 }
 
 // *****************************************************************************
 
 void Iot::shutdown(bool panic)
 {
-    if (!panic)
-    {
-        _panicSleepDuration_s = -1; // regular shutdown, reset panic sleep duration
-    }
-
-    _lastSleepDuration_s = 0;
-    _activeDuration_ms = millis();
-    log_w("Active for %lld ms, shutting down", getActiveDuration_ms());
-    logger.flush();
-    api.closeConnection();
-    delay(10);  // delay to allow log to be written
-    setLed(false);
-    _shutdownHandler();
+    _registerExitHooks();
+    log_w("Active for %lu ms, shutting down", (unsigned long)millis());
+    _lifecycle.shutdown(panic);
 }
 
 // *****************************************************************************

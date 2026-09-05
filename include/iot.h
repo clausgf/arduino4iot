@@ -19,6 +19,9 @@
 #include <iot_config.h>
 #include <iot_telemetry.h>
 #include <iot_result.h>
+#include <iot_lifecycle.h>
+#include <iot_ports.h>
+#include <iot_rtc_state.h>
 
 // *****************************************************************************
 
@@ -42,10 +45,17 @@ public:
      * system and sync the NTP time.
      *
      * Call seedCredentials() before this (once, with build-time defaults) so the
-     * WiFi credentials and API configuration are present in NVS. begin() reads
-     * configuration values (class IotConfigValue) and persistent values from RTC
-     * RAM / NVRAM, sets the log level from the *log_level* config value, checks
-     * the battery (undervoltage triggers panic()), and starts the watchdog.
+     * WiFi credentials and API configuration are present in NVS. begin()
+     * initializes NVS, starts the wakeup cycle (boot count, reset reason), reads
+     * configuration values (class IotConfigValue), sets the log level from the
+     * *log_level* config value, checks the battery (undervoltage triggers
+     * shutdown), and starts the watchdog.
+     *
+     * If the *previous* cycle ended in a crash, a watchdog timeout or a
+     * brownout, begin() logs that and enters the escalating backoff (see
+     * setPanic()) instead of continuing - and it does so here rather than in
+     * the constructor, so the diagnosis is visible on a serial console that the
+     * sketch has had a chance to open.
      *
      * If no WiFi SSID is seeded in NVS, begin() hands off to
      * apProvisioning.run() (SoftAP + captive-portal setup form) instead of
@@ -87,9 +97,8 @@ public:
      * Erase only the seed/provisioning state (the "iot" NVS namespace: WiFi
      * credentials, API endpoint, project, provisioning token, TLS trust,
      * device token, OTA cache, seed generation) - unlike factoryReset(), does
-     * not touch the "iot-cfg"/"iot-var" namespaces (server config mirror,
-     * library's own persisted runtime values). After this, an empty seeded
-     * WiFi SSID makes the next begin() enter AP provisioning mode.
+     * not touch the "iot-cfg" namespace (the server config mirror). After this,
+     * an empty seeded WiFi SSID makes the next begin() enter AP provisioning mode.
      */
     void clearProvisioning();
 
@@ -186,11 +195,12 @@ public:
 
     /**
      * Return the time of the last NTP sync.
-     * 
-     * This value is backed by a persistent variable and must survive restarts,
-     * using either RTC RAM or NVRAM.
+     *
+     * Kept in the RTC state (IotRtcState::ntpLastSyncTime), so it survives deep
+     * sleep but not a power loss - after which the clock is gone anyway and a
+     * resync is due regardless.
      */
-    time_t getNtpLastSyncTime() { return _ntpLastSyncTime.get(); }
+    time_t getNtpLastSyncTime() { return (time_t)iotRtcState().ntpLastSyncTime; }
 
     /**
      * Set the NTP configuration for time synchronization.
@@ -333,25 +343,28 @@ public:
     // **********************************************************************
 
     /**
-     * Return the whether the last restart was caused by a @panic() and the 
-     * panic sleep duration.
-     * 
-     * This value is backed by a persistent variable and must survive restarts,
-     * using either RTC RAM or NVRAM.
-     * 
-     * @return <0 if the system is not in panic() mode or the sleep duration 
-     * of the current panic cycle in seconds, escalatingSleepPanicHandler().
+     * Return whether the device is in the failure backoff and for how long it
+     * will sleep.
+     *
+     * Kept in the RTC state (IotRtcState::panicSleepDuration_s), which survives
+     * a deep sleep as well as a software or watchdog reset, but not a power
+     * loss - a physically power-cycled device deliberately starts over. Unlike
+     * the pre-4.0 NVRAM-backed variable this costs no flash write cycles, which
+     * matters precisely in the crash loop it exists for.
+     *
+     * @return <0 if the device is not in backoff, otherwise the sleep duration
+     * of the current backoff cycle in seconds, @see escalatingSleepPanicHandler().
      */
-    int getPanicSleepDuration_s() { return _panicSleepDuration_s.get(); }
+    int getPanicSleepDuration_s() { return _lifecycle.backoffDuration_s(); }
 
     /**
-     * Configure the default panic strategy, default is escalatingSleepPanicHandler().
-     * 
-     * On begin(), corresponding configuration values are read from 
+     * Configure the escalating backoff, @see IotBackoffPolicy.
+     *
+     * On begin(), corresponding configuration values are read from
      * *panic_sleep_init_s*, *panic_sleep_factor*, *panic_sleep_max_s*.
      * This method allows overwriting these values later.
      */
-    void setPanic(int initialDuration_s = 60, int factor = 3, int maxDuration_s = 24*60*60);
+    void setPanic(int initialDuration_s = 60, int factor = 2, int maxDuration_s = 24*60*60);
 
     /**
      * Set a panic handler which is called in case of a panic
@@ -471,22 +484,23 @@ public:
     // **********************************************************************
 
     /**
-     * @return the number of times the system has been booted since the last power-on reset
-     * (only available with RTC RAM)
+     * @return the number of times the system has been booted since the last
+     * power-on reset, this boot included. Counted in begin(), so a cycle that
+     * fails to connect counts too.
      */
-    uint32_t getBootCount() { return _bootCount.get(); }
+    uint32_t getBootCount() { return _lifecycle.bootCount(); }
 
     /**
-     * @return the number of milliseconds the system has been active since in the last boot cycle
-     * (only available with RTC RAM)
+     * @return how long the *previous* boot cycle stayed awake, in milliseconds
+     * (recorded at its exit).
      */
-    int64_t getActiveDuration_ms() { return _activeDuration_ms.get(); }
+    int64_t getActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
 
     /**
-     * Nominal duration of the sleep cycle we just woke up from in seconds
-     * (only available with RTC RAM)
+     * @return the nominal duration of the sleep cycle we just woke up from, in
+     * seconds; 0 after a restart or shutdown.
      */
-    int getLastSleepDuration_s() { return _lastSleepDuration_s.get(); }
+    int getLastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
 
     /**
      * Set the duration of the next sleep cycle in seconds.
@@ -497,22 +511,27 @@ public:
     void setSleepDuration_s(int sleep_duration_s);
 
     /**
-     * Register a handler for putting the system into deepsleep for the
-     * given duration. The default handler just calls esp_deep_sleep().
+     * Replace the power adapter, i.e. how the device actually sleeps, restarts
+     * and shuts down. Defaults to IotEspPower (esp_deep_sleep()/esp_restart()).
+     *
+     * This one port replaces the three pre-4.0 handler setters
+     * (setDeepSleepHandler/setRestartHandler/setShutdownHandler): an
+     * application that has to park a peripheral or pull a chip-enable low
+     * derives from IotEspPower and overrides the one method it cares about.
+     * Must be called before begin(); @p power has to outlive the Iot object.
+     *
+     * To run something at *every* exit without replacing the mechanism, use
+     * addExitHook() instead.
      */
-    void setDeepSleepHandler(std::function<void(int duration_s)> deepSleepHandler);
+    void setPower(IotPower& power);
 
     /**
-     * Register a handler for restarting the system. The default handler
-     * just calls esp_restart().
+     * Register a callback to run at every exit of the wakeup cycle - before
+     * deep sleep, restart, shutdown and on the backoff path - e.g. to park a
+     * sensor or store application state. Hooks run in registration order,
+     * after the library's own (log flush, connection close).
      */
-    void setRestartHandler(std::function<void()> restartHandler);
-
-    /**
-     * Register a handler for shutting down the system. The default handler
-     * just calls esp_deep_sleep_start() without configuring a wakeup source.
-     */
-    void setShutdownHandler(std::function<void()> shutdownHandler);
+    void addExitHook(std::function<void()> hook);
 
     /**
      * Put the system into deep sleep mode using for the sleep duration
@@ -572,16 +591,12 @@ private:
     uint32_t _dhcpMaxReuse;
     IPAddress _ip, _gw, _mask, _dns1, _dns2;
     unsigned long _wifiConnectDuration_ms;
-    std::function<void(int)> _deepSleepHandler;
-    std::function<void()> _restartHandler;
-    std::function<void()> _shutdownHandler;
 
-    // persistent variables
-    IotPersistentValue<int32_t> _bootCount;
-    IotPersistentValue<int64_t> _activeDuration_ms;
-    IotPersistentValue<int32_t> _lastSleepDuration_s;
-    IotPersistentValue<int64_t> _ntpLastSyncTime;
-    IotPersistentValue<int32_t> _panicSleepDuration_s;
+    /// Cycle bookkeeping, exits and failure backoff. Holds the state that has
+    /// to survive a deep sleep but not a power loss (IotRtcState); everything
+    /// that must survive a power loss lives in NVS instead.
+    IotLifecycle _lifecycle;
+    bool _exitHooksRegistered;
 
     // configurable variables
     IotConfigValue<int32_t> _logLevel;
@@ -616,6 +631,16 @@ private:
 
     /// Invalidate the cached DHCP lease (see setDhcpCache()).
     void _invalidateDhcpCache();
+
+    /// Register the library's own exit hooks (log flush, connection close, LED
+    /// off) exactly once. Idempotent, so it can guard every entry point that
+    /// may end the cycle.
+    void _registerExitHooks();
+
+    /// Start the wakeup cycle before any network exists: initialize NVS, count
+    /// the boot, latch the reset reason, start the watchdog, and enter the
+    /// backoff if the previous cycle ended abnormally. Called by begin().
+    void _beginCycle();
 
     /// Initialize all subsystems (config, logger, api, watchdog, battery check)
     /// after WiFi is connected. Called by begin().
