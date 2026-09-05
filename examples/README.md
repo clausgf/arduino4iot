@@ -53,15 +53,25 @@ for the key reference.
 ### First-time provisioning: SoftAP + captive portal
 
 If no WiFi SSID is seeded (a factory-fresh device, or one after
-`iot.clearProvisioning()`), `iot.begin()` automatically opens a setup AP and
-serves a small web form instead of attempting to connect - see
+`iot.clearProvisioning()`), `iot.begin()` calls the handler you register with
+`iot.setNoCredentialsHandler()` instead of attempting to connect. Registering
+`apProvisioning.run()` there opens a setup AP serving a small web form - see
 [docs/concepts.md](../docs/concepts.md), "First-time provisioning: SoftAP +
-captive portal", for the full design (trigger, no-popup UX, backoff policy).
+captive portal", for the full design (trigger, no-popup UX, backoff policy),
+and [`ap_provisioning/main.cpp`](ap_provisioning/main.cpp) for a complete sketch.
 
 ```cpp
+#include <iot_ap.h>   // only referenced here, so only linked here
+
 apProvisioning.setSsidPrefix("myproject-setup-");  // default "arduino4iot-setup-"
 apProvisioning.setIdleTimeout_s(300);              // default 300 (5 min)
+iot.setNoCredentialsHandler([] { apProvisioning.run(); });
 ```
+
+The module is opt-in because it costs about **42 KB** of flash (`DNSServer` +
+`WebServer`) - a lot on the stock `esp32dev` dual-OTA partition. Leave the
+handler unregistered and none of it is linked; `begin()` then logs an explicit
+error and shuts the device down if it ever finds itself without credentials.
 
 Connect to the open `<prefix><last 4 MAC hex chars>` WiFi network and open
 `http://192.168.4.1/` in a normal browser (there is deliberately no

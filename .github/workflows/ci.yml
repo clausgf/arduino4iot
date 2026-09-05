@@ -56,3 +56,16 @@ jobs:
           --project-option="framework=arduino"
           --project-option="lib_deps=bblanchon/ArduinoJson@^7.0.0"
           examples/main.cpp
+
+      - name: Build AP provisioning example
+        # separate sketch on purpose: IotAp is opt-in via
+        # iot.setNoCredentialsHandler() and is only linked when an application
+        # references it, so this is the build that keeps that path compiling
+        run: >
+          pio ci
+          --lib="."
+          --board=${{ matrix.board }}
+          --project-option="platform=https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20/platform-espressif32.zip"
+          --project-option="framework=arduino"
+          --project-option="lib_deps=bblanchon/ArduinoJson@^7.0.0"
+          examples/ap_provisioning/main.cpp

@@ -37,11 +37,13 @@ through the cycle:
 | `api`            | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
 | `config`         | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
 | `logger`         | `IotLogger` | Buffered remote logging plus local serial logging. |
-| `apProvisioning` | `IotAp`     | SoftAP + captive-portal provisioning when no bootstrap credentials are seeded — see "First-time provisioning" below. |
+| `apProvisioning` | `IotAp`     | **Opt-in.** SoftAP + captive-portal provisioning when no bootstrap credentials are seeded — see "First-time provisioning" below. |
 
-`iot.begin()` initializes `api`/`config`/`logger` (and, before that, hands
-off to `apProvisioning.run()` if no WiFi SSID is seeded), so most programs
-only call `iot.begin(ssid, password)` after setting the `api` parameters.
+`iot.begin()` initializes `api`/`config`/`logger`, so most programs only call
+`iot.begin()` after seeding the bootstrap configuration. `apProvisioning` is
+the odd one out: the core never references it, so it exists only in firmware
+that opts in via `iot.setNoCredentialsHandler()` — the module costs ~42 KB and
+most devices never open a setup AP.
 
 Two value types round out the surface: `IotTelemetry` (a telemetry builder) and
 `IotResult` (a typed operation result). Neither is a singleton — you create them
@@ -177,10 +179,29 @@ version bump); adding a new key is not.
 A device with no seeded WiFi SSID (a factory-fresh device, or one after
 `iot.clearProvisioning()`/`iot.factoryReset()`) has no way to reach the
 server at all. `Iot::begin()` detects this — an empty `wifiSsid` in NVS is
-the single trigger — and hands off to `apProvisioning.run()` (`IotAp`,
-`iot_ap.{h,cpp}`) instead of attempting to connect. That call blocks and
-never returns: a successful setup ends in `iot.restart()`, an idle timeout
-ends in `iot.shutdown()`.
+the single trigger — and calls the handler registered with
+`iot.setNoCredentialsHandler()` instead of attempting to connect:
+
+```cpp
+#include <iot_ap.h>
+iot.setNoCredentialsHandler([] { apProvisioning.run(); });
+```
+
+`apProvisioning.run()` (`IotAp`, `iot_ap.{h,cpp}`) blocks and never returns:
+a successful setup ends in `iot.restart()`, an idle timeout ends in
+`iot.shutdown()`. If the handler returns anyway, or if none is registered,
+`begin()` logs an explicit error and shuts the device down — indefinite deep
+sleep, for the same reason the idle timeout does (see *No backoff state*
+below). See [`examples/ap_provisioning/`](../examples/ap_provisioning/) for a
+complete sketch.
+
+**Why a hook and not a direct call.** The module is opt-in because it is not
+free (see *Flash footprint* below), and a great many devices never need it —
+they are provisioned by a seeded NVS partition image and would still have paid
+for it. Since the core names no provisioning module, the linker drops `IotAp`,
+`WebServer` and `DNSServer` entirely from a firmware that does not reference
+them. It also breaks an include cycle: the dependency now runs one way,
+`iot_ap` → `iot`.
 
 The device opens its own **open** (no password) WiFi network,
 `<ssidPrefix><last 4 hex chars of the MAC>` (`setSsidPrefix()`, default
@@ -239,13 +260,22 @@ timer-based retry would be provably useless — exactly the "battery drains in
 an open AP nobody is waiting for" scenario this avoids.
 
 **Flash footprint.** `DNSServer`/`WebServer` are arduino-esp32 core headers
-(no new `library.json` dependency), but they are not free: on the `esp32dev`
-board's default (dual-OTA) partition scheme, the library + a minimal sketch
-already used ~95% of the 1.25 MB app partition before this module: adding it
-costs roughly another 42 KB (~3 percentage points), leaving very little
-headroom for application code. Projects planning to enable AP provisioning on
-a flash-constrained board should budget for this — e.g. a larger/custom
-partition table — rather than relying on the stock `esp32dev` scheme.
+(no new `library.json` dependency), but they are not free. Measured on
+`esp32dev` with its default (dual-OTA) 1.25 MB app partition, using the same
+sketch with and without the handler registered:
+
+| Build                                    | Flash       | of partition |
+|------------------------------------------|-------------|--------------|
+| `examples/main.cpp` (no handler)         | 1 251 382 B | 95.5 %       |
+| the same, with `apProvisioning.run()`    | 1 293 406 B | 98.7 %       |
+
+So the module costs about **42 KB**, or 3.2 percentage points of an already
+tight partition — which is why it is opt-in rather than wired in. A firmware
+that does not register the handler links none of it (verified with `nm`: zero
+`IotAp`/`WebServer`/`DNSServer` symbols in the first build, 19/47/9 in the
+second). A project that does enable it on a flash-constrained board should
+budget for the 42 KB — e.g. a larger/custom partition table — rather than
+relying on the stock `esp32dev` scheme.
 
 ## Configuration (runtime, config.json)
 

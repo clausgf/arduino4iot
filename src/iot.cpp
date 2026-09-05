@@ -18,7 +18,11 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
-#include "iot_ap.h"
+// Deliberately no #include "iot_ap.h": naming the provisioning module here
+// would make the linker keep DNSServer/WebServer (~42 KB) in every firmware,
+// whether or not it can ever open a setup AP. The application wires it in via
+// setNoCredentialsHandler(). This also breaks the iot <-> iot_ap include cycle:
+// the dependency now runs one way, iot_ap -> iot.
 #include "iot_esp_ports.h"
 
 // *****************************************************************************
@@ -205,14 +209,32 @@ bool Iot::begin(unsigned long timeout_ms)
 
     if (ssid.isEmpty())
     {
-        log_w("begin: no WiFi SSID seeded, entering AP provisioning mode");
-        apProvisioning.run(); // never returns
+        if (_noCredentialsHandler)
+        {
+            log_w("begin: no WiFi SSID seeded, invoking the no-credentials handler");
+            _noCredentialsHandler();  // normally does not return, e.g. apProvisioning.run()
+            log_w("begin: the no-credentials handler returned, shutting down");
+        } else {
+            log_e("begin: no WiFi SSID seeded and no handler registered - this device "
+                  "cannot reach the server. Seed credentials via iot.seedCredentials() "
+                  "or an NVS partition image, or register a setup flow with "
+                  "iot.setNoCredentialsHandler([]{ apProvisioning.run(); }).");
+        }
+        // indefinite deep sleep, no wake timer: nothing can change the "no
+        // credentials" condition between wakeups, so retrying on a timer would
+        // only drain the battery. Only a physical reset tries again.
+        shutdown();  // never returns
     }
 
     bool success = connectWifi(ssid.c_str(), password.c_str(), timeout_ms);
     _initSubsystems();
     success = success && syncNtpTime();
     return success;
+}
+
+void Iot::setNoCredentialsHandler(std::function<void()> handler)
+{
+    _noCredentialsHandler = std::move(handler);
 }
 
 void Iot::seedCredentials(const IotSeedConfig& cfg)

@@ -57,10 +57,11 @@ public:
      * the constructor, so the diagnosis is visible on a serial console that the
      * sketch has had a chance to open.
      *
-     * If no WiFi SSID is seeded in NVS, begin() hands off to
-     * apProvisioning.run() (SoftAP + captive-portal setup form) instead of
-     * attempting to connect - see docs/concepts.md, "First-time
-     * provisioning: SoftAP + captive portal". That call never returns.
+     * If no WiFi SSID is seeded in NVS, begin() calls the handler registered
+     * with setNoCredentialsHandler() instead of attempting to connect. Without
+     * one it logs an explicit error and shuts down - see
+     * setNoCredentialsHandler() and docs/concepts.md, "First-time
+     * provisioning: SoftAP + captive portal".
      *
      * @param timeout_ms the WiFi connect timeout in milliseconds
      * @return true if WiFi connected and NTP sync succeeded
@@ -87,6 +88,37 @@ public:
      * before the new values take effect.
      */
     void seedCredentials(const IotSeedConfig& cfg);
+
+    /**
+     * Register what begin() should do when it finds no seeded WiFi SSID in NVS
+     * - a factory-fresh device, or one after clearProvisioning()/factoryReset().
+     * Such a device cannot reach the server at all, so there is nothing
+     * sensible for the library itself to do.
+     *
+     * The usual handler starts the SoftAP + captive-portal setup form:
+     *
+     *   #include <iot_ap.h>
+     *   iot.setNoCredentialsHandler([] { apProvisioning.run(); });
+     *
+     * This is a hook rather than a direct call **because of what it costs**.
+     * IotAp pulls in DNSServer and WebServer, roughly 42 KB of flash - and on
+     * the stock esp32dev (dual-OTA) partition scheme the library plus a minimal
+     * sketch already fills most of the 1.25 MB app partition. Wiring it in from
+     * Iot::begin() would make every firmware pay for it, including the many
+     * that are provisioned by a seeded NVS image and never open an AP. Because
+     * the core names no provisioning module, the linker drops IotAp entirely
+     * unless the application references it, as here.
+     *
+     * The handler is not expected to return: a successful setup ends in
+     * iot.restart() so the new NVS values take effect (see docs/concepts.md -
+     * a runtime re-seed only writes NVS and needs a reboot). If it does return,
+     * or if none is registered, begin() logs an error and calls shutdown() -
+     * indefinite deep sleep, no wake timer, so a device nobody is setting up
+     * does not drain its battery retrying. Only a physical reset tries again,
+     * which is the right policy here: unlike a server that may come back, the
+     * "no credentials" condition cannot resolve itself between wakeups.
+     */
+    void setNoCredentialsHandler(std::function<void()> handler);
 
     /**
      * Erase all persisted state (seeded configuration, tokens, config values and
@@ -599,6 +631,9 @@ private:
     /// that must survive a power loss lives in NVS instead.
     IotLifecycle _lifecycle;
     bool _exitHooksRegistered;
+
+    /// @see setNoCredentialsHandler(); empty unless the application registers one
+    std::function<void()> _noCredentialsHandler;
 
     // configurable variables
     IotConfigValue<int32_t> _logLevel;
