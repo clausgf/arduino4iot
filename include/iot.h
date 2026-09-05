@@ -52,10 +52,8 @@ public:
      * shutdown), and starts the watchdog.
      *
      * If the *previous* cycle ended in a crash, a watchdog timeout or a
-     * brownout, begin() logs that and enters the escalating backoff (see
-     * setPanic()) instead of continuing - and it does so here rather than in
-     * the constructor, so the diagnosis is visible on a serial console that the
-     * sketch has had a chance to open.
+     * brownout, begin() logs that and enters the escalating backoff instead of
+     * continuing, @see setPanic().
      *
      * If no WiFi SSID is seeded in NVS, begin() calls the handler registered
      * with setNoCredentialsHandler() instead of attempting to connect. Without
@@ -98,23 +96,17 @@ public:
      *   #include <iot_ap.h>
      *   iot.setNoCredentialsHandler([] { apProvisioning.run(); });
      *
-     * This is a hook rather than a direct call **because of what it costs**.
-     * IotAp pulls in DNSServer and WebServer, roughly 42 KB of flash - and on
-     * the stock esp32dev (dual-OTA) partition scheme the library plus a minimal
-     * sketch already fills most of the 1.25 MB app partition. Wiring it in from
-     * Iot::begin() would make every firmware pay for it, including the many
-     * that are provisioned by a seeded NVS image and never open an AP. Because
-     * the core names no provisioning module, the linker drops IotAp entirely
-     * unless the application references it, as here.
+     * A hook rather than a direct call because IotAp costs ~42 KB of flash
+     * (DNSServer + WebServer) that most devices never need: since the core
+     * names no provisioning module, the linker drops it unless an application
+     * references it, as here.
      *
-     * The handler is not expected to return: a successful setup ends in
-     * iot.restart() so the new NVS values take effect (see docs/concepts.md -
-     * a runtime re-seed only writes NVS and needs a reboot). If it does return,
-     * or if none is registered, begin() logs an error and calls shutdown() -
-     * indefinite deep sleep, no wake timer, so a device nobody is setting up
-     * does not drain its battery retrying. Only a physical reset tries again,
-     * which is the right policy here: unlike a server that may come back, the
-     * "no credentials" condition cannot resolve itself between wakeups.
+     * The handler is not expected to return - a successful setup ends in
+     * iot.restart(), because a runtime re-seed only writes NVS and needs a
+     * reboot to take effect. If it returns, or if none is registered, begin()
+     * logs an error and calls shutdown(): indefinite deep sleep, since the "no
+     * credentials" condition cannot resolve itself between wakeups, so a timer
+     * retry would only drain the battery.
      */
     void setNoCredentialsHandler(std::function<void()> handler);
 
@@ -378,14 +370,13 @@ public:
      * Return whether the device is in the failure backoff and for how long it
      * will sleep.
      *
-     * Kept in the RTC state (IotRtcState::panicSleepDuration_s), which survives
-     * a deep sleep as well as a software or watchdog reset, but not a power
-     * loss - a physically power-cycled device deliberately starts over. Unlike
-     * the pre-4.0 NVRAM-backed variable this costs no flash write cycles, which
+     * Kept in the RTC state, which survives a deep sleep as well as a software
+     * or watchdog reset, but not a power loss - a physically power-cycled
+     * device deliberately starts over. Costs no flash write cycles, which
      * matters precisely in the crash loop it exists for.
      *
-     * @return <0 if the device is not in backoff, otherwise the sleep duration
-     * of the current backoff cycle in seconds, @see escalatingSleepPanicHandler().
+     * @return <0 if not in backoff, otherwise the sleep duration of the current
+     * backoff cycle in seconds, @see escalatingSleepPanicHandler().
      */
     int getPanicSleepDuration_s() { return _lifecycle.backoffDuration_s(); }
 
@@ -546,22 +537,18 @@ public:
      * Replace the power adapter, i.e. how the device actually sleeps, restarts
      * and shuts down. Defaults to IotEspPower (esp_deep_sleep()/esp_restart()).
      *
-     * This one port replaces the three pre-4.0 handler setters
-     * (setDeepSleepHandler/setRestartHandler/setShutdownHandler): an
-     * application that has to park a peripheral or pull a chip-enable low
-     * derives from IotEspPower and overrides the one method it cares about.
-     * Must be called before begin(); @p power has to outlive the Iot object.
-     *
-     * To run something at *every* exit without replacing the mechanism, use
-     * addExitHook() instead.
+     * To park a peripheral or pull a chip-enable low, derive from IotEspPower
+     * and override the one method that matters. Call before begin(); @p power
+     * has to outlive the Iot object. To run something at *every* exit without
+     * replacing the mechanism, use addExitHook().
      */
     void setPower(IotPower& power);
 
     /**
-     * Register a callback to run at every exit of the wakeup cycle - before
-     * deep sleep, restart, shutdown and on the backoff path - e.g. to park a
-     * sensor or store application state. Hooks run in registration order,
-     * after the library's own (log flush, connection close).
+     * Register a callback to run at every exit of the wakeup cycle - deep
+     * sleep, restart, shutdown and the backoff path - e.g. to park a sensor or
+     * store application state. Hooks run in registration order, after the
+     * library's own (log flush, connection close).
      */
     void addExitHook(std::function<void()> hook);
 
@@ -624,9 +611,8 @@ private:
     IPAddress _ip, _gw, _mask, _dns1, _dns2;
     unsigned long _wifiConnectDuration_ms;
 
-    /// Cycle bookkeeping, exits and failure backoff. Holds the state that has
-    /// to survive a deep sleep but not a power loss (IotRtcState); everything
-    /// that must survive a power loss lives in NVS instead.
+    /// Cycle bookkeeping, exits and failure backoff; holds the state that
+    /// survives a deep sleep but not a power loss (IotRtcState).
     IotLifecycle _lifecycle;
     bool _exitHooksRegistered;
 
@@ -668,8 +654,7 @@ private:
     void _invalidateDhcpCache();
 
     /// Register the library's own exit hooks (log flush, connection close, LED
-    /// off) exactly once. Idempotent, so it can guard every entry point that
-    /// may end the cycle.
+    /// off) exactly once; idempotent, so every exit path can call it.
     void _registerExitHooks();
 
     /// Start the wakeup cycle before any network exists: initialize NVS, count

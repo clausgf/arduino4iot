@@ -25,10 +25,9 @@
  *
  * A key present with a mismatching type still logs - that is a real error.
  *
- * New code should prefer the IotStore port (iot_ports.h) and its IotNvsStore
- * adapter, which wrap these rules behind an interface that can be substituted
- * in a host test. These helpers remain for the parts of the library that have
- * not been moved onto the port yet.
+ * Prefer the IotStore port and its IotNvsStore adapter, which wrap these rules
+ * behind a substitutable interface. These helpers remain for the parts of the
+ * library not yet moved onto the port.
  */
 inline int32_t nvramGetInt(Preferences& preferences, const char *key, int32_t defaultValue)
 {
@@ -60,18 +59,3 @@ inline String nvramGetString(Preferences& preferences, const char *key, const St
     return preferences.isKey(key) ? preferences.getString(key, defaultValue) : defaultValue;
 }
 
-// *****************************************************************************
-// Removed in 4.0
-//
-// - IotPersistentValue / IotPersistableValue / setPreferedPersistentStorage():
-//   replaced by the explicit split between IotRtcState (survives deep sleep,
-//   free to write) and IotStore (survives a power loss, costs flash cycles).
-//   Which storage a value uses is now a design decision visible at its
-//   declaration, not a global runtime switch applied to every value at once -
-//   and the values themselves are initialized, which the old class left to
-//   begin() and thus read uninitialized on the constructor's panic path.
-// - getResetReason() / resetReasonToString() / getWakeupCause() /
-//   wakeupCauseToString(): replaced by IotPower::resetReason() /
-//   ::wakeupCause() and iotResetReasonToString() / iotWakeupCauseToString().
-// - waitUntil(): unused.
-// *****************************************************************************

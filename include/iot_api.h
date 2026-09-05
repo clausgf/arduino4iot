@@ -349,10 +349,8 @@ private:
     const char * _nvram_client_key_key = "cliKey";
 
     /// The "iot" NVS namespace, opened by begin() and kept open until end().
-    /// Naming the concrete adapter here is deliberate: unlike IotBattery or
-    /// IotClock, persistence is not optional for this library, so there is no
-    /// unused adapter for the linker to drop. Injecting an IotStore& instead
-    /// comes with the wider dependency-injection step.
+    /// Naming the adapter is fine here: unlike IotBattery or IotClock,
+    /// persistence is not optional, so there is nothing for the linker to drop.
     IotNvsStore _store;
 
     /// Provisioning token, device token, expiry and the renewal decision.
@@ -415,14 +413,13 @@ private:
     HTTPClient & _getHttpClient();
 
     /**
-     * Merge the three header sources in precedence order - @p base (what the
-     * calling operation needs), then the setApiHeader() defaults, then
-     * @p requestHeader - with later sources overriding earlier ones.
+     * Merge the header sources in precedence order - @p base (what the calling
+     * operation needs), then the setApiHeader() defaults, then @p requestHeader
+     * - with later sources overriding earlier ones.
      *
-     * Kept explicit rather than hidden inside the request path because the two
-     * callers genuinely want different bases: a JSON API call wants Accept and
-     * Content-Type, an OTA download wants the cache validators and neither.
-     * Up to 3.x updateFirmware() open-coded its own copy of this merge.
+     * Explicit rather than hidden in the request path because the two callers
+     * want different bases: a JSON API call wants Accept and Content-Type, an
+     * OTA download the cache validators and neither.
      */
     std::map<String, String> _mergeHeaders(std::map<String, String> base,
         const std::map<String, String>& requestHeader) const;
@@ -433,9 +430,8 @@ private:
         bool authenticated) const;
 
     /**
-     * Execute a single HTTP request. Knows nothing about tokens beyond adding
-     * the Authorization header it is given: no 401 handling, no
-     * re-provisioning, hence nothing to guard against re-entering.
+     * Execute a single HTTP request with the headers it is given. No token
+     * knowledge, no 401 handling, no re-provisioning.
      * @see apiRequest(), which adds the authentication policy on top.
      */
     int _performRequest(String& oResponse, std::map<String, String>& oResponseHeader,
@@ -444,9 +440,9 @@ private:
         const std::vector<String>& collectResponseHeaderKeys);
 
     /**
-     * Perform the /provision exchange and adopt the resulting token.
-     * Goes through _performRequest() rather than apiRequest(), so a 401 from
-     * /provision itself is reported instead of triggering another attempt.
+     * Perform the /provision exchange and adopt the resulting token. Goes
+     * through _performRequest(), not apiRequest(), so a 401 from /provision
+     * itself is reported rather than triggering another attempt.
      */
     IotResult _requestDeviceToken(const String& apiPath);
 };

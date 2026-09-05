@@ -18,15 +18,12 @@
 // *****************************************************************************
 // ESP32 adapters for the ports in iot_ports.h.
 //
-// The application picks and instantiates the adapters it needs and hands them
-// to the library; the library never names one. That is what keeps the unused
-// ones out of the binary: a firmware that references no IotAdcBattery does not
-// link the ADC code, one that references no IotNtpClock does not link SNTP, and
-// so on.
+// The application instantiates the adapters it needs; the library never names
+// an optional one, which is what keeps the unused ones out of the binary - no
+// IotAdcBattery reference, no ADC code linked; no IotNtpClock, no SNTP.
 //
-// This header pulls in Arduino and must therefore never be included from the
-// Arduino-free tier (iot_ports.h, iot_result.h, iot_telemetry.h, iot_text.h)
-// or from a native test.
+// Pulls in Arduino, so never include it from the Arduino-free tier or from a
+// native test.
 // *****************************************************************************
 
 
@@ -37,17 +34,14 @@
 /**
  * IotStore backed by one NVS namespace.
  *
- * The namespace handle is opened by begin() and kept open until end(), so the
- * accessors do not reopen NVS on every call (the same trick IotConfig already
- * uses). Reads of absent keys are silent: Preferences::getXxx() logs
- * "NOT_FOUND" through Arduino's log_e(), which bypasses the ESP-IDF log level
- * machinery and cannot be filtered, so every read is guarded by isKey().
+ * The handle is opened by begin() and kept open until end(), so the accessors
+ * do not reopen NVS on every call. Reads of absent keys are silent: every read
+ * is guarded by isKey(), because Preferences::getXxx() logs "NOT_FOUND" through
+ * Arduino's log_e(), which cannot be filtered.
  *
  * Integer encoding: writes normalize to NVS i64, reads accept any integer type
- * NVS reports for the key. That keeps a device provisioned by an older firmware
- * (or by an externally generated NVS partition image, where `tlsMode` is u8 and
- * `seedGen` is u32 - see docs/concepts.md) readable, while new writes converge
- * on a single encoding.
+ * NVS reports for the key - so an externally generated partition image, where
+ * `tlsMode` is u8 and `seedGen` u32, stays readable.
  */
 class IotNvsStore : public IotStore
 {
@@ -90,13 +84,12 @@ private:
 // *****************************************************************************
 
 /**
- * IotClock over the plain system clock, with no synchronization of its own:
+ * IotClock over the plain system clock, with no synchronization of its own -
  * sync() only reports whether the time is already plausible.
  *
- * For devices whose time comes from somewhere else - an external RTC chip, a
- * GPS receiver, a light-sleeping device that never loses its clock - and for
- * http:// deployments that only need timestamps to be monotonic. Links no SNTP
- * code at all.
+ * For devices whose time comes from elsewhere (external RTC chip, GPS, a
+ * light-sleeping device that never loses its clock) and for http:// deployments
+ * that only need monotonic timestamps. Links no SNTP code.
  */
 class IotSystemClock : public IotClock
 {
@@ -112,19 +105,18 @@ public:
 /**
  * IotClock that synchronizes over SNTP.
  *
- * sync() sends a single manual SNTP request and sets the clock directly rather
- * than starting the lwIP SNTP daemon, whose randomized 0-5 s startup delay
- * (CONFIG_LWIP_SNTP_STARTUP_DELAY) otherwise dominates the wakeup. There is no
- * daemon fallback: if the one-shot query fails there is no connectivity, and
- * the daemon would not do better.
+ * sync() sends a single manual SNTP request and sets the clock directly instead
+ * of starting the lwIP SNTP daemon, whose randomized 0-5 s startup delay
+ * (CONFIG_LWIP_SNTP_STARTUP_DELAY) otherwise dominates the wakeup. No daemon
+ * fallback: if the one-shot fails there is no connectivity, and the daemon
+ * would not do better.
  *
  * A sync is only attempted when the clock is implausible or the resync interval
- * has elapsed, so calling sync() once per wakeup is cheap. Pointing the first
- * server at an IP literal or the local router additionally removes DNS from the
- * path.
+ * elapsed, so calling sync() once per wakeup is cheap. A first server given as
+ * an IP literal or the local router also removes DNS from the path.
  *
- * @param lastSyncTime where the timestamp of the last successful sync is kept
- *        across deep sleep - normally IotRtcState::ntpLastSyncTime.
+ * @param lastSyncTime where the last successful sync is kept across deep sleep,
+ *        normally IotRtcState::ntpLastSyncTime.
  */
 class IotNtpClock : public IotClock
 {
@@ -161,20 +153,19 @@ private:
 
 /**
  * IotNetwork over WiFi, with the optimizations that matter for a deep-sleep
- * device. All of them degrade to a plain full-scan DHCP connect on failure.
+ * device. All degrade to a plain full-scan DHCP connect on failure.
  *
- * - **Fast reconnect** (on by default): the last-good BSSID and channel are
- *   kept in the RTC state, so the next connect targets that AP directly and
- *   skips the all-channel scan (~0.3-1.5 s). A timeout discards the cache and
- *   retries with a full scan, so roaming or a moved device costs one slow
- *   connect.
+ * - **Fast reconnect** (default on): last-good BSSID and channel kept in the
+ *   RTC state, so the next connect targets that AP and skips the all-channel
+ *   scan (~0.3-1.5 s). A timeout discards the cache and retries with a full
+ *   scan, so roaming costs one slow connect.
  * - **Static IP**: skips DHCP entirely. The device then learns no DNS server,
  *   so pass dns1/dns2 if the API URL uses a hostname.
- * - **DHCP lease cache** (off by default): the assigned lease is kept in the
- *   RTC state and re-applied on the next wake, skipping the DORA exchange
- *   (~0.3-0.5 s), but only on the fast-reconnect path (same AP, hence same
- *   subnet) and only for @p maxReuse wakeups before a real bind renews it.
- *   Off by default because it trades a small correctness risk for speed.
+ * - **DHCP lease cache** (default off): the lease is kept in the RTC state and
+ *   re-applied on the next wake, skipping DORA (~0.3-0.5 s) - but only on the
+ *   fast-reconnect path (same AP, hence same subnet) and only for @p maxReuse
+ *   wakeups before a real bind renews it. Off by default because it trades a
+ *   small correctness risk for speed.
  */
 class IotWifiNetwork : public IotNetwork
 {
@@ -230,15 +221,11 @@ private:
  *
  *   voltage_mV = raw_mV * factor / divider + offset_mV
  *
- * This is one adapter among many, not the library's idea of what a battery is -
- * an I2C fuel gauge, an external ADC or a coulomb counter goes through
- * IotCallbackBattery or an own IotBattery implementation instead, without the
- * core noticing.
- *
- * Over the pre-4.0 built-in measurement this adds averaging over several
- * samples (an ESP32 ADC reading is noisy) and an optional enable pin, so the
- * divider can be switched off between measurements instead of draining the
- * battery continuously.
+ * One adapter among many - an I2C fuel gauge, an external ADC or a coulomb
+ * counter goes through IotCallbackBattery or an own IotBattery instead. Samples
+ * are averaged (a single ESP32 ADC reading is noisy), and an optional enable
+ * pin lets the divider be switched off between measurements rather than
+ * draining the battery continuously.
  */
 class IotAdcBattery : public IotBattery
 {
@@ -275,12 +262,9 @@ private:
 // *****************************************************************************
 
 /**
- * IotPower over esp_deep_sleep()/esp_restart().
- *
- * The three exit methods do not return. An application that needs to do
- * something first (park a peripheral, pull a chip-enable low) derives from this
- * class or implements IotPower itself - which is exactly what the three
- * pre-4.0 handler setters were for.
+ * IotPower over esp_deep_sleep()/esp_restart(). The exit methods do not return;
+ * an application that needs to park a peripheral or pull a chip-enable low
+ * first derives from this class or implements IotPower itself.
  */
 class IotEspPower : public IotPower
 {

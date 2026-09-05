@@ -75,22 +75,17 @@ Authentication is deliberately **not** part of the transport:
 - `IotTokenManager` (`iot_token.h`) holds the provisioning token, the device
   token and its expiry, persists the latter through `IotStore`, and owns the one
   decision that matters — `needsNewToken(now, isTimePlausible)`. It knows
-  nothing about HTTP, is Arduino-free, and is unit tested on the host
+  nothing about HTTP, is Arduino-free and unit tested on the host
   (`test/test_token`), including the two cases that deliberately count as "still
-  good": an **unknown expiry** (a token from an older library version, or a
-  server that sent no `expiresIn`) and an **implausible clock** before the NTP
-  sync, where the arithmetic would be meaningless. Both then surface as a 401
-  and re-provision, which is cheaper than re-provisioning on every wakeup.
+  good": an **unknown expiry** (a server that sent no `expiresIn`) and an
+  **implausible clock** before the NTP sync, where the arithmetic would be
+  meaningless. Both surface as a 401 and re-provision, which is cheaper than
+  re-provisioning on every wakeup.
 - `IotApi::_performRequest()` performs one request with the headers it is given
   and no notion of tokens at all.
 - `IotApi::apiRequest()` is the policy on top: attach the token, and on 401 get
-  a new one and retry once.
-
-Up to 3.x these were one thing, with two consequences that are gone now. The
-single request path could re-enter itself while provisioning, guarded by an
-`_inProvisioning` flag; and `updateFirmware()` had to re-read the
-`Authorization` header after its `HEAD` because the retry might have replaced
-the token underneath it — it now simply builds the OTA headers after that call.
+  a new one and retry once. Because the retry cannot re-enter the request path,
+  nothing has to guard against it.
 
 **Choose the renewal margin against the server's token lifetime.** The margin is
 a promise that the token outlives the next sleep, so it must be larger than the
@@ -224,13 +219,11 @@ sleep, for the same reason the idle timeout does (see *No backoff state*
 below). See [`examples/ap_provisioning/`](../examples/ap_provisioning/) for a
 complete sketch.
 
-**Why a hook and not a direct call.** The module is opt-in because it is not
-free (see *Flash footprint* below), and a great many devices never need it —
-they are provisioned by a seeded NVS partition image and would still have paid
-for it. Since the core names no provisioning module, the linker drops `IotAp`,
-`WebServer` and `DNSServer` entirely from a firmware that does not reference
-them. It also breaks an include cycle: the dependency now runs one way,
-`iot_ap` → `iot`.
+**Why a hook and not a direct call.** The module is not free (see *Flash
+footprint* below) and many devices never need it — they are provisioned by a
+seeded NVS partition image. Since the core names no provisioning module, the
+linker drops `IotAp`, `WebServer` and `DNSServer` entirely from a firmware that
+does not reference them, and the dependency stays one-way, `iot_ap` → `iot`.
 
 The device opens its own **open** (no password) WiFi network,
 `<ssidPrefix><last 4 hex chars of the MAC>` (`setSsidPrefix()`, default
@@ -404,11 +397,9 @@ two interchangeable backends behind one interface:
 reinitializes the `.rtc.data` section on a software or watchdog reset, which
 would clear the failure backoff exactly when it is needed.
 
-Which tier a value uses is decided **once, where the value is declared** — not
-by a global runtime switch that flips the storage of every value at the same
-time. That switch (`setPreferedPersistentStorage()`) and the `IotPersistentValue`
-class it steered are gone in 4.0; among other things they left values
-uninitialized until `begin()`, which the constructor's panic path then read.
+Which tier a value uses is decided **once, where the value is declared** — there
+is no global runtime switch flipping the storage of every value at the same
+time.
 
 ## Firmware updates (OTA)
 
@@ -480,27 +471,23 @@ increasing duration (configurable base, factor and cap), so a device that cannot
 reach its server backs off instead of hammering it or draining its battery.
 `iot.startWatchdog()`/`resetWatchdog()` guard against a hung wakeup cycle.
 
-The strategy is split in two, along the same line as everywhere else in 4.0:
+The strategy is split in two, along the same line as everywhere else:
 
 - the **policy** — how long to sleep next — is `IotBackoffPolicy`
   (`iot_lifecycle.h`), a plain value type with no I/O, unit-tested on the host
-  including the cases that used to be unreachable in a test (int32 overflow
-  after several escalations, a misconfiguration producing a zero-length sleep);
+  including an int32 overflow after several escalations and a misconfiguration
+  producing a zero-length sleep;
 - the **mechanism** — actually sleeping — is the `IotPower` port, so a host test
   can reach a failure path and keep running. `IotLifecycle` ties the two
   together and owns the backoff state in `IotRtcState`.
 
-An **abnormal reset is acted on in `iot.begin()`, not in the constructor.**
-Up to 3.x the `Iot` constructor inspected the reset reason and went straight
-into the panic handler — before `main()`, so before the sketch could open a
-serial console to see the diagnosis, while the persistent values being read were
-still uninitialized, and while the `logger`/`api` singletons of other
-translation units may not have been constructed yet.
+An **abnormal reset is acted on in `iot.begin()`, not in the constructor**, so
+the diagnosis reaches a serial console the sketch has had a chance to open, and
+the other singletons are constructed by then.
 
 An application that must do something before the device sleeps supplies its own
 `IotPower` (`iot.setPower()`), or registers `iot.addExitHook()` to run at every
-exit — deep sleep, restart, shutdown and the backoff path alike. Both replace
-the 3.x trio `setDeepSleepHandler()`/`setRestartHandler()`/`setShutdownHandler()`.
+exit — deep sleep, restart, shutdown and the backoff path alike.
 
 `apProvisioning`'s response to an unfulfilled setup session ("First-time
 provisioning" above) is a deliberately separate, simpler policy — indefinite

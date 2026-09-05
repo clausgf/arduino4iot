@@ -1,12 +1,10 @@
 /**
  * Native unit tests for the ports layer (pio test -e native).
  *
- * Two things are covered here:
- *  - the Arduino-free logic that moved into the ports layer (key validation,
- *    reset-reason projection, RTC state validity);
- *  - the IotStore *contract*, written as runStoreContract(IotStore&) so the
- *    exact same assertions can later be run against IotNvsStore in an on-target
- *    test. That is the point of the port: one contract, several adapters.
+ * Covers the Arduino-free logic (key validation, reset-reason projection, RTC
+ * state validity) and the IotStore *contract*, written as
+ * runStoreContract(IotStore&) so the same assertions can later run against
+ * IotNvsStore on target: one contract, several adapters.
  */
 
 #include <unity.h>
@@ -76,8 +74,8 @@ void test_store_contract_on_fake()
 
 void test_store_does_not_write_unchanged_values()
 {
-    // the port's central promise: on flash, an avoided write is a saved cycle,
-    // and this library writes from paths that run on every single wakeup
+    // the port's central promise; this library writes from paths that run on
+    // every single wakeup
     IotFakeStore store;
     store.putString("apiUrl", "https://example.org");
     store.putInt("boot", 17);
@@ -151,8 +149,7 @@ void test_clock_sync_records_last_sync_time()
 
 void test_absent_battery_is_a_null_pointer()
 {
-    // a device without a battery divider simply has no port; this is the case
-    // the library must treat as normal rather than as an error
+    // a device without a battery has no port - normal, not an error
     IotBattery* battery = nullptr;
     int milliVolts = (battery != nullptr) ? battery->readMilliVolts() : -1;
     TEST_ASSERT_EQUAL_INT(-1, milliVolts);
@@ -190,8 +187,8 @@ void test_fake_battery_defaults_to_unavailable()
 
 void test_network_mac_is_available_without_a_connection()
 {
-    // the device id - and hence every API URL - derives from the MAC, so it
-    // must be readable on the path where the connect failed
+    // the device id, and hence every API URL, derives from the MAC, so it must
+    // be readable on the path where the connect failed
     IotFakeNetwork network;
     network.connectResult = false;
     TEST_ASSERT_FALSE(network.connect(1000));
@@ -218,8 +215,8 @@ void test_network_reports_metrics_only_while_connected()
 
 void test_power_records_the_exit_instead_of_taking_it()
 {
-    // the whole reason IotPower is a port: a host test can reach a failure path
-    // and keep running
+    // the reason IotPower is a port: a host test reaches a failure path and
+    // keeps running
     IotFakePower power;
     TEST_ASSERT_FALSE(power.wasCalled());
 
@@ -274,8 +271,7 @@ void test_rtc_state_starts_invalid_and_resets_to_a_defined_state()
     TEST_ASSERT_EQUAL_UINT32(0, state.dhcpIp);
     TEST_ASSERT_EQUAL_INT64(0, state.ntpLastSyncTime);
 
-    // -1 means "the previous cycle ended in an orderly way", so a fresh device
-    // does not start out in backoff
+    // -1 means "ended in an orderly way": a fresh device is not in backoff
     TEST_ASSERT_EQUAL_INT32(-1, state.panicSleepDuration_s);
 }
 

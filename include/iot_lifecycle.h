@@ -15,29 +15,24 @@
 // *****************************************************************************
 // The wakeup cycle: its bookkeeping, its exits and its failure backoff.
 //
-// Arduino-free on purpose. Everything here is orchestration over IotPower and
-// IotRtcState, so the whole failure behaviour of a battery device - the part
-// that used to be untestable because reaching it ended the process in a real
-// esp_deep_sleep() - can be exercised on the host against IotFakePower.
+// Arduino-free orchestration over IotPower and IotRtcState, so the failure
+// behaviour of a battery device can be exercised on the host against
+// IotFakePower.
 //
-// The split this file embodies: the *mechanism* of ending a cycle is a port
-// (IotPower), the *policy* of when and for how long is plain logic
-// (IotBackoffPolicy). Logging is not done here; the Iot facade logs around
-// these calls, which keeps this tier free of the logger and of the reentrancy
-// hazard that comes with it.
+// The split: the *mechanism* of ending a cycle is a port (IotPower), the
+// *policy* of when and how long is plain logic (IotBackoffPolicy). Logging
+// happens in the Iot facade around these calls, keeping this tier free of the
+// logger and its reentrancy hazard.
 // *****************************************************************************
 
 
 /**
  * Escalating backoff for a device with nobody to look at it.
  *
- * After a cycle that ended abnormally, the device sleeps for
- * @ref initialDuration_s. If the next cycle fails again before any orderly
- * exit, the duration is multiplied by @ref factor, up to @ref maxDuration_s.
- * An orderly exit clears the state, so a device that recovers returns to its
- * normal interval immediately.
- *
- * Pure value type: no ports, no I/O, fully unit tested (test/test_lifecycle).
+ * After an abnormal cycle the device sleeps for @ref initialDuration_s; each
+ * further failure multiplies that by @ref factor up to @ref maxDuration_s. An
+ * orderly exit clears the state, so a recovered device returns to its normal
+ * interval at once. Pure value type: no ports, no I/O.
  */
 struct IotBackoffPolicy
 {
@@ -46,21 +41,16 @@ struct IotBackoffPolicy
     int32_t maxDuration_s     = 24 * 60 * 60;
 
     /**
-     * @param current_s the running backoff duration, <= 0 meaning "not in
-     *        backoff" (the previous cycle ended in an orderly way)
+     * @param current_s the running backoff duration, <= 0 meaning "not in backoff"
      * @return the duration to sleep now, always >= 1 s and <= maxDuration_s
      */
     int32_t next(int32_t current_s) const
     {
-        int64_t result;
-        if (current_s <= 0)
-        {
-            result = initialDuration_s;
-        } else {
-            // int64 intermediate: current_s * factor overflows int32 within a
-            // few escalations of a large initial duration
-            result = (int64_t)current_s * (factor > 1 ? factor : 1);
-        }
+        // int64 intermediate: current_s * factor overflows int32 within a few
+        // escalations of a large initial duration
+        int64_t result = (current_s <= 0)
+            ? initialDuration_s
+            : (int64_t)current_s * (factor > 1 ? factor : 1);
 
         int64_t cap = maxDuration_s > 0 ? maxDuration_s : 1;
         if (result > cap)
@@ -81,12 +71,10 @@ struct IotBackoffPolicy
 /**
  * Bookkeeping and exits of one wakeup cycle.
  *
- * Owns the values that have to survive a deep sleep but not a power loss (boot
- * count, active duration, backoff state - all in IotRtcState) and the three
- * ways a cycle can end. Replaces the pre-4.0 IotPersistentValue plus the three
- * handler setters (setDeepSleepHandler/setRestartHandler/setShutdownHandler):
- * an application that has to do something before sleeping now supplies its own
- * IotPower, or registers an exit hook.
+ * Owns the state that survives a deep sleep but not a power loss (boot count,
+ * active duration, backoff - all in IotRtcState) and the three ways a cycle can
+ * end. To do something before sleeping, supply an own IotPower or register an
+ * exit hook.
  */
 class IotLifecycle
 {
@@ -111,10 +99,10 @@ public:
     const IotBackoffPolicy& backoffPolicy() const { return _backoff; }
 
     /**
-     * Register a callback to run at every exit, just before the device sleeps,
-     * restarts or shuts down - flushing buffered logs, closing the API
-     * connection, parking a sensor. Hooks run in registration order and run on
-     * the failure path too, so a panic still gets its logs out.
+     * Register a callback to run just before the device sleeps, restarts or
+     * shuts down - flush logs, close the connection, park a sensor. Hooks run
+     * in registration order, and on the failure path too, so a panic still
+     * gets its logs out.
      */
     void addExitHook(std::function<void()> hook) { _exitHooks.push_back(std::move(hook)); }
 
@@ -123,9 +111,7 @@ public:
      * why the device came up.
      *
      * Deliberately does *not* act on an abnormal reset - the caller decides,
-     * once its logging works. That is the fix for the pre-4.0 behaviour of
-     * reacting inside the Iot constructor, where the panic path ran before
-     * Serial.begin() and before the other singletons were constructed.
+     * once its logging works.
      */
     void begin()
     {
@@ -167,10 +153,10 @@ public:
 
     // --- ending the cycle ---
 
-    // The three orderly exits. Each clears the backoff state, so a device that
+    // The orderly exits. Each clears the backoff state, so a device that
     // completes a cycle returns to its normal interval - unless @p isFailure
-    // says the exit is itself the reaction to a problem (e.g. shutting down on
-    // undervoltage), in which case the backoff state is left as it is.
+    // says the exit is itself the reaction to a problem (e.g. undervoltage
+    // shutdown), which leaves the backoff state as it is.
 
     /// Sleep for @p duration_s and wake through a full boot. Does not return
     /// on a real device.
@@ -187,13 +173,11 @@ public:
     void shutdown(bool isFailure = false) { _exit(Exit::Shutdown, 0, isFailure); }
 
     /**
-     * Enter or escalate the failure backoff and sleep for its duration.
+     * Enter or escalate the failure backoff and sleep for its duration. The
+     * backoff state is kept, so a device that keeps failing escalates instead
+     * of hammering the server. Does not return on a real device.
      *
-     * Unlike the orderly exits, the backoff state is kept, so a device that
-     * keeps failing escalates instead of hammering the server or draining its
-     * battery. Does not return on a real device.
-     *
-     * @return the duration slept for - useful in tests and for the caller's log.
+     * @return the duration slept for, for the caller's log.
      */
     uint32_t enterBackoff()
     {

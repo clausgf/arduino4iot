@@ -19,11 +19,10 @@
 // RTC state
 // *****************************************************************************
 
-// RTC_NOINIT_ATTR rather than RTC_DATA_ATTR: the .rtc.data section is
-// reinitialized from the image by the bootloader on a software or watchdog
-// reset, which would silently reset the failure backoff exactly when it is
-// needed. .rtc.noinit is left alone and only loses its contents on a power-on
-// reset - which IotRtcState::isValid() detects via the magic.
+// RTC_NOINIT_ATTR, not RTC_DATA_ATTR: the bootloader reinitializes .rtc.data
+// from the image on a software or watchdog reset, which would clear the failure
+// backoff exactly when it is needed. .rtc.noinit only loses its contents on a
+// power-on reset, which the magic detects.
 static RTC_NOINIT_ATTR IotRtcState rtcStateStorage;
 
 IotRtcState& iotRtcState()
@@ -111,8 +110,8 @@ bool IotNvsStore::_readInt(const char* key, int64_t& oValue) const
     {
         return false;
     }
-    // accept every integer width NVS reports, so values written by an older
-    // firmware or by an externally generated partition image stay readable
+    // accept every integer width NVS reports, so values from an externally
+    // generated partition image stay readable
     switch (_preferences.getType(key))
     {
         case PT_I8:  oValue = _preferences.getChar(key);    return true;
@@ -275,9 +274,8 @@ bool IotNtpClock::sync(uint32_t timeout_ms)
 
 bool IotNtpClock::_syncOneShot(uint32_t timeout_ms)
 {
-    // A single SNTP request/response. The lwIP SNTP daemon is deliberately not
-    // used: its randomized 0-5 s startup delay dominates the sync time, and it
-    // has nothing to offer when this fails (that means no connectivity).
+    // A single SNTP request/response; the lwIP daemon's randomized 0-5 s
+    // startup delay would dominate the sync time.
     const uint32_t NTP_UNIX_OFFSET = 2208988800UL;  // seconds between 1900 and 1970
     const uint16_t NTP_PORT = 123;
     const size_t PACKET_SIZE = 48;
@@ -461,8 +459,8 @@ bool IotWifiNetwork::connect(uint32_t timeout_ms)
     if (_fastReconnect && _rtc.wifiChannel != 0)
     {
         triedFast = true;
-        // The cached lease is only valid on this path: it targets the same AP,
-        // hence the same subnet. Bounded so a real DHCP bind renews it regularly.
+        // the cached lease is only valid here: same AP, hence same subnet.
+        // Bounded so a real DHCP bind renews it regularly.
         if (!_staticIpConfigured && _dhcpCache && _rtc.dhcpIp != 0
             && _rtc.dhcpReuseCount < (int32_t)_dhcpMaxReuse)
         {
@@ -543,8 +541,8 @@ bool IotWifiNetwork::isConnected() const
 
 std::string IotWifiNetwork::macAddress() const
 {
-    // read straight from the efuse: this must work before (and without) a
-    // connection, because the device id and thus every API URL derives from it
+    // straight from the efuse: must work without a connection, since the device
+    // id and thus every API URL derives from it
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 

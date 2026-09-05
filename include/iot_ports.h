@@ -13,30 +13,18 @@
 // *****************************************************************************
 // Ports - the seams between the library's services and the platform.
 //
-// Every port here is a small abstract interface plus its contract. Services
-// (token management, config mirror, remote logging, OTA, telemetry) are written
-// against these interfaces and never against Arduino, WiFi, Preferences or
-// esp_*; the concrete adapters live in iot_esp_ports.h and are selected by the
-// *application*, not by the library.
+// Abstract interfaces plus their contracts. Services are written against these
+// and never against Arduino, WiFi, Preferences or esp_*; the adapters live in
+// iot_esp_ports.h and are chosen by the *application*.
 //
-// Three properties follow from that, and all three are deliberate:
+// - Arduino-free, so services can be tested on the host against iot_fakes.h.
+// - Optional: a port is held as a pointer that may be nullptr, meaning "this
+//   device does not have that". Each port documents how the library degrades
+//   without it; that is never an error.
+// - Nothing unused is linked: the core names no concrete adapter, so the linker
+//   drops every adapter the application does not reference.
 //
-// 1. Host testability. This header is free of Arduino dependencies, so a
-//    service can be exercised on the native platform against the test doubles
-//    in iot_fakes.h (see test/test_ports).
-//
-// 2. Optionality. A port is held by the core as a *pointer* that may be
-//    nullptr, meaning "this device does not have that". A device without a
-//    battery divider passes no IotBattery, a device that never needs wall-clock
-//    time passes no IotClock. Each port below documents how the library
-//    degrades in its absence - it never becomes an error.
-//
-// 3. Nothing unused is linked. The core never names a concrete adapter, so the
-//    linker drops every adapter the application does not reference. A firmware
-//    that uses no battery does not link the ADC code, one that uses no NTP does
-//    not link the SNTP code.
-//
-// Timestamps are int64_t unix seconds (not time_t) so the contract does not
+// Timestamps are int64_t unix seconds, not time_t, so the contract does not
 // depend on the platform's time_t width.
 // *****************************************************************************
 
@@ -49,12 +37,9 @@
  * Key/value persistence that survives a power loss, with a bounded number of
  * write cycles (flash).
  *
- * This is the port for everything that must still be there after the battery
- * was swapped: the device token and its expiry, cache validators (ETag,
- * Last-Modified), the seeded bootstrap values and the server config mirror.
- * State that only has to survive deep sleep does *not* belong here - it goes
- * into IotRtcState (see iot_rtc_state.h), which is a plain struct rather than
- * a port because RTC RAM has no runtime keys, no failure mode and no cost.
+ * For everything that must still be there after the battery was swapped:
+ * tokens, cache validators, seeded bootstrap values, the config mirror. State
+ * that only has to survive deep sleep goes into IotRtcState instead.
  *
  * Contract:
  * - Keys are ASCII, 1..MAX_KEY_LENGTH characters (the NVS limit). Callers must
@@ -121,15 +106,13 @@ public:
 /**
  * Wall-clock time and its synchronization.
  *
- * Needed for two things only: the expiry arithmetic of the device token, and
- * the certificate validity check inside the TLS handshake. Both tolerate an
- * unsynchronized clock, which is why this port is optional.
+ * Needed for the device token's expiry arithmetic and for the certificate
+ * validity check in the TLS handshake. Both tolerate an unsynchronized clock,
+ * hence optional.
  *
- * **Absent (nullptr):** the library behaves exactly as it does today with an
- * implausible clock - a device token is used until the server rejects it with
- * 401 (rather than being renewed proactively before its expiry), and cache
- * validators keep working because ETags carry no timestamp. A device on an
- * https:// endpoint does need a plausible clock; a device on http:// does not.
+ * **Absent (nullptr):** a device token is used until the server rejects it with
+ * 401 instead of being renewed before its expiry; ETag caching is unaffected.
+ * An https:// endpoint does need a plausible clock, http:// does not.
  */
 class IotClock
 {
@@ -173,13 +156,11 @@ public:
 /**
  * The device's IP connectivity.
  *
- * Deliberately says nothing about WiFi: credentials, fast-reconnect caches and
- * static/DHCP addressing are configuration of the *adapter*, not of the port,
- * so an Ethernet or LTE adapter can take the WiFi adapter's place without any
- * service knowing.
+ * Says nothing about WiFi: credentials, fast-reconnect caches and addressing
+ * are adapter configuration, so an Ethernet or LTE adapter can take the WiFi
+ * adapter's place without any service noticing.
  *
- * **Absent (nullptr):** not supported - the library's reason to exist is
- * talking to a server. This port is the one mandatory one.
+ * **Absent (nullptr):** not supported. This port is mandatory.
  */
 class IotNetwork
 {
@@ -197,11 +178,9 @@ public:
 
     /**
      * @return the hardware address as lower-case hex without separators, e.g.
-     * "aabbccddeeff".
-     *
-     * Must be available **without** an established connection: the device id -
-     * and hence every API URL - is derived from it, and it is needed on the
-     * error path where the connect failed.
+     * "aabbccddeeff". Must work **without** a connection: the device id, and
+     * hence every API URL, derives from it - including on the path where the
+     * connect failed.
      */
     virtual std::string macAddress() const = 0;
 
@@ -211,9 +190,8 @@ public:
     /// @return the signal strength in dBm, or 0 if the medium has no such notion.
     virtual int rssi() const = 0;
 
-    /// @return how long the last successful connect took in milliseconds, or 0
-    /// if no connect happened in this wakeup cycle. Reported as the
-    /// "wifi_connect_ms" system telemetry metric.
+    /// @return duration of the last successful connect in milliseconds, 0 if
+    /// none happened this cycle. Posted as the "wifi_connect_ms" metric.
     virtual uint32_t lastConnectDuration_ms() const = 0;
 };
 
@@ -225,14 +203,13 @@ public:
 /**
  * The device's supply voltage.
  *
- * Exists so that measuring it is *not* the library's business. The core needs
- * a single number; how it is obtained - an ADC behind a divider, an I2C fuel
- * gauge, a coulomb counter, an external ADC - is entirely the application's.
- * IotAdcBattery (iot_esp_ports.h) is the ready-made adapter for the common
- * divider-on-an-ADC-pin case, and IotCallbackBattery below wraps any lambda.
+ * The core needs a single number; how it is obtained - a divider on an ADC pin,
+ * an I2C fuel gauge, a coulomb counter - is the application's business.
+ * IotAdcBattery covers the common divider case, IotCallbackBattery wraps any
+ * lambda.
  *
  * **Absent (nullptr):** no battery field in the system telemetry and no
- * undervoltage supervision. This is the normal case for a mains-powered device.
+ * undervoltage supervision - the normal case for a mains-powered device.
  */
 class IotBattery
 {
@@ -240,18 +217,15 @@ public:
     virtual ~IotBattery() = default;
 
     /**
-     * @return the supply voltage in millivolts, or a negative value if it
-     * cannot be determined right now.
-     *
-     * Implementations may cache within a wakeup cycle; the library calls this
+     * @return the supply voltage in millivolts, negative if unavailable.
+     * Implementations may cache within a wakeup cycle - the library calls this
      * more than once per cycle (telemetry and undervoltage check).
      */
     virtual int readMilliVolts() = 0;
 };
 
 /**
- * IotBattery adapter for a plain callable, so an application does not need to
- * derive a class:
+ * IotBattery over a plain callable, so no class has to be derived:
  *
  *   IotCallbackBattery battery([]{ return fuelGauge.milliVolts(); });
  */
@@ -329,15 +303,14 @@ inline const char* iotWakeupCauseToString(IotWakeupCause cause)
 }
 
 /**
- * Ending a wakeup cycle, and the information about how the previous one ended.
+ * Ending a wakeup cycle, and how the previous one ended.
  *
- * Splitting this out is what makes the failure paths testable at all: without
- * it, every host test that reaches a panic terminates the test process. The
- * *policy* (the escalating backoff) is deliberately not part of this port -
- * it is plain logic that belongs in the Arduino-free tier.
+ * A port so that host tests can reach a failure path without the process
+ * exiting in a real esp_deep_sleep(). The escalating backoff *policy* is not
+ * part of it - that is plain logic, @see IotBackoffPolicy.
  *
- * **Absent (nullptr):** not supported. Every exit path of a wakeup cycle needs
- * it; a non-sleeping device uses an adapter whose deepSleep() is a busy wait.
+ * **Absent (nullptr):** not supported; every exit path needs it. A non-sleeping
+ * device uses an adapter whose deepSleep() is a busy wait.
  */
 class IotPower
 {
@@ -345,9 +318,8 @@ public:
     virtual ~IotPower() = default;
 
     /**
-     * Enter deep sleep for @p duration_s and wake up through a full boot.
-     * Does not return on a real device; a test double records the call and
-     * returns, which is precisely why this is a port.
+     * Enter deep sleep for @p duration_s and wake through a full boot. Does not
+     * return on a real device; a test double records the call and returns.
      */
     virtual void deepSleep(uint32_t duration_s) = 0;
 
@@ -367,9 +339,9 @@ public:
 
 // *****************************************************************************
 
-/// @return true if @p reason indicates the previous cycle ended abnormally
-/// (crash, watchdog or brownout) rather than through an orderly sleep, restart
-/// or a plain power-on. This is the trigger for the escalating backoff.
+/// @return true if the previous cycle ended abnormally (crash, watchdog or
+/// brownout) rather than in an orderly exit or a plain power-on. The trigger
+/// for the escalating backoff.
 inline bool iotIsAbnormalReset(IotResetReason reason)
 {
     return reason == IotResetReason::Panic
