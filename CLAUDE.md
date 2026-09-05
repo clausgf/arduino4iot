@@ -14,7 +14,9 @@ provisioning + config/OTA check + telemetry + log flush) in well under a second.
 
 ```bash
 pio test -e native                 # run all native (host) unit tests
-pio test -e native -f test_result  # run one test suite (test_result | test_telemetry | test_text)
+pio test -e native -f test_ports    # run one suite: test_result | test_telemetry |
+                                    # test_text | test_ap_text | test_ports |
+                                    # test_lifecycle | test_token | test_config
 ```
 
 - **ESP32 builds are never done from this repo directly.** There is no ESP32 env in
@@ -23,25 +25,89 @@ pio test -e native -f test_result  # run one test suite (test_result | test_tele
   using the **pioarduino** platform (the PlatformIO registry `espressif32` ships only
   arduino-esp32 2.x; this library needs 3.x / ESP-IDF 5 and C++20). To reproduce a
   target build locally, mirror the `pio ci` invocation in `.github/workflows/ci.yml`.
+  CI builds **both** examples per board: `examples/main.cpp` (minimal) and
+  `examples/ap_provisioning/main.cpp` (every optional adapter wired in). The
+  second exists so the opt-in paths keep being compiled; the flash difference
+  between the two is what the optional adapters cost.
 - Native tests require C++20 (`-std=gnu++20` in `platformio.ini`); on target the
   arduino-esp32 framework default (`gnu++2b`) suffices.
 
 ## Architecture
 
-### Five global singletons (declared `extern` in their headers)
+`docs/concepts.md` is the authoritative design document — **read it before
+non-trivial changes**; it covers the wakeup cycle, the ports, clock and battery,
+provisioning/tokens, telemetry shape, seeding, persistence tiers, TLS trust and
+the `IotResult` contract.
+
+### Layers
+
+The library is split along one line: **what can be tested on the host** and what
+cannot. Everything that can, is Arduino-free and uses `std::string`.
+
+| Layer | Files | Arduino? |
+|---|---|---|
+| Ports (interfaces + contracts) | `iot_ports.h` | no |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_lifecycle` `iot_token` `iot_config` `iot_endpoints.h` `iot_logger.h` | no |
+| ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` | yes |
+| Facade / transport | `iot.{h,cpp}` `iot_api.{h,cpp}` | yes |
+
+**Rules that keep this true — check them when adding code:**
+
+1. A header in the "no Arduino" rows must compile standalone:
+   `g++ -std=gnu++20 -fsyntax-only -I include -I <ArduinoJson/src> -x c++ <header>`.
+   Naming `String`, `Preferences`, `WiFi` or `HTTPClient` breaks it.
+2. Use `std::string` everywhere; `String` only at an Arduino call boundary
+   (`Preferences`, `HTTPClient`, `WebServer`), converted on the spot. Keys stay
+   `const char*`.
+3. **The core never names an optional adapter.** That is what lets the linker
+   drop what an application does not use — `IotAp` (~42 KB), `IotNtpClock`,
+   `IotAdcBattery`. Verify with `nm -C firmware.elf | grep <Class>::`.
+4. Test doubles live in `test/iot_fakes.h`, included as `"../iot_fakes.h"` — not
+   in `include/`, so firmware cannot reach them.
+
+### Ports and their adapters
+
+| Port | Default in `Iot` | Adapters |
+|---|---|---|
+| `IotStore` | `IotNvsStore` (mandatory) | — |
+| `IotPower` | `IotEspPower` (mandatory) | — |
+| `IotNetwork` | `IotWifiNetwork` | Ethernet/LTE would slot in here |
+| `IotClock` | `IotSystemClock` — **never synchronizes** | `IotNtpClock` (opt-in; https needs it) |
+| `IotBattery` | none (`nullptr`) | `IotAdcBattery`, `IotCallbackBattery` |
+
+An absent optional port is not an error: each port documents how the library
+degrades without it.
+
+### Global singletons (declared `extern` in their headers)
 
 | Object          | Header/impl        | Responsibility |
 |-----------------|--------------------|----------------|
-| `iot`           | `iot.{h,cpp}`      | Lifecycle façade: WiFi + NTP, system telemetry, deep sleep, watchdog, battery, panic/backoff. |
-| `api`           | `iot_api.{h,cpp}`  | HTTP(S) transport: provisioning, requests, TLS trust, OTA, file upload/forward. |
-| `config`        | `iot_config.{h,cpp}` | Server config mirrored into NVRAM (ETag-cached). |
+| `iot`           | `iot.{h,cpp}`      | Lifecycle façade: drives the ports, system telemetry, deep sleep, watchdog, undervoltage, panic/backoff. |
+| `api`           | `iot_api.{h,cpp}`  | HTTP(S) transport: requests, TLS trust, OTA. Auth lives in `IotTokenManager`, endpoints in `iot_endpoints`. |
+| `config`        | `iot_config.{h,cpp}` | Server config mirrored into an `IotStore` (ETag-cached). |
 | `logger`        | `iot_logger.{h,cpp}` | Buffered remote logging + serial logging. |
-| `apProvisioning`| `iot_ap.{h,cpp}`   | SoftAP + captive-portal first-time provisioning (see below). |
+| `apProvisioning`| `iot_ap.{h,cpp}`   | **Opt-in**, never referenced by the core — see below. |
 
-`iot.begin()` initializes the other three (`_initSubsystems()`). `docs/concepts.md`
-is the authoritative design document — **read it before non-trivial changes**; it
-covers the wakeup cycle, provisioning/tokens, telemetry shape, seeding, persistence
-tiers, TLS trust, and the `IotResult` contract.
+### Persistence: two tiers, decided per value
+
+- `IotStore` (NVS) for what must survive a power loss: tokens, cache validators,
+  seeded config, the config mirror. Writes are suppressed when unchanged.
+- `IotRtcState` (`RTC_NOINIT_ATTR`, a plain struct, not a port) for what only has
+  to survive deep sleep: boot count, sleep accounting, failure backoff, WiFi
+  caches. Costs no flash cycles.
+
+Which one a value uses is decided **where it is declared**. There is no global
+switch.
+
+### Configuration values
+
+One key names a value in `config.json`, in NVS and in `config.getInt/...`, so it
+must fit `IotStore::MAX_KEY_LENGTH` (15). Precedence, weakest first:
+**compile-time default < NVS mirror < `config.json` < `set()` at runtime** — an
+explicit `set()` is not overwritten by `begin()` or `updateConfig()`, while the
+server value is still mirrored for the next boot. `IotConfigValue`s register
+themselves through an intrusive list with a constant-initialized head, so
+registration during static init touches no constructed object.
 
 ### Two value types (Arduino-free, unit-tested on host — see `test/`)
 
@@ -57,6 +123,13 @@ tiers, TLS trust, and the `IotResult` contract.
 - `IotTelemetry` (`iot_telemetry.h`): builder guaranteeing the server's required
   flat-JSON-of-numbers shape.
 
+### First-time provisioning (opt-in)
+
+`Iot::begin()` calls the handler from `iot.setNoCredentialsHandler()` when no
+WiFi SSID is seeded, and shuts down without one. `iot_ap.h` is **not** included
+by the core: naming it would keep `DNSServer`/`WebServer` (~42 KB) in every
+firmware. The dependency runs one way, `iot_ap` → `iot`.
+
 ### Configuration seeding model (the key non-obvious concept)
 
 Bootstrap values a device needs *before* it can reach the server (WiFi creds, API
@@ -67,7 +140,9 @@ They are provided at build time via `-D` defines and written by
 Consequence: a **secretless build passes empty defaults (a no-op)**, so firmware
 updates built without secrets (e.g. public CI) preserve the device's existing NVS —
 this is the whole point. `iot.factoryReset()` erases NVS. Runtime setters for these
-values were removed in 3.x (they are `friend`-accessed by `Iot`).
+values do not exist (the seeding internals are `friend`-accessed by `Iot`).
+The seeding path is the one place still using `Preferences` directly rather than
+`IotStore`, because it runs before `api.begin()` opens the store.
 
 ### Firmware version injection
 
@@ -94,6 +169,10 @@ firmware's. Falls back gracefully (define unset) without git; skip with
 
 ## Conventions
 
+- Breaking changes and migration notes belong in the README's
+  "Migration to version X" section and in the commit message — **not** in code
+  comments. Comments describe what the code does now, not what an earlier
+  version did.
 - Versioning: bump `IOT_VERSION_{MAJOR,MINOR,PATCH}` in `include/iot.h` **and**
   `version` in `library.json` together. Releases are git tags `vX.Y.Z` with a
   matching GitHub release; CI must be green first. Verify you are on `main` before

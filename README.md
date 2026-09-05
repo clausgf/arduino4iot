@@ -150,6 +150,20 @@ the linker drops every one an application does not reference.
   silently overwritten by `begin()` or `updateConfig()`; the server value is
   still mirrored to NVS and applies from the next boot. See
   [Configuration](docs/concepts.md#configuration-runtime-configjson).
+- **The library's string type is `std::string` (action required).** `String` is
+  defined by the Arduino core, so any file naming it cannot be compiled — and
+  therefore not tested — on the host. Public signatures that took or returned
+  `String` now take `std::string`: `iot.postTelemetry()`, `iot.getDeviceId()`,
+  `iot.getTimeIso()`, `iot.getFirmwareVersion()/Id()/Sha256()/BoardId()`, all of
+  `api.*`, `logger.*`, `iotForward()`/`iotUploadFile()`. String *literals* keep
+  working unchanged, because `std::string` constructs implicitly from
+  `const char*`; only a sketch holding an Arduino `String` needs `.c_str()`:
+  ```cpp
+  iot.postTelemetry("sensors", t);              // unchanged
+  iot.postTelemetry(kindAsArduinoString.c_str(), t);   // now needs .c_str()
+  ```
+  Inside the library `String` survives only at Arduino call boundaries
+  (`Preferences`, `HTTPClient`), converted on the spot.
 - **The clock no longer synchronizes by default (action required for https).**
   `iot.begin()` used to run SNTP unconditionally. The default `IotClock` is now
   `IotSystemClock`, which reads the system time and never syncs — so no firmware

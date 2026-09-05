@@ -343,14 +343,14 @@ unsigned long Iot::getWifiConnectDuration_ms()
 
 // *****************************************************************************
 
-String Iot::getDeviceId()
+std::string Iot::getDeviceId()
 {
-    if (_deviceId.isEmpty())
+    if (_deviceId.empty())
     {
         // The device id doubles as the device name for the API. nice4iot
         // requires device names to match ^[a-zA-Z_][a-zA-Z0-9_]*$ (no hyphen),
         // so use an underscore separator, e.g. "e32_aabbccddeeff".
-        _deviceId = String("e32_") + _network->macAddress().c_str();
+        _deviceId = "e32_" + _network->macAddress();
     }
     return _deviceId;
 }
@@ -360,13 +360,13 @@ String Iot::getDeviceId()
 // NTP time
 // *****************************************************************************
 
-String Iot::getTimeIso(time_t time)
+std::string Iot::getTimeIso(time_t time)
 {
     struct tm timeinfo;
     gmtime_r(&time, &timeinfo);
 
-    // local (not static) buffer: it is copied into the returned String right
-    // away, so there is no shared state to race between concurrent callers
+    // local (not static) buffer: copied into the returned string right away,
+    // so there is no shared state to race between concurrent callers
     const int BUFLEN = 32;
     char buf[BUFLEN];
     snprintf(buf, BUFLEN, "%04d-%02d-%02dT%02d:%02d:%02dZ",
@@ -375,7 +375,7 @@ String Iot::getTimeIso(time_t time)
     return buf;
 }
 
-String Iot::getTimeIso()
+std::string Iot::getTimeIso()
 {
     time_t now = time(nullptr);
     return getTimeIso(now);
@@ -403,32 +403,36 @@ bool Iot::syncNtpTime()
 // API
 // *****************************************************************************
 
-IotResult Iot::postTelemetry(const String& kind, const String& jsonData, const String& apiPath)
+IotResult Iot::postTelemetry(const std::string& kind, const std::string& jsonData, const std::string& apiPath)
 {
     if (jsonData.length() > IOT_MAX_TELEMETRY_SIZE)
     {
         log_w("Telemetry body size %u exceeds the server's default limit of %u bytes",
             jsonData.length(), IOT_MAX_TELEMETRY_SIZE);
     }
-    String path = apiPath;
-    path.replace("{kind}", kind);
+    std::string path = apiPath;
+    size_t kindPos = path.find("{kind}");
+    if (kindPos != std::string::npos)
+    {
+        path.replace(kindPos, 6, kind);
+    }
     // other variables are replaced in apiPost()
-    String oResult = "";
+    std::string oResult;
     return api.apiPost(oResult, path, jsonData);
 }
 
 // *****************************************************************************
 
-IotResult Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath)
+IotResult Iot::postTelemetry(const std::string& kind, const IotTelemetry& telemetry, const std::string& apiPath)
 {
-    String jsonData;
+    std::string jsonData;
     telemetry.serializeTo(jsonData);
     return postTelemetry(kind, jsonData, apiPath);
 }
 
 // *****************************************************************************
 
-IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
+IotResult Iot::postSystemTelemetry(const std::string& kind, const std::string& apiPath)
 {
     IotTelemetry telemetry;
     int battery_mV = getBatteryVoltage_mV();
@@ -446,14 +450,14 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
     // but kept for backends which support them
     telemetry.add("time", getTimeIso());
     telemetry.add("firmware_id", getFirmwareId());
-    String firmwareVersion = getFirmwareVersion();
-    if (!firmwareVersion.isEmpty())
+    std::string firmwareVersion = getFirmwareVersion();
+    if (!firmwareVersion.empty())
     {
         telemetry.add("firmware_version", firmwareVersion);
     }
     telemetry.add("firmware_sha256", getFirmwareSha256());
-    String boardId = getBoardId();
-    if (!boardId.isEmpty())
+    std::string boardId = getBoardId();
+    if (!boardId.empty())
     {
         telemetry.add("board", boardId);
     }
@@ -534,10 +538,10 @@ void Iot::escalatingSleepPanicHandler()
 // System management: firmware
 // *****************************************************************************
 
-String Iot::getFirmwareVersion()
+std::string Iot::getFirmwareVersion()
 {
     // precedence: explicit setter (_firmwareVersion) > injected build define
-    if (_firmwareVersion.isEmpty())
+    if (_firmwareVersion.empty())
     {
 #ifdef IOT_FW_VERSION
         _firmwareVersion = IOT_FW_VERSION;
@@ -546,35 +550,34 @@ String Iot::getFirmwareVersion()
     return _firmwareVersion;
 }
 
-void Iot::setFirmwareVersion(const String& version)
+void Iot::setFirmwareVersion(const std::string& version)
 {
     _firmwareVersion = version;
 }
 
-String Iot::getFirmwareId()
+std::string Iot::getFirmwareId()
 {
-    if (_firmwareId.isEmpty())
+    if (_firmwareId.empty())
     {
         const esp_partition_t *running = esp_ota_get_running_partition();
         esp_app_desc_t app_info;
         if (esp_ota_get_partition_description(running, &app_info) == ESP_OK)
         {
-            _firmwareId = String(app_info.project_name)
-                + " " + String(app_info.version)
-                + " " + String(app_info.date)
-                + " " + String(app_info.time)
-                + " IDF " + String(app_info.idf_ver)
-                + " sec " + String(app_info.secure_version)
-                + " ARDUINO " + ESP_ARDUINO_VERSION_MAJOR + "." + ESP_ARDUINO_VERSION_MINOR + "." + ESP_ARDUINO_VERSION_PATCH
-                + " IOT " + IOT_VERSION_MAJOR + "." + IOT_VERSION_MINOR + "." + IOT_VERSION_PATCH;
+            char buf[224];
+            snprintf(buf, sizeof(buf), "%s %s %s %s IDF %s sec %u ARDUINO %d.%d.%d IOT %d.%d.%d",
+                app_info.project_name, app_info.version, app_info.date, app_info.time,
+                app_info.idf_ver, (unsigned)app_info.secure_version,
+                ESP_ARDUINO_VERSION_MAJOR, ESP_ARDUINO_VERSION_MINOR, ESP_ARDUINO_VERSION_PATCH,
+                IOT_VERSION_MAJOR, IOT_VERSION_MINOR, IOT_VERSION_PATCH);
+            _firmwareId = buf;
         }
     }
     return _firmwareId;
 }
 
-String Iot::getFirmwareSha256()
+std::string Iot::getFirmwareSha256()
 {
-    if (_firmwareSha256.isEmpty())
+    if (_firmwareSha256.empty())
     {
         const esp_partition_t *running = esp_ota_get_running_partition();
         esp_app_desc_t app_info;
@@ -586,18 +589,18 @@ String Iot::getFirmwareSha256()
                 sprintf(buf + i * 2, "%02x", app_info.app_elf_sha256[i]);
             }
             buf[sizeof(buf) - 1] = '\0';
-            _firmwareSha256 = String(buf);
+            _firmwareSha256 = buf;
         }
     }
     return _firmwareSha256;
 }
 
-String Iot::getBoardId()
+std::string Iot::getBoardId()
 {
 #ifdef IOT_BOARD_ID
-    return String(IOT_BOARD_ID);
+    return std::string(IOT_BOARD_ID);
 #else
-    return String("");
+    return std::string();
 #endif
 }
 

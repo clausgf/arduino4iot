@@ -9,23 +9,23 @@
 
 // *****************************************************************************
 
-IotResult iotForward(String& oResponse, const String& forwardingName,
-    const String& remainingPath, const String& body,
-    const std::map<String, String>& headers)
+IotResult iotForward(std::string& oResponse, const std::string& forwardingName,
+    const std::string& remainingPath, const std::string& body,
+    const std::map<std::string, std::string>& headers)
 {
-    String apiPath = "forward/{project}/{device}/" + forwardingName;
-    if (!remainingPath.isEmpty())
+    std::string apiPath = "forward/{project}/{device}/" + forwardingName;
+    if (!remainingPath.empty())
     {
-        apiPath += remainingPath.startsWith("/") ? remainingPath : "/" + remainingPath;
+        apiPath += (remainingPath[0] == '/') ? remainingPath : "/" + remainingPath;
     }
     return api.apiGet(oResponse, apiPath, body, headers);
 }
 
 // *****************************************************************************
 
-IotResult iotUploadFile(const String& filename, const String& content, const String& contentType)
+IotResult iotUploadFile(const std::string& filename, const std::string& content, const std::string& contentType)
 {
-    String response;
+    std::string response;
     return api.apiPut(response, "file/{project}/{device}/" + filename, content,
         {{"Content-Type", contentType}});
 }

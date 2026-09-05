@@ -116,6 +116,9 @@ public:
  * elapsed, so calling sync() once per wakeup is cheap. A first server given as
  * an IP literal or the local router also removes DNS from the path.
  *
+ * The timeout is the budget for the whole attempt, shared by all servers, so an
+ * unreachable set cannot outlast the watchdog.
+ *
  * @param lastSyncTime where the last successful sync is kept across deep sleep,
  *        normally IotRtcState::ntpLastSyncTime.
  */

@@ -5,6 +5,7 @@
 
 #include "iot_config.h"
 
+#include <cctype>
 #include <map>
 
 #include "iot_api.h"
@@ -52,12 +53,12 @@ IotResult IotConfig::updateConfig()
         return IotResult();  // default: transport error, no request was made
     }
 
-    String response;
-    std::map<String, String> responseHeader;
+    std::string response;
+    std::map<std::string, std::string> responseHeader;
     int httpStatusCode = api.apiRequest(
         response, responseHeader, "GET", _apiPath, "",
-        { { "If-None-Match", String(etag().c_str()) },
-          { "If-Modified-Since", String(lastModified().c_str()) } },
+        { { "If-None-Match", etag() },
+          { "If-Modified-Since", lastModified() } },
         { "ETag", "Last-Modified" });
 
     if (httpStatusCode < 200 || httpStatusCode >= 300)
@@ -87,12 +88,15 @@ IotResult IotConfig::updateConfig()
 
     for (auto const& kv : responseHeader)
     {
-        if (kv.first.equalsIgnoreCase("etag"))
+        // the header name comes back as the server spelled it
+        std::string name = kv.first;
+        for (char& c : name) { c = (char)tolower((unsigned char)c); }
+        if (name == "etag")
         {
-            _store->putString(KEY_ETAG, std::string(kv.second.c_str()));
-        } else if (kv.first.equalsIgnoreCase("last-modified"))
+            _store->putString(KEY_ETAG, kv.second);
+        } else if (name == "last-modified")
         {
-            _store->putString(KEY_DATE, std::string(kv.second.c_str()));
+            _store->putString(KEY_DATE, kv.second);
         }
     }
 
