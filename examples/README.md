@@ -38,9 +38,8 @@ sketch as a `const char[]` than to pass as a `-D` define.
   firmware that re-seeds.
 - `iot.clearProvisioning()` erases only the seed/provisioning state (WiFi,
   API endpoint, project, provisioning token, TLS trust, device token) -
-  `iot-cfg`/`iot-var` (server config mirror, library runtime values) are left
-  alone. Since this empties the seeded WiFi SSID, the next `begin()` enters
-  AP provisioning mode (below).
+  `iot-cfg` (the server config mirror) is left alone. Since this empties the
+  seeded WiFi SSID, the next `begin()` enters AP provisioning mode (below).
 
 ### Provisioning without a firmware rebuild
 
