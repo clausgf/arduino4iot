@@ -49,6 +49,17 @@ void setup()
         .seedGeneration    = IOT_SEED_GENERATION,
     });
 
+    // The default clock reads the system time and never synchronizes it. An
+    // https:// endpoint verifies certificate validity against the clock and
+    // needs a real one (~7 KB of flash, linked only when referenced):
+    //   static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
+    //   iot.setClock(ntpClock);
+
+    // Measuring the supply voltage is the application's business; without a
+    // battery there is no battery telemetry and no undervoltage check:
+    //   static IotAdcBattery battery({ .pin = 34, .factor = 2, .divider = 1 });
+    //   iot.setBattery(battery);
+
     // Without seeded WiFi credentials begin() logs an error and shuts down.
     // To offer a SoftAP setup form instead (opt-in, ~42 KB of flash, linked
     // only when referenced):

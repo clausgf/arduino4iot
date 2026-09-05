@@ -61,8 +61,11 @@ public:
      * setNoCredentialsHandler() and docs/concepts.md, "First-time
      * provisioning: SoftAP + captive portal".
      *
-     * @param timeout_ms the WiFi connect timeout in milliseconds
-     * @return true if WiFi connected and NTP sync succeeded
+     * @param timeout_ms the connect timeout in milliseconds
+     * @return true if the network came up. The clock is synchronized after
+     *         that, but does not decide this result - a device on an http://
+     *         endpoint works with an unsynchronized clock. Check
+     *         isTimePlausible() where it matters; begin() logs a warning.
      */
     bool begin(unsigned long timeout_ms = 10000);
 
@@ -134,14 +137,18 @@ public:
     void end();
 
     /**
-     * Connect to the given WiFi network and return true if successful.
-     * This function uses the standard Arduino WiFi library and blocks
-     * until the connection is established or
-     * the timeout (in milliseconds) is reached.
-     *
-     * For deep-sleep clients the connect dominates the radio-on time. Two opt-in
-     * optimizations shorten it (see setFastReconnect() and setStaticIp()); both
-     * fall back automatically to a plain full-scan/DHCP connect on failure.
+     * Replace the network adapter. Defaults to the built-in WiFi station, which
+     * begin() configures with the seeded credentials; a replacement carries its
+     * own configuration. Call before begin(); @p network must outlive this object.
+     */
+    void setNetwork(IotNetwork& network);
+
+    /// @return the network adapter in use.
+    IotNetwork& network() { return *_network; }
+
+    /**
+     * Connect using the credentials given here rather than the seeded ones.
+     * Only meaningful for the built-in WiFi adapter.
      */
     bool connectWifi(const char *ssid, const char *password, unsigned long timeout_ms = 10000);
 
@@ -195,12 +202,13 @@ public:
      * or 0 if not connected this cycle. Useful to verify the fast-reconnect and
      * static-IP savings via telemetry (also posted as "wifi_connect_ms").
      */
-    unsigned long getWifiConnectDuration_ms() { return _wifiConnectDuration_ms; }
+    unsigned long getWifiConnectDuration_ms();
 
     /**
-     * Return a unique device ID which is derived from the WiFi MAC address,
-     * e.g. "e32_123456780abc". The underscore separator keeps the ID a valid
-     * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$).
+     * Return a unique device ID derived from the hardware address, e.g.
+     * "e32_123456780abc". The underscore separator keeps the ID a valid
+     * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$). Available without an
+     * established connection.
      */
     String getDeviceId();
 
@@ -220,47 +228,32 @@ public:
     String getTimeIso();
 
     /**
-     * Return the time of the last NTP sync.
+     * Replace the clock. The default reads the system time and never
+     * synchronizes it, which is enough for an http:// endpoint or a device
+     * whose time comes from elsewhere. For SNTP:
      *
-     * Kept in the RTC state (IotRtcState::ntpLastSyncTime), so it survives deep
-     * sleep but not a power loss - after which the clock is gone anyway and a
-     * resync is due regardless.
+     *   IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime, config);
+     *   iot.setClock(ntpClock);
+     *
+     * Call before begin(); @p clock must outlive this object. Only a firmware
+     * that names IotNtpClock links any SNTP code.
      */
-    time_t getNtpLastSyncTime() { return (time_t)iotRtcState().ntpLastSyncTime; }
+    void setClock(IotClock& clock);
 
-    /**
-     * Set the NTP configuration for time synchronization.
-     * 
-     * On begin(), corresponding configuration values are read from 
-     * *ntp_resync_s*, *ntp_timeout_ms*, *ntp_server1*, *ntp_server2*, *ntp_server3*.
-     * This method allows overwriting these values later.
-     */
-    void setNtp(
-        int resyncInterval_s = 24*60*60,
-        int timeout_ms = 10000,
-        const char *ntpServer1 = "pool.ntp.org", 
-        const char *ntpServer2 = "time.nist.gov", 
-        const char *ntpServer3 = "time.google.com");
+    /// @return the clock in use.
+    IotClock& clock() { return *_clock; }
 
-    /**
-     * @return the current time is considered plausible if it is after 2020-01-01, i.e. 50 years after the epoch
-     */
+    /// @return the time of the last successful clock synchronization, or 0.
+    time_t getNtpLastSyncTime();
+
+    /// @return true if the time is plausible, i.e. after 2020-01-01.
     bool isTimePlausible();
 
-    //bool waitUntilTimePlausible(unsigned long timeout_ms);
     /**
-     * Wait until the time is plausible or the timeout (in milliseconds) is reached.
-     */
-    bool waitUntilNtpSync(unsigned long timeout_ms);
-
-    /**
-     * Synchronize the system time with an NTP server.
-     * 
-     * This function blocks until the system time is synchronized or the timeout
-     * (in milliseconds) is reached. Call it after connecting WiFi and after begin().
-     * Time resynchronization is performed when the time is not plausible and 
-     * periodically as configured using setNtp().
-     * Timeout and NTP servers are also configured using setNtp().
+     * Synchronize the clock if it is due. Called by begin() after the network
+     * is up; the timeout comes from the *ntp_timeout_ms* config value.
+     *
+     * @return true if the time is plausible afterwards
      */
     bool syncNtpTime();
 
@@ -302,65 +295,31 @@ public:
 
 
     // **********************************************************************
-    // Led
-    // **********************************************************************
-
-    /**
-     * Set the LED pin.
-     * 
-     * On begin(), corresponding configuration values are read from 
-     * *led_pin*.
-     * This method allows overwriting these values later.
-     */
-    void setLedPin(int ledPin);
-
-    /**
-     * Set the LED pin to the given value.
-     * 
-     * If the LED pin is configured, set the pin to the given value.
-     * Otherwise, do nothing.
-     */
-    void setLed(bool value);
-
-
-    // **********************************************************************
     // Battery
     // **********************************************************************
 
     /**
-     * Setup battery voltage measurement using the internal ADC.
-     * 
-     * The measurement is corrected using factor, divider and offset.
-     * 
-     * On begin(), corresponding configuration values are read from 
-     * *battery_factor*, *battery_divider*, *battery_offset_mv*.
-     * This method allows overwriting these values later.
-     * @param batteryPin the ADC pin to use for battery voltage measurement; values <0 disable battery voltage measurement
+     * Attach a battery. Without one there is no battery field in the system
+     * telemetry and no undervoltage supervision - the normal case for a
+     * mains-powered device.
+     *
+     * How the voltage is obtained is the application's business:
+     *
+     *   IotAdcBattery battery({ .pin = 34, .factor = 2, .divider = 1 });
+     *   iot.setBattery(battery);
+     *
+     * or IotCallbackBattery for a fuel gauge, or an own IotBattery.
+     * @p battery must outlive this object.
      */
-    void setBattery(int batteryPin, int batteryFactor, int batteryDivider, int batteryOffset_mV);
+    void setBattery(IotBattery& battery);
 
     /**
-     * Set the minimum battery voltage in Millivolt.
-     * 
-     * This value is used in begin(), which measures battery voltage
-     * and triggers panic() on undervoltage.
-     * 
-     * On begin(), corresponding configuration values are read from
-     * battery_min_mv. This method allows overwriting these values later.
-     * @param batteryMin_mV the minimum battery voltage in Millivolt; values <0 disable battery voltage measurement
+     * Undervoltage threshold in millivolts; begin() shuts the device down below
+     * it. Values < 0 disable the check. Server-configurable as *battery_min_mv*.
      */
     void setBatteryMin_mV(int batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
 
-    /**
-     * Return the battery voltage in Millivolt.
-     * 
-     * If not already available, measure the battery voltage using the configured
-     * pin, apply the correction using factor, divider and offset and
-     * return the result.
-     * The voltage is cached for subsequent calls.
-     * 
-     * @return the battery voltage in Volt
-     */
+    /// @return the supply voltage in millivolts, or -1 without a battery.
     int getBatteryVoltage_mV();
 
 
@@ -598,20 +557,17 @@ public:
 
 private:
     String _deviceId;
-    int _battery_mV;
     std::function<void()> _panicHandler;
     String _firmwareVersion;
     String _firmwareId;
     String _firmwareSha256;
     static bool _isWatchdogEnabled;
 
-    // WiFi fast-connect
-    bool _fastReconnect;
-    bool _staticIpConfigured;
-    bool _dhcpCache;
-    uint32_t _dhcpMaxReuse;
-    IPAddress _ip, _gw, _mask, _dns1, _dns2;
-    unsigned long _wifiConnectDuration_ms;
+    /// Ports. The network and the clock always have a default; the battery is
+    /// nullptr unless the application attaches one.
+    IotNetwork* _network;
+    IotClock* _clock;
+    IotBattery* _battery;
 
     /// Cycle bookkeeping, exits and failure backoff; holds the state that
     /// survives a deep sleep but not a power loss (IotRtcState).
@@ -625,35 +581,15 @@ private:
     IotConfigValue<int32_t> _logLevel;
     IotConfigValue<int32_t> _sleepDuration_s;
     IotConfigValue<int32_t> _watchdogTimeout_s;
-    IotConfigValue<int32_t> _ledPin;
-
-    IotConfigValue<int32_t> _ntpResyncInterval_s;
     IotConfigValue<int32_t> _ntpTimeout_ms;
-    IotConfigValue<std::string> _ntpServer1;
-    IotConfigValue<std::string> _ntpServer2;
-    IotConfigValue<std::string> _ntpServer3;
-
-    IotConfigValue<int32_t> _batteryOffset_mV;
-    IotConfigValue<int32_t> _batteryFactor;
-    IotConfigValue<int32_t> _batteryDivider;
-    IotConfigValue<int32_t> _batteryPin;
     IotConfigValue<int32_t> _batteryMin_mV;
 
     IotConfigValue<int32_t> _panicSleepDurationInit_s;
     IotConfigValue<int32_t> _panicSleepDurationFactor;
     IotConfigValue<int32_t> _panicSleepDurationMax_s;
 
-    static void _ntpSyncCallback(struct timeval *tv);
-
-    /// Single manual SNTP request/response that bypasses the lwIP SNTP daemon's
-    /// randomized startup delay. Returns true on success (system time set).
-    bool _syncNtpOneShot(unsigned long timeout_ms);
-
-    /// Invalidate the cached DHCP lease (see setDhcpCache()).
-    void _invalidateDhcpCache();
-
-    /// Register the library's own exit hooks (log flush, connection close, LED
-    /// off) exactly once; idempotent, so every exit path can call it.
+    /// Register the library's own exit hooks (log flush, connection close)
+    /// exactly once; idempotent, so every exit path can call it.
     void _registerExitHooks();
 
     /// Start the wakeup cycle before any network exists: initialize NVS, count
@@ -662,7 +598,7 @@ private:
     void _beginCycle();
 
     /// Initialize all subsystems (config, logger, api, watchdog, battery check)
-    /// after WiFi is connected. Called by begin().
+    /// after the network is up. Called by begin().
     void _initSubsystems();
 };
 

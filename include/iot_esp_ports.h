@@ -12,6 +12,7 @@
 #include <IPAddress.h>
 #include <Preferences.h>
 
+#include "iot_config.h"
 #include "iot_ports.h"
 #include "iot_rtc_state.h"
 
@@ -124,14 +125,18 @@ public:
     IotNtpClock(const IotNtpClock&) = delete;
     IotNtpClock& operator=(const IotNtpClock&) = delete;
 
-    explicit IotNtpClock(int64_t& lastSyncTime);
+    /// @param lastSyncTime see above
+    /// @param config where the servers and the resync interval are registered,
+    ///        so they can be changed from config.json
+    explicit IotNtpClock(int64_t& lastSyncTime, IotConfig& config = ::config);
 
     /// Up to three servers; empty entries are skipped. Defaults to
-    /// pool.ntp.org / time.nist.gov / time.google.com.
+    /// pool.ntp.org / time.nist.gov / time.google.com, config keys
+    /// *ntp_server1..3*.
     void setServers(const char* server1, const char* server2 = "", const char* server3 = "");
 
-    /// How long a sync stays valid. Default 24 h.
-    void setResyncInterval_s(int32_t resyncInterval_s) { _resyncInterval_s = resyncInterval_s; }
+    /// How long a sync stays valid. Default 24 h, config key *ntp_resync_s*.
+    void setResyncInterval_s(int32_t resyncInterval_s) { _resyncInterval_s.set(resyncInterval_s); }
 
     int64_t now() const override;
     bool isPlausible() const override;
@@ -140,8 +145,8 @@ public:
 
 private:
     int64_t& _lastSyncTime;
-    int32_t _resyncInterval_s;
-    String _server[3];
+    IotConfigValue<int32_t> _resyncInterval_s;
+    IotConfigValue<std::string> _server[3];
 
     bool _syncOneShot(uint32_t timeout_ms);
 };

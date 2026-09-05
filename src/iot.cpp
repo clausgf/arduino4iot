@@ -7,14 +7,9 @@
 
 #include "cstdio"
 #include <esp_task_wdt.h>
-#include <esp_wifi.h>
 #include <esp_ota_ops.h>
 #include <nvs_flash.h>
-#include <esp_sntp.h>
 #include <esp_idf_version.h>
-#include <sys/time.h>
-#include <WiFi.h>
-#include <WiFiUdp.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
@@ -44,6 +39,23 @@ static IotPower& defaultPower()
     return power;
 }
 
+/// The built-in WiFi station, configured by begin() with the seeded
+/// credentials. Replaceable via Iot::setNetwork().
+static IotWifiNetwork& defaultNetwork()
+{
+    static IotWifiNetwork network(iotRtcState());
+    return network;
+}
+
+/// Reads the system time and never synchronizes it. An application that needs
+/// SNTP attaches an IotNtpClock via Iot::setClock(); only then is any SNTP code
+/// linked.
+static IotClock& defaultClock()
+{
+    static IotSystemClock clock;
+    return clock;
+}
+
 static void defaultPanicHandler()
 {
     iot.escalatingSleepPanicHandler();
@@ -57,16 +69,7 @@ Iot::Iot() :
     _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level"),
     _sleepDuration_s(config, 5 * 60, "sleep_s"),
     _watchdogTimeout_s(config, 20, "watchdog_s"),
-    _ledPin(config, -1, "led_pin"),
-    _ntpResyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s"),
     _ntpTimeout_ms(config, 10000, "ntp_timeout_ms"),
-    _ntpServer1(config, "pool.ntp.org", "ntp_server1"),
-    _ntpServer2(config, "time.nist.gov", "ntp_server2"),
-    _ntpServer3(config, "time.google.com", "ntp_server3"),
-    _batteryOffset_mV(config, 0, "battery_offs_mv"),
-    _batteryFactor(config, 2, "battery_factor"),
-    _batteryDivider(config, 1, "battery_divider"),
-    _batteryPin(config, 34, "battery_pin"),
     _batteryMin_mV(config, -1, "battery_min_mv"),
     _panicSleepDurationInit_s(config, 60, "panic_init_s"),
     _panicSleepDurationFactor(config, 2, "panic_factor"),
@@ -74,12 +77,9 @@ Iot::Iot() :
 {
     // initialize variables
     _deviceId = "";
-    _battery_mV = -1;
-    _fastReconnect = true;
-    _staticIpConfigured = false;
-    _dhcpCache = false;
-    _dhcpMaxReuse = 20;
-    _wifiConnectDuration_ms = 0;
+    _network = &defaultNetwork();
+    _clock = &defaultClock();
+    _battery = nullptr;
     _panicHandler = defaultPanicHandler;
     _firmwareVersion = "";
     _firmwareId = "";
@@ -102,11 +102,10 @@ void Iot::_registerExitHooks()
     // runs before every deep sleep, restart, shutdown and backoff sleep.
     // logger.flush() is a no-op without connectivity, so this is safe on the
     // early failure paths too.
-    _lifecycle.addExitHook([this] {
+    _lifecycle.addExitHook([] {
         logger.flush();
         api.closeConnection();
         delay(10);  // give the serial log a chance to drain
-        setLed(false);
     });
 }
 
@@ -150,11 +149,9 @@ void Iot::_beginCycle()
 
 void Iot::_initSubsystems()
 {
-    setLed(true);
-
-    if (WiFi.status() != WL_CONNECTED)
+    if (!_network->isConnected())
     {
-        log_e("WiFi not connected yet. Connect WiFi first.");
+        log_e("Network not connected yet. Connect first.");
     }
 
     // read configuration again to allow overwriting hardcoded parameters with WiFi config
@@ -168,10 +165,10 @@ void Iot::_initSubsystems()
         _panicSleepDurationMax_s.get() });
 
     // check the battery voltage
-    if (_batteryPin.get() >= 0 && _batteryMin_mV.get() > 0)
+    if (_battery != nullptr && _batteryMin_mV.get() > 0)
     {
         int batteryVoltage_mV = getBatteryVoltage_mV();
-        if (batteryVoltage_mV < _batteryMin_mV.get())
+        if (batteryVoltage_mV >= 0 && batteryVoltage_mV < _batteryMin_mV.get())
         {
             log_e("Battery voltage too low: %d mV < %d mV", batteryVoltage_mV, _batteryMin_mV.get());
             shutdown(true);
@@ -180,6 +177,7 @@ void Iot::_initSubsystems()
 
     // initialize other components
     startWatchdog(_watchdogTimeout_s.get());
+    logger.setNetwork(_network);
     api.setDeviceName(getDeviceId());
     api.begin();
 }
@@ -214,10 +212,25 @@ bool Iot::begin(unsigned long timeout_ms)
         shutdown();  // never returns
     }
 
-    bool success = connectWifi(ssid.c_str(), password.c_str(), timeout_ms);
+    // the built-in adapter takes the seeded credentials; a replacement brings
+    // its own configuration
+    if (_network == &defaultNetwork())
+    {
+        defaultNetwork().setCredentials(ssid.c_str(), password.c_str());
+        defaultNetwork().setHostname(getDeviceId().c_str());
+    }
+
+    bool connected = _network->connect((uint32_t)timeout_ms);
     _initSubsystems();
-    success = success && syncNtpTime();
-    return success;
+
+    syncNtpTime();
+    if (!isTimePlausible())
+    {
+        log_w("begin: the clock is not plausible. An https:// endpoint verifies "
+              "certificate validity against it and will fail; attach an "
+              "IotNtpClock via iot.setClock().");
+    }
+    return connected;
 }
 
 void Iot::setNoCredentialsHandler(std::function<void()> handler)
@@ -284,188 +297,61 @@ void Iot::end()
 
 // *****************************************************************************
 
+void Iot::setNetwork(IotNetwork& network)
+{
+    _network = &network;
+}
+
+void Iot::setClock(IotClock& clock)
+{
+    _clock = &clock;
+}
+
+void Iot::setBattery(IotBattery& battery)
+{
+    _battery = &battery;
+}
+
+// The three tuning methods below configure the built-in WiFi adapter and have
+// no effect once setNetwork() replaced it.
+
 void Iot::setStaticIp(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
 {
-    _ip = ip;
-    _gw = gateway;
-    _mask = subnet;
-    _dns1 = dns1;
-    _dns2 = dns2;
-    _staticIpConfigured = true;
+    defaultNetwork().setStaticIp(ip, gateway, subnet, dns1, dns2);
 }
 
 void Iot::setFastReconnect(bool enabled)
 {
-    _fastReconnect = enabled;
+    defaultNetwork().setFastReconnect(enabled);
 }
 
 void Iot::setDhcpCache(bool enabled, uint32_t maxReuse)
 {
-    _dhcpCache = enabled;
-    if (maxReuse > 0)
-    {
-        _dhcpMaxReuse = maxReuse;
-    }
-    if (!enabled)
-    {
-        _invalidateDhcpCache();
-    }
-}
-
-void Iot::_invalidateDhcpCache()
-{
-    iotRtcState().dhcpIp = 0;
-    iotRtcState().dhcpReuseCount = 0;
-}
-
-// wait until connected or the deadline (absolute millis()) is reached
-static bool _waitForWifi(unsigned long deadline)
-{
-    while ( (WiFi.status() != WL_CONNECTED) && ((long)(millis() - deadline) < 0) )
-    {
-        delay(50);
-    }
-    return WiFi.status() == WL_CONNECTED;
+    defaultNetwork().setDhcpCache(enabled, maxReuse);
 }
 
 bool Iot::connectWifi(const char *ssid, const char *password, unsigned long timeout_ms)
 {
-    // immediately return if already connected
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        log_i("WiFi already connected ip=%s", WiFi.localIP().toString().c_str());
-        return true;
-    }
+    defaultNetwork().setCredentials(ssid != nullptr ? ssid : "", password != nullptr ? password : "");
+    return defaultNetwork().connect((uint32_t)timeout_ms);
+}
 
-    log_i("Connecting to WiFi network ssid=%s timeout=%lu ms", ssid, timeout_ms);
-    unsigned long startTime = millis();
-    unsigned long deadline = startTime + timeout_ms;
-
-    // avoid NVS wear: do not let the WiFi stack persist credentials on connect
-    WiFi.persistent(false);
-    WiFi.mode(WIFI_STA);
-    if (_staticIpConfigured)
-    {
-        // skip DHCP
-        if (!WiFi.config(_ip, _gw, _mask, _dns1, _dns2))
-        {
-            log_e("WiFi static IP config failed, falling back to DHCP");
-        }
-    }
-
-    // 1. targeted reconnect to the cached AP (skips the all-channel scan)
-    bool triedFast = false;
-    bool usedCachedLease = false;
-    if (_fastReconnect && iotRtcState().wifiChannel != 0)
-    {
-        triedFast = true;
-        // Reuse the cached DHCP lease only on this fast-reconnect path: it targets
-        // the same cached AP, so the previously assigned address is still valid on
-        // the same subnet. Bounded by _dhcpMaxReuse to force periodic real DHCP.
-        if (!_staticIpConfigured && _dhcpCache && iotRtcState().dhcpIp != 0
-            && iotRtcState().dhcpReuseCount < (int32_t)_dhcpMaxReuse)
-        {
-            if (WiFi.config(IPAddress(iotRtcState().dhcpIp), IPAddress(iotRtcState().dhcpGw), IPAddress(iotRtcState().dhcpMask),
-                            IPAddress(iotRtcState().dhcpDns1), IPAddress(iotRtcState().dhcpDns2)))
-            {
-                usedCachedLease = true;
-                log_i("Fast reconnect: reusing cached DHCP lease ip=%s (reuse %ld/%lu)",
-                    IPAddress(iotRtcState().dhcpIp).toString().c_str(),
-                    (long)iotRtcState().dhcpReuseCount, (unsigned long)_dhcpMaxReuse);
-            }
-        }
-        log_i("Fast reconnect: channel=%ld bssid=%02x:%02x:%02x:%02x:%02x:%02x",
-            (long)iotRtcState().wifiChannel, iotRtcState().wifiBssid[0], iotRtcState().wifiBssid[1], iotRtcState().wifiBssid[2],
-            iotRtcState().wifiBssid[3], iotRtcState().wifiBssid[4], iotRtcState().wifiBssid[5]);
-        WiFi.begin(ssid, password, iotRtcState().wifiChannel, iotRtcState().wifiBssid);
-        // give the fast attempt at most half of the budget before falling back
-        _waitForWifi(startTime + timeout_ms / 2);
-    }
-
-    // 2. fallback: plain full-scan connect with the remaining time budget
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        if (triedFast)
-        {
-            log_w("Fast reconnect failed, retrying with a full scan");
-            iotRtcState().wifiChannel = 0; // invalidate the stale cache
-        }
-        if (usedCachedLease)
-        {
-            // a stale lease may be the cause; revert to DHCP and drop the cache
-            log_w("Cached DHCP lease may be stale, reverting to DHCP");
-            WiFi.config(IPAddress((uint32_t)0), IPAddress((uint32_t)0), IPAddress((uint32_t)0));
-            _invalidateDhcpCache();
-            usedCachedLease = false;
-        }
-        WiFi.begin(ssid, password);
-        _waitForWifi(deadline);
-    }
-
-    // check for failed connection due to timeout
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        log_e("WiFi connection failed");
-        return false;
-    }
-
-    // refresh the cache for the next wakeup
-    iotRtcState().wifiChannel = WiFi.channel();
-    memcpy(iotRtcState().wifiBssid, WiFi.BSSID(), 6);
-
-    // refresh the DHCP lease cache (only meaningful when DHCP is in use)
-    if (!_staticIpConfigured && _dhcpCache)
-    {
-        if (usedCachedLease)
-        {
-            iotRtcState().dhcpReuseCount++;
-        }
-        else
-        {
-            // a real DHCP bind happened: capture the fresh lease and reset the
-            // reuse counter so the next wakeups can skip DORA
-            iotRtcState().dhcpIp   = (uint32_t)WiFi.localIP();
-            iotRtcState().dhcpGw   = (uint32_t)WiFi.gatewayIP();
-            iotRtcState().dhcpMask = (uint32_t)WiFi.subnetMask();
-            iotRtcState().dhcpDns1 = (uint32_t)WiFi.dnsIP(0);
-            iotRtcState().dhcpDns2 = (uint32_t)WiFi.dnsIP(1);
-            iotRtcState().dhcpReuseCount = 0;
-        }
-    }
-
-    _wifiConnectDuration_ms = millis() - startTime;
-
-    log_i("WiFi connected ip=%s after %lu ms", WiFi.localIP().toString().c_str(), _wifiConnectDuration_ms);
-    return true;
+unsigned long Iot::getWifiConnectDuration_ms()
+{
+    return _network->lastConnectDuration_ms();
 }
 
 // *****************************************************************************
 
 String Iot::getDeviceId()
 {
-    if (WiFi.status() != WL_CONNECTED)
+    if (_deviceId.isEmpty())
     {
-        log_e("WiFi not connected yet. Connect WiFi first.");
-    } else {
-        // determine device id
-        uint8_t mac[6];
-        esp_wifi_get_mac(WIFI_IF_STA, mac);
-
         // The device id doubles as the device name for the API. nice4iot
         // requires device names to match ^[a-zA-Z_][a-zA-Z0-9_]*$ (no hyphen),
         // so use an underscore separator, e.g. "e32_aabbccddeeff".
-        // local (not static) buffer: it is copied into _deviceId immediately,
-        // and esp_netif_set_hostname() copies the string too, so no shared
-        // state is left to race between tasks
-        const int ID_MAXLEN = 17;
-        char id_buf[ID_MAXLEN];
-        snprintf(id_buf, ID_MAXLEN, "e32_%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-        _deviceId = id_buf;
-        WiFi.setHostname(id_buf);
-        log_i("WiFi device determined and set as the hostname: %s", id_buf);
+        _deviceId = String("e32_") + _network->macAddress().c_str();
     }
-
     return _deviceId;
 }
 
@@ -497,206 +383,19 @@ String Iot::getTimeIso()
 
 // *****************************************************************************
 
-void Iot::setNtp(int resyncInterval_s, int timeout_ms,
-        const char *ntpServer1, const char *ntpServer2, const char *ntpServer3)
-{
-    _ntpResyncInterval_s = resyncInterval_s;
-    _ntpTimeout_ms = timeout_ms;
-    _ntpServer1 = std::string(ntpServer1 != nullptr ? ntpServer1 : "");
-    _ntpServer2 = std::string(ntpServer2 != nullptr ? ntpServer2 : "");
-    _ntpServer3 = std::string(ntpServer3 != nullptr ? ntpServer3 : "");
-}
-
-// *****************************************************************************
-
 bool Iot::isTimePlausible()
 {
-    time_t implausibleTimeThreshold = 50 * 365 * 24 * 3600l;
-    time_t now = time(nullptr);
-    return (now > implausibleTimeThreshold);
+    return _clock->isPlausible();
 }
 
-// bool Iot::waitUntilTimePlausible(unsigned long timeout_ms)
-// {
-//     log_i("Waiting for NTP time sync");
-//     unsigned long startTime = millis();
-//     while ( !isTimePlausible() && ((millis() - startTime) < timeout_ms) )
-//     {
-//         delay(50);
-//     }
-//     return isTimePlausible();
-// }
-
-// *****************************************************************************
-
-bool Iot::waitUntilNtpSync(unsigned long timeout_ms)
+time_t Iot::getNtpLastSyncTime()
 {
-    if (timeout_ms == 0)
-    {
-        log_i("waitUntilNtpSync with timeout_ms=0, returning immediately");
-        return false;
-    }
-    log_i("Waiting for NTP time sync");
-    unsigned long startTime = millis();
-    bool completed = ( esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED );
-    while ( !completed && ((millis() - startTime) < timeout_ms) )
-    {
-        delay(50);
-        completed = ( esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED );
-    }
-    return completed;
-}
-
-void Iot::_ntpSyncCallback(struct timeval *tv)
-{
-    time_t now = time(nullptr);
-    log_i("NTP time sync success, time=%s", iot.getTimeIso(now).c_str());
-    iotRtcState().ntpLastSyncTime = (int64_t)now;
-}
-
-// *****************************************************************************
-
-bool Iot::_syncNtpOneShot(unsigned long timeout_ms)
-{
-    // A single SNTP request/response, bypassing the lwIP SNTP daemon whose
-    // randomized 0-5 s startup delay (CONFIG_LWIP_SNTP_STARTUP_DELAY) dominates
-    // the sync time. Tries each configured server until one answers.
-    const uint32_t NTP_UNIX_OFFSET = 2208988800UL; // seconds between 1900 and 1970
-    const uint16_t NTP_PORT = 123;
-    const time_t plausibleThreshold = 50 * 365 * 24 * 3600L;
-
-    WiFiUDP udp;
-    if (!udp.begin(2390))
-    {
-        log_i("NTP one-shot: UDP begin failed");
-        return false;
-    }
-
-    // .get() returns a reference, so these stay valid for the loop below
-    const char* servers[3] = {
-        _ntpServer1.get().c_str(),
-        _ntpServer2.get().empty() ? nullptr : _ntpServer2.get().c_str(),
-        _ntpServer3.get().empty() ? nullptr : _ntpServer3.get().c_str(),
-    };
-
-    bool ok = false;
-    uint8_t packet[48];
-    for (const char* server : servers)
-    {
-        if (server == nullptr || server[0] == '\0')
-        {
-            continue;
-        }
-
-        // build the client request (LI=0, VN=3, Mode=3)
-        memset(packet, 0, sizeof(packet));
-        packet[0] = 0x1B;
-
-        if (!udp.beginPacket(server, NTP_PORT))
-        {
-            log_i("NTP one-shot: cannot resolve/reach %s", server);
-            continue;
-        }
-        udp.write(packet, sizeof(packet));
-        if (!udp.endPacket())
-        {
-            continue;
-        }
-
-        // wait for the reply
-        unsigned long start = millis();
-        int len = 0;
-        while ((millis() - start) < timeout_ms)
-        {
-            len = udp.parsePacket();
-            if (len >= (int)sizeof(packet))
-            {
-                break;
-            }
-            delay(10);
-        }
-        if (len < (int)sizeof(packet))
-        {
-            continue;
-        }
-        udp.read(packet, sizeof(packet));
-
-        // transmit timestamp (seconds since 1900) is at bytes 40..43, big-endian
-        uint32_t ntpSecs = ((uint32_t)packet[40] << 24) | ((uint32_t)packet[41] << 16)
-                         | ((uint32_t)packet[42] << 8)  | (uint32_t)packet[43];
-        if (ntpSecs <= NTP_UNIX_OFFSET)
-        {
-            continue;
-        }
-        time_t unixSecs = (time_t)(ntpSecs - NTP_UNIX_OFFSET);
-        if (unixSecs < plausibleThreshold)
-        {
-            continue; // reject implausible responses
-        }
-
-        // fractional part (bytes 44..47) for sub-second accuracy
-        uint32_t frac = ((uint32_t)packet[44] << 24) | ((uint32_t)packet[45] << 16)
-                      | ((uint32_t)packet[46] << 8)  | (uint32_t)packet[47];
-        suseconds_t usec = (suseconds_t)(((uint64_t)frac * 1000000ULL) >> 32);
-
-        struct timeval tv;
-        tv.tv_sec = unixSecs;
-        tv.tv_usec = usec;
-        settimeofday(&tv, nullptr);
-        iotRtcState().ntpLastSyncTime = (int64_t)unixSecs;
-        log_i("NTP one-shot sync success (server=%s): %s", server, getTimeIso(unixSecs).c_str());
-        ok = true;
-        break;
-    }
-
-    udp.stop();
-    return ok;
+    return (time_t)_clock->lastSyncTime();
 }
 
 bool Iot::syncNtpTime()
 {
-    int64_t sinceLastSync_s = time(nullptr) - iotRtcState().ntpLastSyncTime;
-    if (isTimePlausible() && sinceLastSync_s >= 0 && sinceLastSync_s < _ntpResyncInterval_s.get())
-    {
-        log_i("NTP time should be good enough: time=%s", getTimeIso().c_str());
-        return true;
-    }
-
-    // fast path: a single manual SNTP query avoids the lwIP daemon startup delay
-    if (_syncNtpOneShot(_ntpTimeout_ms.get()))
-    {
-        return true;
-    }
-    log_i("NTP one-shot failed, falling back to the SNTP daemon");
-
-    // fallback: the lwIP SNTP daemon
-    esp_netif_init();
-    if (esp_sntp_enabled())
-    {
-        esp_sntp_stop();
-    }
-    //esp_sntp_servermode_dhcp(1);
-    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, (char*)_ntpServer1.get().c_str());
-    if (!_ntpServer2.get().empty())
-    {
-        esp_sntp_setservername(1, (char*)_ntpServer2.get().c_str());
-    }
-    if (!_ntpServer3.get().empty())
-    {
-        esp_sntp_setservername(2, (char*)_ntpServer3.get().c_str());
-    }
-    esp_sntp_set_time_sync_notification_cb(_ntpSyncCallback);
-    esp_sntp_init();
-
-    // wait for time to be set
-    if (!waitUntilNtpSync(_ntpTimeout_ms.get()))
-    {
-        log_i("NTP time sync failed: %s", getTimeIso().c_str());
-        return false;
-    }
-
-    return true;
+    return _clock->sync((uint32_t)_ntpTimeout_ms.get());
 }
 
 
@@ -732,11 +431,12 @@ IotResult Iot::postTelemetry(const String& kind, const IotTelemetry& telemetry, 
 IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
 {
     IotTelemetry telemetry;
-    if (_batteryPin.get() >= 0)
+    int battery_mV = getBatteryVoltage_mV();
+    if (battery_mV >= 0)
     {
-        telemetry.add("battery_V", getBatteryVoltage_mV() / 1000.0);
+        telemetry.add("battery_V", battery_mV / 1000.0);
     }
-    telemetry.add("wifi_rssi", WiFi.RSSI());
+    telemetry.add("wifi_rssi", _network->rssi());
     telemetry.add("wifi_connect_ms", (int32_t)getWifiConnectDuration_ms());
     telemetry.add("boot_count", getBootCount());
     telemetry.add("active_ms", getActiveDuration_ms());
@@ -761,56 +461,13 @@ IotResult Iot::postSystemTelemetry(const String& kind, const String& apiPath)
 }
 
 
-// **********************************************************************
-// Led
-// **********************************************************************
-
-void Iot::setLedPin(int ledPin)
-{
-    _ledPin = ledPin;
-}
-
-void Iot::setLed(bool value)
-{
-    if (_ledPin.get() >= 0)
-    {
-        pinMode(_ledPin.get(), OUTPUT);
-        digitalWrite(_ledPin.get(), value ? HIGH : LOW);
-    }
-}
-
-
 // *****************************************************************************
 // Battery
 // *****************************************************************************
 
-void Iot::setBattery(int batteryPin, int batteryFactor, int batteryDivider, int batteryOffset_mV)
-{
-    _batteryPin = batteryPin;
-    _batteryFactor = batteryFactor;
-    _batteryDivider = batteryDivider;
-    _batteryOffset_mV = batteryOffset_mV;
-    _battery_mV = -1; // reset cached value
-}
-
 int Iot::getBatteryVoltage_mV()
 {
-    if ( _batteryPin.get() < 0 )
-    {
-        log_i("Battery voltage measurement not configured");
-        _battery_mV = -1;
-    } else if (_battery_mV <= 0)
-    {
-        uint32_t raw = analogReadMilliVolts(_batteryPin.get());
-        int64_t voltage = raw;
-        voltage = voltage * _batteryFactor.get();
-        voltage = voltage / _batteryDivider.get();
-        voltage = voltage + _batteryOffset_mV.get();
-        _battery_mV = voltage;
-        log_i("Battery voltage: pin=%d, raw=%u battery_voltage=%d mV", 
-            _batteryPin.get(), raw, _battery_mV);
-    }
-    return _battery_mV;
+    return _battery != nullptr ? _battery->readMilliVolts() : -1;
 }
 
 

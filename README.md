@@ -23,8 +23,8 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit.
 - **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
-- **File upload:** `api.uploadFile()` pushes files to the device-specific storage on the server.
-- **Forwarding:** `api.apiForward()` proxies requests to upstream services configured in the project settings.
+- **File upload:** `iotUploadFile()` pushes files to the device-specific storage on the server.
+- **Forwarding:** `iotForward()` proxies requests to upstream services configured in the project settings.
 - **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
 - **System management:** deep sleep cycle bookkeeping, watchdog supervision, battery monitoring with undervoltage shutdown, escalating panic/backoff strategy.
 
@@ -150,6 +150,47 @@ the linker drops every one an application does not reference.
   silently overwritten by `begin()` or `updateConfig()`; the server value is
   still mirrored to NVS and applies from the next boot. See
   [Configuration](docs/concepts.md#configuration-runtime-configjson).
+- **The clock no longer synchronizes by default (action required for https).**
+  `iot.begin()` used to run SNTP unconditionally. The default `IotClock` is now
+  `IotSystemClock`, which reads the system time and never syncs — so no firmware
+  links SNTP code it does not use. An `https://` endpoint verifies certificate
+  validity against the clock and therefore needs:
+  ```cpp
+  static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
+  iot.setClock(ntpClock);
+  ```
+  `begin()` logs a warning when the clock is implausible. `iot.setNtp()` is gone;
+  configure servers and interval on the `IotNtpClock` (or via the unchanged
+  `ntp_server1..3` / `ntp_resync_s` config keys). The lwIP SNTP daemon fallback
+  is removed — the one-shot query is the only path.
+- **`iot.begin()` now reports the network only.** It used to return "WiFi
+  connected AND NTP synced", which conflated two unrelated failures. A device on
+  `http://` works with an unsynchronized clock; check `iot.isTimePlausible()`
+  where it matters.
+- **Battery measurement is an adapter (action required if you used it).**
+  `iot.setBattery(pin, factor, divider, offset)` and the `battery_pin`,
+  `battery_factor`, `battery_divider`, `battery_offs_mv` config keys are gone.
+  Attach an `IotBattery` instead:
+  ```cpp
+  static IotAdcBattery battery({ .pin = 34, .factor = 2, .divider = 1, .samples = 4 });
+  iot.setBattery(battery);
+  ```
+  `IotAdcBattery` adds multi-sample averaging and an optional enable pin; an I2C
+  fuel gauge goes through `IotCallbackBattery`. Without a battery there is no
+  `battery_V` telemetry and no undervoltage check. `battery_min_mv` is unchanged.
+- **The LED helpers are removed.** `iot.setLedPin()`, `iot.setLed()` and the
+  `led_pin` config key were a `digitalWrite()` wrapper; do it in the sketch.
+- **`api.apiForward()` → `iotForward()` and `api.uploadFile()` → `iotUploadFile()`**,
+  declared in the new `iot_endpoints.h`. The transport no longer carries the
+  server's endpoint map, and both are linked only when referenced.
+- **`api.apiSetConnectionTimeout()` / `api.apiSetRequestTimeout()` are removed**
+  (deprecated since 2.x); use `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.
+- **`iot.connectWifi()` keeps working** but now configures the built-in
+  `IotWifiNetwork`, as do `setStaticIp()`, `setFastReconnect()` and
+  `setDhcpCache()`. They have no effect once `iot.setNetwork()` replaced the
+  adapter. `iot.getDeviceId()` reads the MAC from the eFuse and therefore works
+  without an established connection — it used to return an empty string when the
+  connect had failed, which silently broke every API URL on that path.
 - **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now

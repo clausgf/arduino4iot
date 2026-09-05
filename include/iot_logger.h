@@ -10,6 +10,8 @@
 
 #include "Arduino.h"
 
+#include "iot_ports.h"
+
 // *****************************************************************************
 
 class IotLogger
@@ -24,6 +26,10 @@ public:
     IotLogger();
     void begin(LogLevel logLevel = IOT_LOGLEVEL_NOTSET);
     void end();
+
+    /// Where to ask whether the buffer can be sent. Without one, flush() tries
+    /// and lets the request fail.
+    void setNetwork(IotNetwork* network) { _network = network; }
 
 
     // **********************************************************************
@@ -97,6 +103,7 @@ private:
     LogLevel _logLevel;
     bool _buffered;
     String _logBuffer;
+    IotNetwork* _network = nullptr;
 };
 
 extern IotLogger logger;

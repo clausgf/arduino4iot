@@ -90,13 +90,6 @@ public:
      */
     void setRequestTimeout_ms(uint16_t timeout_ms);
 
-    /// @deprecated use setConnectionTimeout_ms()
-    __attribute__((deprecated("use setConnectionTimeout_ms()")))
-    void apiSetConnectionTimeout(int32_t timeout) { setConnectionTimeout_ms(timeout); }
-
-    /// @deprecated use setRequestTimeout_ms()
-    __attribute__((deprecated("use setRequestTimeout_ms()")))
-    void apiSetRequestTimeout(uint16_t timeout) { setRequestTimeout_ms(timeout); }
 
 
     // **********************************************************************
@@ -261,38 +254,6 @@ public:
      * @see apiGet.
      */
     int apiPut(String& oResponse, const String& apiPath, const String& body, const std::map<String, String>& headers = {});
-
-    /**
-     * Send a request through the server's forwarding endpoint
-     * (GET forward/{project}/{device}/{forwardingName}/{remainingPath}).
-     *
-     * The server proxies the request to the upstream URL configured for
-     * forwardingName in the project settings and returns the upstream
-     * response.
-     *
-     * @param oResponse the upstream response body
-     * @param forwardingName the name of the forwarding entry in the project config
-     * @param remainingPath path suffix appended to the configured upstream URL, may be empty
-     * @param body an optional request body passed to the upstream service
-     * @return the result of the request, wrapping the HTTP status code
-     */
-    IotResult apiForward(String& oResponse, const String& forwardingName, const String& remainingPath = "",
-        const String& body = "", const std::map<String, String>& headers = {});
-
-    /**
-     * Upload a file to the device-specific file storage on the server
-     * (PUT file/{project}/{device}/{filename}), e.g. for diagnostic dumps.
-     *
-     * The filename may only contain alphanumeric characters, '.', '_' and '-'
-     * and must start with an alphanumeric character.
-     *
-     * @param filename the target filename on the server
-     * @param content the file content
-     * @param contentType the content type, defaults to "application/octet-stream"
-     * @return a typed result: Ok on 2xx, otherwise inspect .httpStatus (e.g. 413
-     *         if the file exceeds the server's size limit) or .transportError
-     */
-    IotResult uploadFile(const String& filename, const String& content, const String& contentType = "application/octet-stream");
 
     /**
      * Send a HEAD request to the given URL and check if the server has an

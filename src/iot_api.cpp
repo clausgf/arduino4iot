@@ -559,30 +559,6 @@ int IotApi::apiPut(String& response, const String& apiPath, const String& body, 
 
 // *****************************************************************************
 
-IotResult IotApi::apiForward(String& oResponse, const String& forwardingName, const String& remainingPath,
-    const String& body, const std::map<String, String>& headers)
-{
-    String apiPath = "forward/{project}/{device}/" + forwardingName;
-    if (!remainingPath.isEmpty())
-    {
-        apiPath += remainingPath.startsWith("/") ? remainingPath : "/" + remainingPath;
-    }
-    return apiGet(oResponse, apiPath, body, headers);
-}
-
-// *****************************************************************************
-
-IotResult IotApi::uploadFile(const String& filename, const String& content, const String& contentType)
-{
-    String response;
-    // apiPut returns a raw status code; IotResult classifies it (negative ->
-    // TransportError, 2xx -> Ok, else HttpError, e.g. 413 for an oversized file)
-    return apiPut(response, "file/{project}/{device}/" + filename, content,
-        {{"Content-Type", contentType}});
-}
-
-// *****************************************************************************
-
 IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
 {
     String etag = _store.getString(nvram_etag_key, "").c_str();
