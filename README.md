@@ -150,6 +150,21 @@ the linker drops every one an application does not reference.
   silently overwritten by `begin()` or `updateConfig()`; the server value is
   still mirrored to NVS and applies from the next boot. See
   [Configuration](docs/concepts.md#configuration-runtime-configjson).
+- **Four `config.json` keys are removed:** `ntp_server1`, `ntp_server2`,
+  `ntp_resync_s` and `ntp_timeout_ms` (never worth turning per deployment from
+  the server) and `watchdog_s` (a value set too low from the server bricks a
+  fleet, and a device that cannot boot cannot fetch a corrected file). None was
+  ever seeded, so nothing else is affected. Set them on the object instead:
+  `IotNtpClock::setServers()` / `setResyncInterval_s()`, `iot.setNtpTimeout_ms()`,
+  and `iot.startWatchdog(timeout_s)` before `iot.begin()`, which now remembers
+  the timeout it was given. Stale keys left in the `iot-cfg` namespace are
+  ignored and disappear on `factoryReset()`; a `config.json` still listing them
+  logs them as unknown and applies the rest. What remains configurable is the
+  operational set: `log_level`, `sleep_s`, `battery_min_mv`, `panic_init_s`,
+  `panic_factor`, `panic_max_s`.
+- **Internal headers moved from `include/` to `src/`** (`iot_text.h`,
+  `iot_ap_text.h`, `iot_ota_internal.h`, `iot_log.h`). `include/` is the public
+  interface; none of these appear in a public header or a sketch.
 - **`api.updateFirmware()` → `iotUpdateFirmware()`** (`iot_endpoints.h`), together
   with `getFirmwareHttpEtag()/Date()` → `iotFirmwareHttpEtag()/Date()`. The OTA
   downloader is ESP-specific, and `IotApi` is now Arduino-free: it builds URLs,

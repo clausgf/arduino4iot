@@ -39,6 +39,13 @@ public:
     static constexpr int32_t MIN_SLEEP_DURATION_S = 1;
     static constexpr int32_t MIN_WATCHDOG_TIMEOUT_S = 5;
 
+    /// Defaults for the two values begin() needs before any configuration is
+    /// available. Neither comes from config.json: a watchdog set too short from
+    /// the server bricks a fleet, and a sync timeout is a property of the
+    /// deployment's uplink, not an operational knob.
+    static constexpr int32_t DEFAULT_WATCHDOG_TIMEOUT_S = 20;
+    static constexpr uint32_t DEFAULT_NTP_TIMEOUT_MS = 10000;
+
     // disallow copying & assignment
     Iot(const Iot&) = delete;
     Iot& operator=(const Iot&) = delete;
@@ -254,9 +261,13 @@ public:
     /// @return true if the time is plausible, i.e. after 2020-01-01.
     bool isTimePlausible();
 
+    /// Budget for a clock synchronization, @see syncNtpTime(). Call before
+    /// begin(); default DEFAULT_NTP_TIMEOUT_MS.
+    void setNtpTimeout_ms(uint32_t timeout_ms) { _ntpTimeout_ms = timeout_ms; }
+
     /**
      * Synchronize the clock if it is due. Called by begin() after the network
-     * is up; the timeout comes from the *ntp_timeout_ms* config value.
+     * is up.
      *
      * @return true if the time is plausible afterwards
      */
@@ -445,6 +456,9 @@ public:
 
     /**
      * Initialize the task watchdog timer and start supervising the current task.
+     *
+     * The timeout given here is remembered, so calling this before begin()
+     * chooses the timeout begin() will use.
      * 
      * Watdog supervision is by default enabled for the application 
      * main task in begin(). 
@@ -574,6 +588,9 @@ private:
     IotClock* _clock;
     IotBattery* _battery;
 
+    int32_t _watchdogTimeout_s;
+    uint32_t _ntpTimeout_ms;
+
     /// Cycle bookkeeping, exits and failure backoff; holds the state that
     /// survives a deep sleep but not a power loss (IotRtcState).
     IotLifecycle _lifecycle;
@@ -585,8 +602,6 @@ private:
     // configurable variables
     IotConfigValue<int32_t> _logLevel;
     IotConfigValue<int32_t> _sleepDuration_s;
-    IotConfigValue<int32_t> _watchdogTimeout_s;
-    IotConfigValue<int32_t> _ntpTimeout_ms;
     IotConfigValue<int32_t> _batteryMin_mV;
 
     IotConfigValue<int32_t> _panicSleepDurationInit_s;

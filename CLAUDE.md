@@ -69,6 +69,10 @@ Arduino-free, and use `iot_log.h` rather than Arduino's logging macros.
    `IotAdcBattery`. Verify with `nm -C firmware.elf | grep <Class>::`.
 4. Test doubles live in `test/iot_fakes.h`, included as `"../iot_fakes.h"` — not
    in `include/`, so firmware cannot reach them.
+5. `include/` is the public interface. A header that no public header includes
+   and no sketch uses belongs in `src/` (`iot_text.h`, `iot_ap_text.h`,
+   `iot_ota_internal.h`, `iot_log.h`); the native build has `-I src` so tests
+   still reach them.
 
 ### Ports and their adapters
 
