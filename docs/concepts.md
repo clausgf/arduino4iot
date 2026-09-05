@@ -68,6 +68,35 @@ is obtained by exchanging a long-lived **provisioning token** at `/api/provision
 See [the auth section in the README](../README.md#server-api-notes) for the
 401/403 semantics of the current nice4iot server.
 
+### Where the pieces live
+
+Authentication is deliberately **not** part of the transport:
+
+- `IotTokenManager` (`iot_token.h`) holds the provisioning token, the device
+  token and its expiry, persists the latter through `IotStore`, and owns the one
+  decision that matters — `needsNewToken(now, isTimePlausible)`. It knows
+  nothing about HTTP, is Arduino-free, and is unit tested on the host
+  (`test/test_token`), including the two cases that deliberately count as "still
+  good": an **unknown expiry** (a token from an older library version, or a
+  server that sent no `expiresIn`) and an **implausible clock** before the NTP
+  sync, where the arithmetic would be meaningless. Both then surface as a 401
+  and re-provision, which is cheaper than re-provisioning on every wakeup.
+- `IotApi::_performRequest()` performs one request with the headers it is given
+  and no notion of tokens at all.
+- `IotApi::apiRequest()` is the policy on top: attach the token, and on 401 get
+  a new one and retry once.
+
+Up to 3.x these were one thing, with two consequences that are gone now. The
+single request path could re-enter itself while provisioning, guarded by an
+`_inProvisioning` flag; and `updateFirmware()` had to re-read the
+`Authorization` header after its `HEAD` because the retry might have replaced
+the token underneath it — it now simply builds the OTA headers after that call.
+
+**Choose the renewal margin against the server's token lifetime.** The margin is
+a promise that the token outlives the next sleep, so it must be larger than the
+sleep interval — but if it exceeds the lifetime the server issues, every wakeup
+re-provisions. There is a test pinning exactly that interaction.
+
 ## Telemetry
 
 Telemetry is a **flat JSON object of numeric values** (the server's time-series

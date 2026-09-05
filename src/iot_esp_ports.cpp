@@ -145,8 +145,9 @@ void IotNvsStore::putString(const char* key, const std::string& value)
     {
         return;
     }
-    if (has(key) && _preferences.getType(key) == PT_STR
-        && getString(key, value + "\x01") == value)
+    // the type check above means getString() cannot fall back to its default,
+    // so an equal result really is the stored value
+    if (has(key) && _preferences.getType(key) == PT_STR && getString(key, "") == value)
     {
         return;  // unchanged: do not spend a flash write cycle
     }
