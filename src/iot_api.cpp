@@ -42,11 +42,11 @@ void IotApi::begin()
     // one NVS handle for the whole wakeup cycle, and every read guarded
     // against the unfilterable "NOT_FOUND" error Preferences logs
     _store.begin();
-    _setApiUrl(String(_store.getString(_nvram_api_url_key, "").c_str()));
-    _projectName = _store.getString(_nvram_project_key, "").c_str();
-    _caCertPem = _store.getString(_nvram_ca_cert_key, "").c_str();
-    _clientCertPem = _store.getString(_nvram_client_cert_key, "").c_str();
-    _clientKeyPem = _store.getString(_nvram_client_key_key, "").c_str();
+    _setApiUrl(_store.getString(_nvram_api_url_key, ""));
+    _projectName = _store.getString(_nvram_project_key, "");
+    _caCertPem = _store.getString(_nvram_ca_cert_key, "");
+    _clientCertPem = _store.getString(_nvram_client_cert_key, "");
+    _clientKeyPem = _store.getString(_nvram_client_key_key, "");
     uint8_t tlsMode = (uint8_t)_store.getInt(_nvram_tls_mode_key, (int64_t)IotTlsMode::None);
 
     // the credentials load themselves from the same store
@@ -102,11 +102,11 @@ void IotApi::_applyTls(IotTlsMode mode)
             _applyCertInsecure();
             break;
         case IotTlsMode::CaPin:
-            if (!_caCertPem.isEmpty())
+            if (!_caCertPem.empty())
             {
                 _applyCACert(_caCertPem.c_str());
             }
-            if (!_clientCertPem.isEmpty() && !_clientKeyPem.isEmpty())
+            if (!_clientCertPem.empty() && !_clientKeyPem.empty())
             {
                 _applyClientCertificateAndKey(_clientCertPem.c_str(), _clientKeyPem.c_str());
             }
@@ -131,7 +131,7 @@ WiFiClient * IotApi::_getWiFiClientPtr()
     // create WiFiClient or WiFiClientSecure if needed
     if (_wifiClientPtr == nullptr)
     {
-        if (_baseUrl.startsWith("https://"))
+        if (_baseUrl.rfind("https://", 0) == 0)
         {
             log_d("Create WiFiClientSecure");
             _wifiClientSecurePtr = new WiFiClientSecure();
@@ -183,21 +183,21 @@ HTTPClient & IotApi::_getHttpClient()
 // API configuration
 // *****************************************************************************
 
-void IotApi::_setApiUrl(const String& apiBaseurl)
+void IotApi::_setApiUrl(const std::string& apiBaseurl)
 {
     _baseUrl = apiBaseurl;
-    if (!_baseUrl.isEmpty() && !_baseUrl.endsWith("/"))
+    if (!_baseUrl.empty() && _baseUrl.back() != '/')
     {
         _baseUrl += "/";
     }
 }
 
-void IotApi::setDeviceName(const String& device)
+void IotApi::setDeviceName(const std::string& device)
 {
     _deviceName = device;
 }
 
-void IotApi::setApiHeader(const std::map<String, String>& header)
+void IotApi::setApiHeader(const std::map<std::string, std::string>& header)
 {
     _defaultRequestHeader = header;
 }
@@ -300,7 +300,7 @@ void IotApi::setRequestTimeout_ms(uint16_t timeout_ms)
 // The provisioning token is seeded into NVS by Iot::seedCredentials() and loaded
 // by begin(); it is no longer set at runtime.
 
-void IotApi::setDeviceToken(const String& deviceToken, time_t expiresAt)
+void IotApi::setDeviceToken(const std::string& deviceToken, time_t expiresAt)
 {
     _tokens.setDeviceToken(std::string(deviceToken.c_str()), (int64_t)expiresAt);
 }
@@ -312,7 +312,7 @@ void IotApi::clearDeviceToken()
 
 // *****************************************************************************
 
-IotResult IotApi::updateProvisioning(const String& apiPath)
+IotResult IotApi::updateProvisioning(const std::string& apiPath)
 {
     // whether the current token still does the job is a decision, not I/O
     if (!_tokens.needsNewToken((int64_t)time(nullptr), iot.isTimePlausible()))
@@ -327,7 +327,7 @@ IotResult IotApi::updateProvisioning(const String& apiPath)
     return _requestDeviceToken(apiPath);
 }
 
-IotResult IotApi::_requestDeviceToken(const String& apiPath)
+IotResult IotApi::_requestDeviceToken(const std::string& apiPath)
 {
     if (!_tokens.hasProvisioningToken())
     {
@@ -339,13 +339,13 @@ IotResult IotApi::_requestDeviceToken(const String& apiPath)
     requestDoc["projectName"] = _projectName;
     requestDoc["deviceName"] = _deviceName;
     requestDoc["provisioningToken"] = _tokens.provisioningToken();
-    String request;
+    std::string request;
     serializeJson(requestDoc, request);
 
     // unauthenticated single-shot: /provision authenticates with the
     // provisioning token in the body
-    String response;
-    std::map<String, String> responseHeader;
+    std::string response;
+    std::map<std::string, std::string> responseHeader;
     int httpStatusCode = _performRequest(response, responseHeader, "POST", apiPath, request,
         _requestHeaders({}, /*authenticated=*/false), {});
 
@@ -380,57 +380,56 @@ IotResult IotApi::_requestDeviceToken(const String& apiPath)
 // HTTP requests
 // *****************************************************************************
 
-String IotApi::getApiUrlForPath(const String& apiPath)
+std::string IotApi::getApiUrlForPath(const std::string& apiPath)
 {
-    std::string url = iot_text::buildApiUrl(
+    return iot_text::buildApiUrl(
         _baseUrl.c_str(), apiPath.c_str(), _projectName.c_str(), _deviceName.c_str(),
         iot.getBoardId().c_str());
-    return String(url.c_str());
 }
 
 // *****************************************************************************
 
-std::map<String, String> IotApi::_mergeHeaders(std::map<String, String> base,
-    const std::map<String, String>& requestHeader) const
+std::map<std::string, std::string> IotApi::_mergeHeaders(std::map<std::string, std::string> base,
+    const std::map<std::string, std::string>& requestHeader) const
 {
     for (auto const& kv : _defaultRequestHeader) { base[kv.first] = kv.second; }
     for (auto const& kv : requestHeader) { base[kv.first] = kv.second; }
     return base;
 }
 
-std::map<String, String> IotApi::_requestHeaders(const std::map<String, String>& requestHeader,
+std::map<std::string, std::string> IotApi::_requestHeaders(const std::map<std::string, std::string>& requestHeader,
     bool authenticated) const
 {
-    std::map<String, String> base = {
+    std::map<std::string, std::string> base = {
         { "Accept", "application/json" },
         { "Content-Type", "application/json" },
     };
     if (authenticated)
     {
-        base["Authorization"] = String(_tokens.deviceToken().c_str());
+        base["Authorization"] = _tokens.deviceToken();
     }
     return _mergeHeaders(std::move(base), requestHeader);
 }
 
 // *****************************************************************************
 
-int IotApi::_performRequest(String& oResponse, std::map<String, String>& oResponseHeader,
-    const char * requestType, const String& apiPath, const String& requestBody,
-    const std::map<String, String>& requestHeader,
-    const std::vector<String>& collectResponseHeaderKeys)
+int IotApi::_performRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
+    const char * requestType, const std::string& apiPath, const std::string& requestBody,
+    const std::map<std::string, std::string>& requestHeader,
+    const std::vector<std::string>& collectResponseHeaderKeys)
 {
-    String url = getApiUrlForPath(apiPath);
+    std::string url = getApiUrlForPath(apiPath);
     log_i("HTTP %s url=%s", requestType, url.c_str());
 
     // prepare HTTP request; requestHeader is already the fully merged set
     _warnIfTlsTrustMissing();
-    _getHttpClient().begin(*(_getWiFiClientPtr()), url);
+    _getHttpClient().begin(*(_getWiFiClientPtr()), String(url.c_str()));
     for (auto const& kv : requestHeader)
     {
-        if (!kv.second.isEmpty())
+        if (!kv.second.empty())
         {
             log_d("  HTTP header: %s=%s", kv.first.c_str(), kv.second.c_str());
-            _getHttpClient().addHeader(kv.first.c_str(), kv.second.c_str());
+            _getHttpClient().addHeader(String(kv.first.c_str()), String(kv.second.c_str()));
         }
     }
     std::vector<const char *> headerKeys;
@@ -449,12 +448,12 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
     {
         if (_getHttpClient().hasHeader(key.c_str()))
         {
-            oResponseHeader[key] = _getHttpClient().header(key.c_str());
+            oResponseHeader[key] = _getHttpClient().header(key.c_str()).c_str();
         }
     }
     if ((strcasecmp("HEAD", requestType) != 0) && httpStatusCode != HTTP_CODE_NOT_MODIFIED)
     {
-        oResponse = _getHttpClient().getString();
+        oResponse = _getHttpClient().getString().c_str();
     } else {
         oResponse = "";
     }
@@ -490,10 +489,10 @@ int IotApi::_performRequest(String& oResponse, std::map<String, String>& oRespon
 
 // *****************************************************************************
 
-int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHeader,
-    const char * requestType, const String& apiPath, const String& requestBody,
-    const std::map<String, String>& requestHeader,
-    const std::vector<String>& collectResponseHeaderKeys)
+int IotApi::apiRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
+    const char * requestType, const std::string& apiPath, const std::string& requestBody,
+    const std::map<std::string, std::string>& requestHeader,
+    const std::vector<std::string>& collectResponseHeaderKeys)
 {
     // the authentication policy on top of the transport: attach the device
     // token, and on a rejection get a new one and try once more
@@ -520,52 +519,52 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
 
 // *****************************************************************************
 
-int IotApi::apiGet(String& response, const String& apiPath, const String& body, const std::map<String, String>& header)
+int IotApi::apiGet(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
 {
-    std::map<String, String> responseHeader;
+    std::map<std::string, std::string> responseHeader;
     return apiRequest(response, responseHeader, "GET", apiPath, body, header);
 }
 
-int IotApi::apiGet(String& response, std::map<String, String>& oResponseHeader, const String& apiPath,
-    const std::vector<String>& collectResponseHeaderKeys, const String& body, const std::map<String, String>& header)
+int IotApi::apiGet(std::string& response, std::map<std::string, std::string>& oResponseHeader, const std::string& apiPath,
+    const std::vector<std::string>& collectResponseHeaderKeys, const std::string& body, const std::map<std::string, std::string>& header)
 {
     return apiRequest(response, oResponseHeader, "GET", apiPath, body, header, collectResponseHeaderKeys);
 }
 
 // *****************************************************************************
 
-int IotApi::apiHead(const String& apiPath, const std::map<String, String>& header)
+int IotApi::apiHead(const std::string& apiPath, const std::map<std::string, std::string>& header)
 {
-    String response = "";
-    std::map<String, String> responseHeader;
+    std::string response;
+    std::map<std::string, std::string> responseHeader;
     return apiRequest(response, responseHeader, "HEAD", apiPath, "", header);
 }
 
 // *****************************************************************************
 
-int IotApi::apiPost(String& response, const String& apiPath, const String& body, const std::map<String, String>& header)
+int IotApi::apiPost(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
 {
-    std::map<String, String> responseHeader;
+    std::map<std::string, std::string> responseHeader;
     return apiRequest(response, responseHeader, "POST", apiPath, body, header);
 }
 
 // *****************************************************************************
 
-int IotApi::apiPut(String& response, const String& apiPath, const String& body, const std::map<String, String>& header)
+int IotApi::apiPut(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
 {
-    std::map<String, String> responseHeader;
+    std::map<std::string, std::string> responseHeader;
     return apiRequest(response, responseHeader, "PUT", apiPath, body, header);
 }
 
 // *****************************************************************************
 
-IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
+IotResult IotApi::apiCheckForUpdate(const std::string& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
 {
-    String etag = _store.getString(nvram_etag_key, "").c_str();
-    String date = _store.getString(nvram_date_key, "").c_str();
+    std::string etag = _store.getString(nvram_etag_key, "");
+    std::string date = _store.getString(nvram_date_key, "");
 
-    String response = "";
-    std::map<String, String> responseHeader;
+    std::string response;
+    std::map<std::string, std::string> responseHeader;
     // Ok (2xx) means an update is available, isNotModified() (304) means the
     // resource is unchanged; both are non-errors
     return apiRequest(response, responseHeader, "HEAD", apiPath, "", {
@@ -579,22 +578,22 @@ IotResult IotApi::apiCheckForUpdate(const String& apiPath, const char *nvram_eta
 // Firmware
 // *****************************************************************************
 
-String IotApi::getFirmwareHttpEtag()
+std::string IotApi::getFirmwareHttpEtag()
 {
-    return String(_store.getString(_nvram_firmware_etag_key, "").c_str());
+    return _store.getString(_nvram_firmware_etag_key, "");
 }
 
-String IotApi::getFirmwareHttpDate()
+std::string IotApi::getFirmwareHttpDate()
 {
-    return String(_store.getString(_nvram_firmware_date_key, "").c_str());
+    return _store.getString(_nvram_firmware_date_key, "");
 }
 
 // *****************************************************************************
 
-IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, String>& header)
+IotResult IotApi::updateFirmware(const std::string& apiPath, const std::map<std::string, std::string>& header)
 {
     // conditional request: only download what we do not already run
-    std::map<String, String> conditional = {
+    std::map<std::string, std::string> conditional = {
         { "If-None-Match", getFirmwareHttpEtag() },
         { "If-Modified-Since", getFirmwareHttpDate() },
     };
@@ -602,8 +601,8 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
 
     // HEAD to check whether an update is available. apiRequest() may replace
     // the token on a 401 retry, so the OTA headers are built after this call.
-    String response = "";
-    std::map<String, String> responseHeader;
+    std::string response;
+    std::map<std::string, std::string> responseHeader;
     int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", conditional);
 
     // return if no update available: 304 -> up to date (isNotModified), any
@@ -616,19 +615,19 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
 
     // an OTA download wants the cache validators and the token, but none of the
     // JSON content negotiation an API call gets
-    std::map<String, String> otaHeader = _mergeHeaders(
-        { { "Authorization", String(_tokens.deviceToken().c_str()) } }, conditional);
+    std::map<std::string, std::string> otaHeader = _mergeHeaders(
+        { { "Authorization", _tokens.deviceToken() } }, conditional);
 
     std::map<std::string, std::string> hh;
     for (auto const& kv : otaHeader)
     {
-        if (!kv.second.isEmpty())
+        if (!kv.second.empty())
         {
-            hh[kv.first.c_str()] = kv.second.c_str();
+            hh[kv.first] = kv.second;
         }
     }
 
-    String url = getApiUrlForPath(apiPath);
+    std::string url = getApiUrlForPath(apiPath);
     // ota.setTimeout(10000); is the default
     std::string newEtag;
     std::string newDate;

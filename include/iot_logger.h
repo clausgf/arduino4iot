@@ -5,10 +5,9 @@
 
 #pragma once
 
-#include <cstdio>
 #include <cstdarg>
-
-#include "Arduino.h"
+#include <cstdio>
+#include <string>
 
 #include "iot_ports.h"
 
@@ -102,7 +101,7 @@ public:
 private:
     LogLevel _logLevel;
     bool _buffered;
-    String _logBuffer;
+    std::string _logBuffer;
     IotNetwork* _network = nullptr;
 };
 

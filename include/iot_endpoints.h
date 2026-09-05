@@ -6,8 +6,7 @@
 #pragma once
 
 #include <map>
-
-#include "Arduino.h"
+#include <string>
 
 #include "iot_result.h"
 
@@ -30,9 +29,9 @@
  * @param remainingPath path suffix appended to the configured upstream URL
  * @param body an optional request body passed to the upstream service
  */
-IotResult iotForward(String& oResponse, const String& forwardingName,
-    const String& remainingPath = "", const String& body = "",
-    const std::map<String, String>& headers = {});
+IotResult iotForward(std::string& oResponse, const std::string& forwardingName,
+    const std::string& remainingPath = "", const std::string& body = "",
+    const std::map<std::string, std::string>& headers = {});
 
 /**
  * Upload a file to the device-specific file storage
@@ -44,5 +43,5 @@ IotResult iotForward(String& oResponse, const String& forwardingName,
  * @return Ok on 2xx, otherwise inspect .httpStatus (e.g. 413 if the file
  *         exceeds the server's size limit) or .transportError
  */
-IotResult iotUploadFile(const String& filename, const String& content,
-    const String& contentType = "application/octet-stream");
+IotResult iotUploadFile(const std::string& filename, const std::string& content,
+    const std::string& contentType = "application/octet-stream");

@@ -49,7 +49,7 @@ public:
      * The device name is replaced for {device} in actual urls generated
      * for API calls, @see getApiUrlForPath().
      */
-    void setDeviceName(const String& device);
+    void setDeviceName(const std::string& device);
 
     /**
      * Optionally set additional HTTP headers to be used in any all requests.
@@ -61,7 +61,7 @@ public:
      *
      * @param header a map of header names and values, e.g. {"Host", "api.example.com"}
      */
-    void setApiHeader(const std::map<String, String>& header = {});
+    void setApiHeader(const std::map<std::string, std::string>& header = {});
 
     // Note: the API endpoint, project name, provisioning token and TLS trust
     // (CA cert / bundle / insecure / client cert) are no longer set at runtime.
@@ -114,7 +114,7 @@ public:
      * @param expiresAt the expiry time of the token as unix timestamp,
      *        0 if unknown
      */
-    void setDeviceToken(const String& apiToken, time_t expiresAt = 0);
+    void setDeviceToken(const std::string& apiToken, time_t expiresAt = 0);
 
     /**
      * Clear the API token. This is useful for forcing provisioning.
@@ -158,7 +158,7 @@ public:
      *         - .httpStatus == IotResult::STATUS_MALFORMED_RESPONSE: 2xx but the
      *           response body lacked a valid accessToken/tokenType.
      */
-    IotResult updateProvisioning(const String& apiPath = "provision");
+    IotResult updateProvisioning(const std::string& apiPath = "provision");
 
     /**
      * Convenience wrapper around updateProvisioning() for callers that only
@@ -166,7 +166,7 @@ public:
      *
      * @return true if provisioning information is current (with or without update)
      */
-    bool updateProvisioningOk(const String& apiPath = "provision")
+    bool updateProvisioningOk(const std::string& apiPath = "provision")
     {
         return updateProvisioning(apiPath).isOk();
     }
@@ -187,7 +187,7 @@ public:
      * @param apiPath the path relative to the API base URL, e.g. "/foo/{device}/bar"
      * @return the full URL, e.g. "https://api.example.com/api/foo/e32_123/bar"
      */
-    String getApiUrlForPath(const String& apiPath);
+    std::string getApiUrlForPath(const std::string& apiPath);
 
     /**
      * Send a request to the given URL and return the status code and response body.
@@ -197,10 +197,10 @@ public:
      * On HTTP 403 (project inactive, device inactive or not approved), the
      * device token is kept - re-provisioning would not help in this case.
      */
-    int apiRequest(String& oResponse, std::map<String, String>& oResponseHeader,
-        const char * requestType, const String& apiPath, const String& requestBody = "",
-        const std::map<String, String>& requestHeader = {},
-        const std::vector<String>& collectResponseHeaderKeys = {});
+    int apiRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
+        const char * requestType, const std::string& apiPath, const std::string& requestBody = "",
+        const std::map<std::string, std::string>& requestHeader = {},
+        const std::vector<std::string>& collectResponseHeaderKeys = {});
 
     /**
      * Send a GET request to the API using the given API path
@@ -218,7 +218,7 @@ public:
      * @param headers additional HTTP headers which overrides the defaults, defaults to {}
      * @return the HTTP response status code
      */
-    int apiGet(String& oResponse, const String& apiPath, const String& body = "", const std::map<String, String>& headers = {});
+    int apiGet(std::string& oResponse, const std::string& apiPath, const std::string& body = "", const std::map<std::string, std::string>& headers = {});
 
     /**
      * Send a GET request like the other apiGet() overload, additionally
@@ -228,8 +228,8 @@ public:
      * @param collectResponseHeaderKeys the response header names to collect,
      *        e.g. {"ETag", "Last-Modified"}
      */
-    int apiGet(String& oResponse, std::map<String, String>& oResponseHeader, const String& apiPath,
-        const std::vector<String>& collectResponseHeaderKeys, const String& body = "", const std::map<String, String>& headers = {});
+    int apiGet(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader, const std::string& apiPath,
+        const std::vector<std::string>& collectResponseHeaderKeys, const std::string& body = "", const std::map<std::string, std::string>& headers = {});
 
     /**
      * Send a HEAD request to the API using the given API path and return
@@ -237,7 +237,7 @@ public:
      *
      * @return the HTTP response status code
      */
-    int apiHead(const String& apiPath, const std::map<String, String>& headers = {});
+    int apiHead(const std::string& apiPath, const std::map<std::string, std::string>& headers = {});
 
     /**
      * Send a POST request to the given API path and return the response body
@@ -246,14 +246,14 @@ public:
      *
      * The "Content-Type" header defaults to "application/json" if not specified.
      */
-    int apiPost(String& oResponse, const String& apiPath, const String& body, const std::map<String, String>& headers = {});
+    int apiPost(std::string& oResponse, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& headers = {});
 
     /**
      * Send a PUT request to the given API path and return the response body
      * if successful (200 <= status code < 300). This method is similar to
      * @see apiGet.
      */
-    int apiPut(String& oResponse, const String& apiPath, const String& body, const std::map<String, String>& headers = {});
+    int apiPut(std::string& oResponse, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& headers = {});
 
     /**
      * Send a HEAD request to the given URL and check if the server has an
@@ -264,15 +264,15 @@ public:
      *         isNotModified() (304) if the resource is unchanged, otherwise an
      *         HTTP or transport error.
      */
-    IotResult apiCheckForUpdate(const String& apiPath, const char *nvram_etag_key, const char *nvram_date_key);
+    IotResult apiCheckForUpdate(const std::string& apiPath, const char *nvram_etag_key, const char *nvram_date_key);
 
 
     // **********************************************************************
     // Firmware
     // **********************************************************************
 
-    String getFirmwareHttpEtag();
-    String getFirmwareHttpDate();
+    std::string getFirmwareHttpEtag();
+    std::string getFirmwareHttpDate();
 
     /**
      * Update the firmware from the given API path.
@@ -290,7 +290,7 @@ public:
      *         - other HttpError / TransportError: the update check failed.
      *         Use isOkOrNotModified() to test for "no error".
      */
-    IotResult updateFirmware(const String& apiPath = "file/{project}/{device}/firmware.bin", const std::map<String, String>& header = {});
+    IotResult updateFirmware(const std::string& apiPath = "file/{project}/{device}/firmware.bin", const std::map<std::string, std::string>& header = {});
 
 
     // **********************************************************************
@@ -318,10 +318,10 @@ private:
     /// The transport below knows nothing about any of it.
     IotTokenManager _tokens;
 
-    String _baseUrl;
-    std::map<String, String> _defaultRequestHeader;
-    String _projectName;
-    String _deviceName;
+    std::string _baseUrl;
+    std::map<std::string, std::string> _defaultRequestHeader;
+    std::string _projectName;
+    std::string _deviceName;
 
     WiFiClientSecure * _wifiClientSecurePtr;
     WiFiClient * _wifiClientPtr;
@@ -329,9 +329,9 @@ private:
 
     // seeded TLS material kept alive for the object lifetime: the core stores the
     // cert pointers (it does not copy them), so these members must outlive use
-    String _caCertPem;
-    String _clientCertPem;
-    String _clientKeyPem;
+    std::string _caCertPem;
+    std::string _clientCertPem;
+    std::string _clientKeyPem;
 
     bool _tlsServerTrustConfigured; ///< set when a TLS trust was applied in begin()
     bool _tlsTrustWarningLogged;    ///< guard so the missing-trust warning is logged once
@@ -341,7 +341,7 @@ private:
     void _seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force);
 
     /// Set the base URL in RAM, normalizing a trailing slash.
-    void _setApiUrl(const String& apiBaseurl);
+    void _setApiUrl(const std::string& apiBaseurl);
 
     /// Apply the seeded TLS trust to the WiFiClientSecure and the OTA client.
     void _applyTls(IotTlsMode mode);
@@ -382,12 +382,12 @@ private:
      * want different bases: a JSON API call wants Accept and Content-Type, an
      * OTA download the cache validators and neither.
      */
-    std::map<String, String> _mergeHeaders(std::map<String, String> base,
-        const std::map<String, String>& requestHeader) const;
+    std::map<std::string, std::string> _mergeHeaders(std::map<std::string, std::string> base,
+        const std::map<std::string, std::string>& requestHeader) const;
 
     /// @return the merged header set for an ordinary JSON API request.
     /// @param authenticated add the device token as the Authorization header
-    std::map<String, String> _requestHeaders(const std::map<String, String>& requestHeader,
+    std::map<std::string, std::string> _requestHeaders(const std::map<std::string, std::string>& requestHeader,
         bool authenticated) const;
 
     /**
@@ -395,17 +395,17 @@ private:
      * knowledge, no 401 handling, no re-provisioning.
      * @see apiRequest(), which adds the authentication policy on top.
      */
-    int _performRequest(String& oResponse, std::map<String, String>& oResponseHeader,
-        const char * requestType, const String& apiPath, const String& requestBody,
-        const std::map<String, String>& requestHeader,
-        const std::vector<String>& collectResponseHeaderKeys);
+    int _performRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
+        const char * requestType, const std::string& apiPath, const std::string& requestBody,
+        const std::map<std::string, std::string>& requestHeader,
+        const std::vector<std::string>& collectResponseHeaderKeys);
 
     /**
      * Perform the /provision exchange and adopt the resulting token. Goes
      * through _performRequest(), not apiRequest(), so a 401 from /provision
      * itself is reported rather than triggering another attempt.
      */
-    IotResult _requestDeviceToken(const String& apiPath);
+    IotResult _requestDeviceToken(const std::string& apiPath);
 };
 
 // *****************************************************************************

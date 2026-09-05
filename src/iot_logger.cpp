@@ -145,7 +145,7 @@ void IotLogger::setBuffered(bool enabled)
 
 int IotLogger::flush()
 {
-    if (_logBuffer.isEmpty())
+    if (_logBuffer.empty())
     {
         return 0;
     }
@@ -173,9 +173,8 @@ int IotLogger::postLog(const char * body, const char * apiPath)
     do
     {
         size_t chunkLen = iot_text::nextLogChunkLength(body, bodyLen, offset, IOT_MAX_TELEMETRY_SIZE);
-        String chunk;
-        chunk.concat(body + offset, chunkLen);
-        String oResult = "";
+        std::string chunk(body + offset, chunkLen);
+        std::string oResult;
         httpStatusCode = api.apiPost(oResult, apiPath, chunk, {{"Content-Type", "text/plain"}});
         offset += chunkLen;
     } while (offset < bodyLen);

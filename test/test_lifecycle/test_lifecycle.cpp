@@ -8,7 +8,7 @@
 
 #include <unity.h>
 
-#include "iot_fakes.h"
+#include "../iot_fakes.h"
 #include "iot_lifecycle.h"
 #include "iot_rtc_state.h"
 

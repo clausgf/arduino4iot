@@ -208,7 +208,7 @@ public:
      * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$). Available without an
      * established connection.
      */
-    String getDeviceId();
+    std::string getDeviceId();
 
 
     // **********************************************************************
@@ -218,12 +218,12 @@ public:
     /**
      * @return the given time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
-    String getTimeIso(time_t time);
+    std::string getTimeIso(time_t time);
 
     /**
      * @return the current time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
-    String getTimeIso();
+    std::string getTimeIso();
 
     /**
      * Replace the clock. The default reads the system time and never
@@ -270,7 +270,7 @@ public:
      *
      * This method is similar to apiGet().
      */
-    IotResult postTelemetry(const String& kind, const String& jsonData, const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postTelemetry(const std::string& kind, const std::string& jsonData, const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
 
     /**
      * Post telemetry data built with an IotTelemetry builder to the API.
@@ -280,7 +280,7 @@ public:
      *   telemetry.add("temperature", 22.5);
      *   if (!iot.postTelemetry("sensors", telemetry)) { ... }
      */
-    IotResult postTelemetry(const String& kind, const IotTelemetry& telemetry, const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postTelemetry(const std::string& kind, const IotTelemetry& telemetry, const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
 
     /**
      * Post system telemetry (battery voltage if configured, WiFi RSSI,
@@ -289,7 +289,7 @@ public:
      *
      * This method is similar to apiGet().
      */
-    IotResult postSystemTelemetry(const String& kind = "system", const String& apiPath = "telemetry/{project}/{device}/{kind}");
+    IotResult postSystemTelemetry(const std::string& kind = "system", const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
 
 
     // **********************************************************************
@@ -400,14 +400,14 @@ public:
      * setFirmwareVersion() takes precedence; empty if neither is available.
      * Reported as the "firmware_version" telemetry field.
      */
-    String getFirmwareVersion();
+    std::string getFirmwareVersion();
 
     /**
      * Override the version reported in telemetry (e.g. a CI-supplied value, or
      * for non-git builds). Takes precedence over the injected IOT_FW_VERSION
      * build define.
      */
-    void setFirmwareVersion(const String& version);
+    void setFirmwareVersion(const std::string& version);
 
     /**
      * @return the composite firmware identifier from the ESP application
@@ -417,9 +417,9 @@ public:
      * environment rather than the sketch - use getFirmwareVersion() for the
      * actual firmware version. Reported as the "firmware_id" telemetry field.
      */
-    String getFirmwareId();
+    std::string getFirmwareId();
 
-    String getFirmwareSha256();
+    std::string getFirmwareSha256();
 
     /**
      * @return the board identifier from the IOT_BOARD_ID build define (e.g.
@@ -429,7 +429,7 @@ public:
      * plain compile-time constant, not persisted to NVS. Reported as the
      * "board_id" telemetry field.
      */
-    String getBoardId();
+    std::string getBoardId();
 
 
     // **********************************************************************
@@ -554,11 +554,11 @@ public:
     // **********************************************************************
 
 private:
-    String _deviceId;
+    std::string _deviceId;
     std::function<void()> _panicHandler;
-    String _firmwareVersion;
-    String _firmwareId;
-    String _firmwareSha256;
+    std::string _firmwareVersion;
+    std::string _firmwareId;
+    std::string _firmwareSha256;
     static bool _isWatchdogEnabled;
 
     /// Ports. The network and the clock always have a default; the battery is

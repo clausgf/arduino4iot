@@ -287,12 +287,16 @@ bool IotNtpClock::_syncOneShot(uint32_t timeout_ms)
         return false;
     }
 
+    // one budget for the whole attempt, not one per server: three unreachable
+    // servers must not outlast the watchdog
+    const unsigned long deadline = millis() + timeout_ms;
+
     bool ok = false;
     uint8_t packet[PACKET_SIZE];
     for (const IotConfigValue<std::string>& entry : _server)
     {
         const std::string& server = entry.get();
-        if (server.empty())
+        if (server.empty() || (long)(millis() - deadline) >= 0)
         {
             continue;
         }
@@ -312,9 +316,8 @@ bool IotNtpClock::_syncOneShot(uint32_t timeout_ms)
             continue;
         }
 
-        unsigned long start = millis();
         int len = 0;
-        while ((millis() - start) < timeout_ms)
+        while ((long)(millis() - deadline) < 0)
         {
             len = udp.parsePacket();
             if (len >= (int)sizeof(packet))

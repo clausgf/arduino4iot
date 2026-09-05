@@ -9,7 +9,7 @@
 #include <unity.h>
 
 #include "iot_config.h"
-#include "iot_fakes.h"
+#include "../iot_fakes.h"
 
 // *****************************************************************************
 
