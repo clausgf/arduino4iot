@@ -47,9 +47,14 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Layer | Files | Arduino? |
 |---|---|---|
 | Ports (interfaces + contracts) | `iot_ports.h` | no |
-| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_lifecycle` `iot_token` `iot_config` `iot_endpoints.h` `iot_logger.h` | no |
-| ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` | yes |
-| Facade / transport | `iot.{h,cpp}` `iot_api.{h,cpp}` | yes |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_endpoints.h` `iot_logger.h` | no |
+| ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
+| Facade | `iot.{h,cpp}` | yes |
+
+`iot_api.{h,cpp}` is Arduino-free including its implementation, which is why
+`platformio.ini` compiles it into the native test build (`test_build_src = yes`
+plus a `build_src_filter`). Add a service source there when it becomes
+Arduino-free, and use `iot_log.h` rather than Arduino's logging macros.
 
 **Rules that keep this true — check them when adding code:**
 
@@ -70,6 +75,7 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Port | Default in `Iot` | Adapters |
 |---|---|---|
 | `IotStore` | `IotNvsStore` (mandatory) | — |
+| `IotHttp` | `IotEspHttp` (mandatory) | a fake in tests |
 | `IotPower` | `IotEspPower` (mandatory) | — |
 | `IotNetwork` | `IotWifiNetwork` | Ethernet/LTE would slot in here |
 | `IotClock` | `IotSystemClock` — **never synchronizes** | `IotNtpClock` (opt-in; https needs it) |
@@ -83,7 +89,7 @@ degrades without it.
 | Object          | Header/impl        | Responsibility |
 |-----------------|--------------------|----------------|
 | `iot`           | `iot.{h,cpp}`      | Lifecycle façade: drives the ports, system telemetry, deep sleep, watchdog, undervoltage, panic/backoff. |
-| `api`           | `iot_api.{h,cpp}`  | HTTP(S) transport: requests, TLS trust, OTA. Auth lives in `IotTokenManager`, endpoints in `iot_endpoints`. |
+| `api`           | `iot_api.{h,cpp}`  | URL building, header merging, the 401 retry — over an `IotHttp`. Sockets and TLS are the adapter's, auth is `IotTokenManager`'s, endpoints and OTA are `iot_endpoints`'. |
 | `config`        | `iot_config.{h,cpp}` | Server config mirrored into an `IotStore` (ETag-cached). |
 | `logger`        | `iot_logger.{h,cpp}` | Buffered remote logging + serial logging. |
 | `apProvisioning`| `iot_ap.{h,cpp}`   | **Opt-in**, never referenced by the core — see below. |

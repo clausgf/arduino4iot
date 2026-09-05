@@ -132,8 +132,10 @@ Authentication is deliberately **not** part of the transport:
   **implausible clock** before the NTP sync, where the arithmetic would be
   meaningless. Both surface as a 401 and re-provision, which is cheaper than
   re-provisioning on every wakeup.
-- `IotApi::_performRequest()` performs one request with the headers it is given
-  and no notion of tokens at all.
+- `IotApi::_performRequest()` builds one `IotHttpRequest` and hands it to the
+  `IotHttp` port. It has no notion of tokens, and no notion of sockets either:
+  `IotEspHttp` owns the `HTTPClient`, the keep-alive connection and the TLS
+  trust, which is what lets the whole transport be exercised on the host.
 - `IotApi::apiRequest()` is the policy on top: attach the token, and on 401 get
   a new one and retry once. Because the retry cannot re-enter the request path,
   nothing has to guard against it.

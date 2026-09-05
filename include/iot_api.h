@@ -6,21 +6,15 @@
 #pragma once
 
 #include <map>
+#include <string>
 #include <vector>
 
-#include "Arduino.h"
-#include <HTTPClient.h>
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
-
-#include "iot_esp_ports.h"
+#include "iot_ports.h"
 #include "iot_result.h"
 #include "iot_seed.h"
 #include "iot_token.h"
 
 // *****************************************************************************
-
-class Iot; // for friend access to the seeding internals
 
 class IotApi
 {
@@ -33,10 +27,30 @@ public:
 
     /**
      * Load the API configuration (endpoint, project, provisioning/device token,
-     * TLS trust) from NVS, where it was placed by Iot::seedCredentials().
+     * TLS trust) from @p store and send requests through @p http, applying the
+     * loaded TLS trust to it. Both must outlive this object.
      */
-    void begin();
+    void begin(IotStore& store, IotHttp& http, IotClock& clock);
     void end();
+
+    /// Hardware variant substituted for {board} in a path; empty if unset.
+    void setBoardId(const std::string& boardId) { _boardId = boardId; }
+
+    /// @return the store the API configuration and tokens live in.
+    IotStore& store() { return *_store; }
+
+    /// @return the device token, i.e. the Authorization header value.
+    const std::string& deviceToken() const { return _tokens.deviceToken(); }
+
+    /// @return the seeded TLS trust, e.g. for an OTA download that opens its
+    /// own connection.
+    const IotTlsConfig& tlsConfig() const { return _tls; }
+
+    /// Merge @p base with the setApiHeader() defaults and @p requestHeader,
+    /// later sources winning. Public because an operation that opens its own
+    /// connection (OTA) needs the same header set.
+    std::map<std::string, std::string> mergeHeaders(std::map<std::string, std::string> base,
+        const std::map<std::string, std::string>& requestHeader) const;
 
 
     // **********************************************************************
@@ -256,122 +270,35 @@ public:
     int apiPut(std::string& oResponse, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& headers = {});
 
     // **********************************************************************
-    // Firmware
-    // **********************************************************************
-
-    std::string getFirmwareHttpEtag();
-    std::string getFirmwareHttpDate();
-
-    /**
-     * Update the firmware from the given API path.
-     *
-     * The {project}, {device} and {board} placeholders are substituted 
-     * as usual. {board} is subsituted with the
-     * IOT_BOARD_ID build default (see Iot::getBoardId()), letting the server
-     * host per-hardware-variant firmware images.
-     *
-     * @return a typed result:
-     *         - Ok: new firmware was downloaded and flashed (runs on next boot);
-     *         - isNotModified() (304): firmware already up to date, nothing done;
-     *         - .httpStatus == IotResult::STATUS_UPDATE_FAILED: an update was
-     *           available but the download/flash did not complete;
-     *         - other HttpError / TransportError: the update check failed.
-     *         Use isOkOrNotModified() to test for "no error".
-     */
-    IotResult updateFirmware(const std::string& apiPath = "file/{project}/{device}/firmware.bin", const std::map<std::string, std::string>& header = {});
-
-
-    // **********************************************************************
     // P r i v a t e
     // **********************************************************************
 
-    friend class Iot; // Iot::seedCredentials() writes the seeded API config
-
 private:
-    const char * _nvram_firmware_etag_key = "firmwareEtag";
-    const char * _nvram_firmware_date_key = "firmwareDate";
-    const char * _nvram_api_url_key = "apiUrl";
-    const char * _nvram_project_key = "project";
-    const char * _nvram_tls_mode_key = "tlsMode";
-    const char * _nvram_ca_cert_key = "caCert";
-    const char * _nvram_client_cert_key = "cliCert";
-    const char * _nvram_client_key_key = "cliKey";
-
-    /// The "iot" NVS namespace, opened by begin() and kept open until end().
-    /// Naming the adapter is fine here: unlike IotBattery or IotClock,
-    /// persistence is not optional, so there is nothing for the linker to drop.
-    IotNvsStore _store;
+    IotStore* _store = nullptr;
+    IotHttp* _http = nullptr;
+    IotClock* _clock = nullptr;
+    std::string _boardId;
 
     /// Provisioning token, device token, expiry and the renewal decision.
     /// The transport below knows nothing about any of it.
     IotTokenManager _tokens;
+
+    /// Kept for the object lifetime: the TLS stack stores the PEM pointers
+    /// rather than copying them.
+    IotTlsConfig _tls;
+    bool _tlsTrustWarningLogged = false;
 
     std::string _baseUrl;
     std::map<std::string, std::string> _defaultRequestHeader;
     std::string _projectName;
     std::string _deviceName;
 
-    WiFiClientSecure * _wifiClientSecurePtr;
-    WiFiClient * _wifiClientPtr;
-    HTTPClient * _httpClientPtr;
-
-    // seeded TLS material kept alive for the object lifetime: the core stores the
-    // cert pointers (it does not copy them), so these members must outlive use
-    std::string _caCertPem;
-    std::string _clientCertPem;
-    std::string _clientKeyPem;
-
-    bool _tlsServerTrustConfigured; ///< set when a TLS trust was applied in begin()
-    bool _tlsTrustWarningLogged;    ///< guard so the missing-trust warning is logged once
-
-    /// Write the seeded API config (endpoint, project, token, TLS) to NVS.
-    /// Called by Iot::seedCredentials() with a shared open "iot" handle.
-    void _seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force);
-
-    /// Set the base URL in RAM, normalizing a trailing slash.
+    /// Set the base URL, normalizing a trailing slash.
     void _setApiUrl(const std::string& apiBaseurl);
 
-    /// Apply the seeded TLS trust to the WiFiClientSecure and the OTA client.
-    void _applyTls(IotTlsMode mode);
-    void _applyCACert(const char *serverCert);
-    void _applyCACertBundle();
-    void _applyCertInsecure();
-    void _applyClientCertificateAndKey(const char *clientCert, const char *clientKey);
-
-    /**
-     * @return a WiFiClient instance, either secure or insecure, depending
-     * on the API base URL. The instance is created on the first call.
-     */
-    WiFiClient * _getWiFiClientPtr();
-
-    /**
-     * @return wheter the WiFiClient instance is secure or insecure.
-     */
-    bool _isWiFiClientSecure();
-
-    /**
-     * Log a single clear error if the API URL is https but no TLS server trust
-     * was seeded (tlsMode None with an https endpoint). Without it the TLS
-     * handshake fails with an opaque transport error that is hard to attribute.
-     */
+    /// Log one clear error if the endpoint is https but no TLS trust was
+    /// seeded; without it the handshake fails with an opaque transport error.
     void _warnIfTlsTrustMissing();
-
-    /**
-     * @return a HTTPClient instance. The instance is created on the first call.
-     */
-    HTTPClient & _getHttpClient();
-
-    /**
-     * Merge the header sources in precedence order - @p base (what the calling
-     * operation needs), then the setApiHeader() defaults, then @p requestHeader
-     * - with later sources overriding earlier ones.
-     *
-     * Explicit rather than hidden in the request path because the two callers
-     * want different bases: a JSON API call wants Accept and Content-Type, an
-     * OTA download the cache validators and neither.
-     */
-    std::map<std::string, std::string> _mergeHeaders(std::map<std::string, std::string> base,
-        const std::map<std::string, std::string>& requestHeader) const;
 
     /// @return the merged header set for an ordinary JSON API request.
     /// @param authenticated add the device token as the Authorization header

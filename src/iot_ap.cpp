@@ -126,13 +126,8 @@ void IotAp::_handleSave()
     // force-overwrite even a partially-seeded device (e.g. a stale apiUrl
     // left over from an old build) - iotSeedString() only writes a key that
     // is absent or forced, see seedCredentials()
-    Preferences preferences;
-    uint32_t storedGeneration = 0;
-    if (preferences.begin("iot", true))
-    {
-        storedGeneration = nvramGetUInt(preferences, "seedGen", 0);
-        preferences.end();
-    }
+    const uint32_t storedGeneration =
+        (uint32_t)iotBootstrapStore().getInt(iot_nvs_keys::SEED_GEN, 0);
 
     IotSeedConfig cfg{
         .wifiSsid          = wifiSsid.c_str(),

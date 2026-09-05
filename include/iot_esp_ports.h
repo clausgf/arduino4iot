@@ -9,8 +9,11 @@
 #include <string>
 
 #include "Arduino.h"
+#include <HTTPClient.h>
 #include <IPAddress.h>
 #include <Preferences.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
 #include "iot_config.h"
 #include "iot_ports.h"
@@ -77,6 +80,50 @@ private:
     /// @return true if @p key holds a readable integer, which is then in @p oValue.
     bool _readInt(const char* key, int64_t& oValue) const;
     bool _usable(const char* key) const;
+};
+
+
+// *****************************************************************************
+// IotEspHttp - IotHttp over HTTPClient / WiFiClientSecure
+// *****************************************************************************
+
+/**
+ * IotHttp over the Arduino HTTP client.
+ *
+ * All requests of a wakeup cycle share one keep-alive TCP/TLS connection, so
+ * the handshake is paid once; close() ends it. The client is created lazily on
+ * the first request and is secure when that URL is https://.
+ */
+class IotEspHttp : public IotHttp
+{
+public:
+    IotEspHttp(const IotEspHttp&) = delete;
+    IotEspHttp& operator=(const IotEspHttp&) = delete;
+
+    IotEspHttp() = default;
+    ~IotEspHttp() override;
+
+    void setTls(const IotTlsConfig& tls) override;
+    bool hasServerTrust() const override { return _serverTrustConfigured; }
+    void setConnectTimeout_ms(int32_t timeout_ms) override;
+    void setRequestTimeout_ms(uint16_t timeout_ms) override;
+    int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override;
+    void close() override;
+    std::string errorToString(int status) const override;
+
+private:
+    const IotTlsConfig* _tls = nullptr;   ///< owned by the caller, kept alive there
+    WiFiClientSecure* _secureClient = nullptr;
+    WiFiClient* _client = nullptr;
+    HTTPClient* _http = nullptr;
+    bool _serverTrustConfigured = false;
+    int32_t _connectTimeout_ms = -1;
+    uint16_t _requestTimeout_ms = 0;
+
+    /// Create the client matching the URL scheme and apply the TLS trust.
+    WiFiClient& _clientFor(const std::string& url);
+    HTTPClient& _httpClient();
+    void _applyTls();
 };
 
 

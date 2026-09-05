@@ -254,3 +254,73 @@ public:
 private:
     std::vector<Call> _calls;
 };
+
+
+// *****************************************************************************
+
+/**
+ * IotHttp that answers from a queue instead of a network.
+ *
+ * Records every request, so a test can assert what the transport sent - the
+ * merged headers, the substituted URL, the retry after a 401.
+ */
+class IotFakeHttp : public IotHttp
+{
+public:
+    void setTls(const IotTlsConfig& tls) override { _tls = &tls; }
+    bool hasServerTrust() const override { return _tls != nullptr && _tls->hasServerTrust(); }
+    void setConnectTimeout_ms(int32_t timeout_ms) override { connectTimeout_ms = timeout_ms; }
+    void setRequestTimeout_ms(uint16_t timeout_ms) override { requestTimeout_ms = timeout_ms; }
+    void close() override { closeCount++; }
+    std::string errorToString(int status) const override { return "fake error " + std::to_string(status); }
+
+    int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override
+    {
+        requests.push_back(request);
+        if (_replies.empty())
+        {
+            oResponse.status = defaultStatus;
+        } else {
+            oResponse = _replies.front();
+            _replies.erase(_replies.begin());
+        }
+        return oResponse.status;
+    }
+
+    // --- test control ---
+
+    /// Queue one reply; they are consumed in order.
+    void reply(int status, const std::string& body = "",
+        const std::map<std::string, std::string>& headers = {})
+    {
+        IotHttpResponse response;
+        response.status = status;
+        response.body = body;
+        response.headers = headers;
+        _replies.push_back(response);
+    }
+
+    /// Status used once the queue runs dry.
+    int defaultStatus = 200;
+    int32_t connectTimeout_ms = -1;
+    uint16_t requestTimeout_ms = 0;
+    unsigned closeCount = 0;
+
+    // --- test inspection ---
+
+    std::vector<IotHttpRequest> requests;
+    size_t requestCount() const { return requests.size(); }
+    const IotHttpRequest& lastRequest() const { return requests.back(); }
+    const IotHttpRequest& request(size_t index) const { return requests.at(index); }
+
+    /// @return the value of @p name in request @p index, or "" if absent.
+    std::string header(size_t index, const char* name) const
+    {
+        auto it = requests.at(index).headers.find(name);
+        return it == requests.at(index).headers.end() ? std::string() : it->second;
+    }
+
+private:
+    const IotTlsConfig* _tls = nullptr;
+    std::vector<IotHttpResponse> _replies;
+};

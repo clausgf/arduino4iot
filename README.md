@@ -150,6 +150,13 @@ the linker drops every one an application does not reference.
   silently overwritten by `begin()` or `updateConfig()`; the server value is
   still mirrored to NVS and applies from the next boot. See
   [Configuration](docs/concepts.md#configuration-runtime-configjson).
+- **`api.updateFirmware()` → `iotUpdateFirmware()`** (`iot_endpoints.h`), together
+  with `getFirmwareHttpEtag()/Date()` → `iotFirmwareHttpEtag()/Date()`. The OTA
+  downloader is ESP-specific, and `IotApi` is now Arduino-free: it builds URLs,
+  merges headers and handles the 401 retry over an `IotHttp` port, while sockets
+  and TLS belong to `IotEspHttp`. That is what makes the transport testable —
+  18 native tests now cover the retry, header precedence and the provisioning
+  failure modes. `api.apiCheckForUpdate()` is removed (it had no callers).
 - **The library's string type is `std::string` (action required).** `String` is
   defined by the Arduino core, so any file naming it cannot be compiled — and
   therefore not tested — on the host. Public signatures that took or returned
