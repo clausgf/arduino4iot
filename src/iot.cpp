@@ -54,23 +54,23 @@ static void defaultPanicHandler()
 Iot::Iot() :
     _lifecycle(defaultPower(), iotRtcState()),
 
-    _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level", "logLevel"),
-    _sleepDuration_s(config, 5 * 60, "sleep_s", "sleepFor"),
-    _watchdogTimeout_s(config, 20, "watchdog_s", "watchdog"),
-    _ledPin(config, -1, "led_pin", "ledPin"),
-    _ntpResyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s", "ntpResync"),
-    _ntpTimeout_ms(config, 10000, "ntp_timeout_ms", "ntpTimeout"),
-    _ntpServer1(config, "pool.ntp.org", "ntp_server1", "ntpServer1"),
-    _ntpServer2(config, "time.nist.gov", "ntp_server2", "ntpServer2"),
-    _ntpServer3(config, "time.google.com", "ntp_server3", "ntpServer3"),
-    _batteryOffset_mV(config, 0, "battery_offset_mv", "batOffs"),
-    _batteryFactor(config, 2, "battery_factor", "batMul"),
-    _batteryDivider(config, 1, "battery_divider", "batDiv"),
-    _batteryPin(config, 34, "battery_pin", "batPin"),
-    _batteryMin_mV(config, -1, "battery_min_mv", "batMinMv"),
-    _panicSleepDurationInit_s(config, 60, "panic_sleep_init_s", "panicSlpInit"),
-    _panicSleepDurationFactor(config, 2, "panic_sleep_factor", "panicSlpFac"),
-    _panicSleepDurationMax_s(config, 24 * 60 * 60, "panic_sleep_max_s", "panicSlpMax")
+    _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level"),
+    _sleepDuration_s(config, 5 * 60, "sleep_s"),
+    _watchdogTimeout_s(config, 20, "watchdog_s"),
+    _ledPin(config, -1, "led_pin"),
+    _ntpResyncInterval_s(config, 24 * 60 * 60, "ntp_resync_s"),
+    _ntpTimeout_ms(config, 10000, "ntp_timeout_ms"),
+    _ntpServer1(config, "pool.ntp.org", "ntp_server1"),
+    _ntpServer2(config, "time.nist.gov", "ntp_server2"),
+    _ntpServer3(config, "time.google.com", "ntp_server3"),
+    _batteryOffset_mV(config, 0, "battery_offs_mv"),
+    _batteryFactor(config, 2, "battery_factor"),
+    _batteryDivider(config, 1, "battery_divider"),
+    _batteryPin(config, 34, "battery_pin"),
+    _batteryMin_mV(config, -1, "battery_min_mv"),
+    _panicSleepDurationInit_s(config, 60, "panic_init_s"),
+    _panicSleepDurationFactor(config, 2, "panic_factor"),
+    _panicSleepDurationMax_s(config, 24 * 60 * 60, "panic_max_s")
 {
     // initialize variables
     _deviceId = "";
@@ -85,9 +85,6 @@ Iot::Iot() :
     _firmwareId = "";
     _firmwareSha256 = "";
     _exitHooksRegistered = false;
-    __ntpServer1 = _ntpServer1.get();
-    __ntpServer2 = _ntpServer2.get();
-    __ntpServer3 = _ntpServer3.get();
 
     // Nothing else happens here on purpose: NVS init, boot accounting and the
     // reaction to an abnormal reset all belong in begin(), where the serial
@@ -505,12 +502,9 @@ void Iot::setNtp(int resyncInterval_s, int timeout_ms,
 {
     _ntpResyncInterval_s = resyncInterval_s;
     _ntpTimeout_ms = timeout_ms;
-    _ntpServer1 = ntpServer1;
-    _ntpServer2 = ntpServer2;
-    _ntpServer3 = ntpServer3;
-    __ntpServer1 = _ntpServer1.get();
-    __ntpServer2 = _ntpServer2.get();
-    __ntpServer3 = _ntpServer3.get();
+    _ntpServer1 = std::string(ntpServer1 != nullptr ? ntpServer1 : "");
+    _ntpServer2 = std::string(ntpServer2 != nullptr ? ntpServer2 : "");
+    _ntpServer3 = std::string(ntpServer3 != nullptr ? ntpServer3 : "");
 }
 
 // *****************************************************************************
@@ -578,10 +572,11 @@ bool Iot::_syncNtpOneShot(unsigned long timeout_ms)
         return false;
     }
 
+    // .get() returns a reference, so these stay valid for the loop below
     const char* servers[3] = {
-        __ntpServer1.c_str(),
-        __ntpServer2.isEmpty() ? nullptr : __ntpServer2.c_str(),
-        __ntpServer3.isEmpty() ? nullptr : __ntpServer3.c_str(),
+        _ntpServer1.get().c_str(),
+        _ntpServer2.get().empty() ? nullptr : _ntpServer2.get().c_str(),
+        _ntpServer3.get().empty() ? nullptr : _ntpServer3.get().c_str(),
     };
 
     bool ok = false;
@@ -682,14 +677,14 @@ bool Iot::syncNtpTime()
     }
     //esp_sntp_servermode_dhcp(1);
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, __ntpServer1.c_str());
-    if (!__ntpServer2.isEmpty())
+    esp_sntp_setservername(0, (char*)_ntpServer1.get().c_str());
+    if (!_ntpServer2.get().empty())
     {
-        esp_sntp_setservername(1, __ntpServer2.c_str());
+        esp_sntp_setservername(1, (char*)_ntpServer2.get().c_str());
     }
-    if (!__ntpServer3.isEmpty())
+    if (!_ntpServer3.get().empty())
     {
-        esp_sntp_setservername(2, __ntpServer3.c_str());
+        esp_sntp_setservername(2, (char*)_ntpServer3.get().c_str());
     }
     esp_sntp_set_time_sync_notification_cb(_ntpSyncCallback);
     esp_sntp_init();

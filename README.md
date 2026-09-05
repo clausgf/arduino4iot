@@ -125,6 +125,61 @@ The following topics are known limitations that are being addressed on the serve
 - **Offline buffering of telemetry (to be discussed):** if the server or WiFi is temporarily unreachable, the measurements of a whole wakeup cycle are lost. A small ring buffer in RTC RAM (survives deep sleep) could hold a few telemetry payloads and re-send them on the next successful cycle. This is coupled to the device-timestamp topic above — re-sent measurements need their original timestamp, otherwise they all collapse onto the server arrival time. Design questions still open: buffer location and size, eviction policy, and interaction with the flat-JSON telemetry format.
 - **MQTT transport:** nice4iot supports telemetry, logging and file transfer via MQTT for always-on devices. This library currently implements the HTTP transport only, which remains the best fit for deep-sleep cycles; an optional MQTT transport is future work.
 
+## Migration to version 4.x
+
+Version 4 restructures the library around a small set of **ports** (`IotStore`,
+`IotClock`, `IotNetwork`, `IotBattery`, `IotPower` in `iot_ports.h`) with ESP32
+adapters in `iot_esp_ports.h`. Optional ports are held as pointers that may be
+`nullptr` — a mains-powered device passes no `IotBattery`, a device that needs
+no wall-clock time no `IotClock` — and the core names no optional adapter, so
+the linker drops every one an application does not reference.
+
+- **`config.json` keys renamed (action required).** One key now names a value in
+  `config.json`, in NVS and in the free-form accessors, so every key must fit the
+  15-character NVS limit. Four were too long:
+  `battery_offset_mv` → **`battery_offs_mv`**, `panic_sleep_init_s` →
+  **`panic_init_s`**, `panic_sleep_factor` → **`panic_factor`**,
+  `panic_sleep_max_s` → **`panic_max_s`**. Update your `config.json`; an
+  unrecognized key is logged and skipped. Because the NVS keys are now the
+  config keys, the mirror of *all* values is rebuilt on the first
+  `updateConfig()` after the upgrade — until then the compile-time defaults
+  apply.
+- **Configuration precedence is now explicit:** compile-time default < NVS
+  mirror < `config.json` < `set()` at runtime. A value the application sets
+  explicitly (e.g. `iot.setSleepDuration_s()` in `setup()`) is no longer
+  silently overwritten by `begin()` or `updateConfig()`; the server value is
+  still mirrored to NVS and applies from the next boot. See
+  [Configuration](docs/concepts.md#configuration-runtime-configjson).
+- **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**
+  (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
+  → `etag()/lastModified()`. `IotConfigValue<String>` is now
+  `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **AP provisioning is opt-in.** `iot.begin()` no longer calls
+  `apProvisioning.run()` itself; register it with
+  `iot.setNoCredentialsHandler([]{ apProvisioning.run(); })`. Without a handler,
+  a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
+  ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
+  See [`examples/ap_provisioning/`](examples/ap_provisioning/).
+- **`setDeepSleepHandler()`/`setRestartHandler()`/`setShutdownHandler()` are
+  replaced** by `iot.setPower(IotPower&)` (replace the mechanism) and
+  `iot.addExitHook()` (run something at every exit, including the backoff path).
+- **`IotPersistentValue`, `setPreferedPersistentStorage()` and the `iot-var` NVS
+  namespace are gone.** State that must survive a power loss goes through
+  `IotStore`; state that only has to survive deep sleep lives in `IotRtcState`
+  (`RTC_NOINIT_ATTR`). Which one a value uses is decided where it is declared,
+  not by a global runtime switch. Boot count, active/sleep accounting and the
+  failure backoff therefore no longer write flash on every wakeup.
+- **`getResetReason()`, `resetReasonToString()`, `getWakeupCause()`,
+  `wakeupCauseToString()` and `waitUntil()` are removed** — use
+  `IotPower::resetReason()`/`wakeupCause()` and
+  `iotResetReasonToString()`/`iotWakeupCauseToString()`.
+- **An abnormal reset is acted on in `iot.begin()`, not in the `Iot`
+  constructor**, so the diagnosis appears on a serial console the sketch has had
+  a chance to open. The boot counter is incremented in `begin()` too, so cycles
+  that fail to connect are counted.
+- **`setPanic()`'s documented default factor was 3 while the effective default
+  was 2**; the signature now says 2. Behaviour is unchanged.
+
 ## Migration to version 3.x
 
 - **New in 3.4 (non-breaking): DHCP lease caching.** `iot.setDhcpCache(true)` caches the DHCP-assigned IP/gateway/netmask/DNS in RTC RAM and reuses it on the next fast reconnect to skip the DHCP DORA exchange — a static IP without per-device configuration. Off by default; falls back to DHCP on a fast-reconnect timeout and renews via real DHCP every `maxReuse` wakeups (default 20). See [Fast WiFi reconnect](docs/concepts.md#fast-wifi-reconnect).
