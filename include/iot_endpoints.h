@@ -58,3 +58,26 @@ IotResult iotForward(std::string& oResponse, const std::string& forwardingName,
  */
 IotResult iotUploadFile(const std::string& filename, const std::string& content,
     const std::string& contentType = "application/octet-stream");
+
+/**
+ * Update the firmware from @p apiPath.
+ *
+ * Checks conditionally (ETag / Last-Modified) and streams a new image only when
+ * one is available, using the same TLS trust as the API. The {board}
+ * placeholder substitutes to IOT_BOARD_ID, which lets a project serve one image
+ * per hardware variant.
+ *
+ * @return Ok if new firmware was flashed (it runs after the next restart);
+ *         isNotModified() (304) if already up to date;
+ *         .httpStatus == IotResult::STATUS_UPDATE_FAILED if an update was
+ *         available but the download or flash did not complete;
+ *         otherwise the HTTP or transport error.
+ *         Use isOkOrNotModified() to test for "no error".
+ */
+IotResult iotUpdateFirmware(const std::string& apiPath = iot_paths::FIRMWARE,
+    const std::map<std::string, std::string>& header = {});
+
+/// @return the ETag of the running firmware image, for diagnostics.
+std::string iotFirmwareHttpEtag();
+/// @return the Last-Modified date of the running firmware image.
+std::string iotFirmwareHttpDate();

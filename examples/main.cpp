@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <iot.h>
+#include <iot_endpoints.h>   // iotUpdateFirmware()
 
 // Deployment-specific values come from build-time -D defines (see
 // secrets-example.ini and examples/README.md). A secretless build leaves these
@@ -113,7 +114,7 @@ void setup()
     // failure (server unreachable, rejected) is easy to single out.
     config.updateConfig();
     iot.resetWatchdog();
-    IotResult fw = api.updateFirmware();
+    IotResult fw = iotUpdateFirmware();
     if (!fw.isOkOrNotModified())
     {
         logger.warn("app", "firmware update failed (http=%d, transport=%d)",

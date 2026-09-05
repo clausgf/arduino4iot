@@ -608,3 +608,7 @@ private:
 };
 
 extern Iot iot;
+
+/// The "iot" NVS namespace: seeded bootstrap configuration, tokens, OTA cache.
+/// Opened on first use, so it is available before iot.begin().
+IotStore& iotBootstrapStore();

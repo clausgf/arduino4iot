@@ -8,7 +8,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
+#include <vector>
 
 // *****************************************************************************
 // Ports - the seams between the library's services and the platform.
@@ -96,6 +98,93 @@ public:
 
     /// Remove every key of this store's namespace.
     virtual void clear() = 0;
+};
+
+
+// *****************************************************************************
+// IotHttp - HTTP(S) request/response
+// *****************************************************************************
+
+/// How the server certificate is verified for an https:// URL.
+enum class IotTlsMode : uint8_t
+{
+    None,       ///< no TLS configuration (plain http:// endpoint)
+    Bundle,     ///< verify against the built-in Mozilla root bundle
+    Insecure,   ///< development only: do not verify the server certificate
+    CaPin,      ///< verify against the given CA certificate
+};
+
+/// TLS trust as data, so the same configuration can reach the HTTP client and
+/// the OTA downloader without either reaching into the other.
+struct IotTlsConfig
+{
+    IotTlsMode mode = IotTlsMode::None;
+    std::string caCertPem;      ///< for mode == CaPin
+    std::string clientCertPem;  ///< optional mutual TLS
+    std::string clientKeyPem;   ///< optional mutual TLS, secret
+
+    /// @return true if the mode establishes server trust at all. Insecure does
+    /// encrypt, so it counts - it just does not verify who is at the other end.
+    bool hasServerTrust() const { return mode != IotTlsMode::None; }
+};
+
+struct IotHttpRequest
+{
+    const char* method = "GET";
+    std::string url;
+    std::string body;
+    /// Headers to send. Entries with an empty value are skipped, which is how a
+    /// caller suppresses one the library would otherwise add.
+    std::map<std::string, std::string> headers;
+    /// Response headers to capture; anything else is discarded unread.
+    std::vector<std::string> collectResponseHeaders;
+};
+
+struct IotHttpResponse
+{
+    /// Negative for a transport error, otherwise the HTTP status.
+    int status = 0;
+    std::string body;
+    std::map<std::string, std::string> headers;
+};
+
+/**
+ * One HTTP(S) conversation with a server.
+ *
+ * The seam that keeps IotApi free of Arduino: provisioning, the 401 retry, URL
+ * building and header merging are decisions, testable against a fake; sockets,
+ * TLS and keep-alive are the adapter's.
+ *
+ * **Absent (nullptr):** not supported. Talking to a server is the point.
+ */
+class IotHttp
+{
+public:
+    virtual ~IotHttp() = default;
+
+    /// Apply the TLS trust. Must be called before the first https:// request;
+    /// implementations may keep pointers into @p tls, so it has to outlive them.
+    virtual void setTls(const IotTlsConfig& tls) = 0;
+
+    /// @return true if a TLS trust was successfully applied.
+    virtual bool hasServerTrust() const = 0;
+
+    virtual void setConnectTimeout_ms(int32_t timeout_ms) = 0;
+    virtual void setRequestTimeout_ms(uint16_t timeout_ms) = 0;
+
+    /**
+     * Perform one request. Requests within a wakeup cycle share a keep-alive
+     * connection where the transport supports it.
+     *
+     * @return the status, also placed in @p oResponse.status
+     */
+    virtual int send(const IotHttpRequest& request, IotHttpResponse& oResponse) = 0;
+
+    /// Close the shared connection, e.g. before deep sleep.
+    virtual void close() = 0;
+
+    /// @return a human-readable description of a negative status.
+    virtual std::string errorToString(int status) const = 0;
 };
 
 

@@ -56,6 +56,20 @@ static IotClock& defaultClock()
     return clock;
 }
 
+IotStore& iotBootstrapStore()
+{
+    static IotNvsStore store(iot_nvs_keys::NAMESPACE);
+    store.begin();
+    return store;
+}
+
+/// The HTTP client the API talks through.
+static IotHttp& defaultHttp()
+{
+    static IotEspHttp http;
+    return http;
+}
+
 static void defaultPanicHandler()
 {
     iot.escalatingSleepPanicHandler();
@@ -179,21 +193,19 @@ void Iot::_initSubsystems()
     startWatchdog(_watchdogTimeout_s.get());
     logger.setNetwork(_network);
     api.setDeviceName(getDeviceId());
-    api.begin();
+    api.setBoardId(getBoardId());
+    api.begin(iotBootstrapStore(), defaultHttp(), *_clock);
 }
 
 bool Iot::begin(unsigned long timeout_ms)
 {
     _beginCycle();
 
-    // WiFi credentials were seeded into NVS by seedCredentials()
-    Preferences preferences;
-    preferences.begin("iot", true);
-    String ssid = nvramGetString(preferences, "wifiSsid", "");
-    String password = nvramGetString(preferences, "wifiPass", "");
-    preferences.end();
+    // WiFi credentials were seeded into the store by seedCredentials()
+    const std::string ssid = iotBootstrapStore().getString(iot_nvs_keys::WIFI_SSID, "");
+    const std::string password = iotBootstrapStore().getString(iot_nvs_keys::WIFI_PASSWORD, "");
 
-    if (ssid.isEmpty())
+    if (ssid.empty())
     {
         if (_noCredentialsHandler)
         {
@@ -216,8 +228,8 @@ bool Iot::begin(unsigned long timeout_ms)
     // its own configuration
     if (_network == &defaultNetwork())
     {
-        defaultNetwork().setCredentials(ssid.c_str(), password.c_str());
-        defaultNetwork().setHostname(getDeviceId().c_str());
+        defaultNetwork().setCredentials(ssid, password);
+        defaultNetwork().setHostname(getDeviceId());
     }
 
     bool connected = _network->connect((uint32_t)timeout_ms);
@@ -240,25 +252,13 @@ void Iot::setNoCredentialsHandler(std::function<void()> handler)
 
 void Iot::seedCredentials(const IotSeedConfig& cfg)
 {
-    Preferences preferences;
-    if (!preferences.begin("iot", false))
+    // NVS has to be up before the store can open, and seedCredentials() is
+    // documented to run before begin()
+    nvs_flash_init();
+    if (iotSeedCredentials(iotBootstrapStore(), cfg))
     {
-        log_e("seedCredentials: cannot open NVS");
-        return;
+        log_w("seedCredentials: wrote seed generation %u", (unsigned)cfg.seedGeneration);
     }
-    uint32_t storedGeneration = nvramGetUInt(preferences, "seedGen", 0);
-    bool force = cfg.seedGeneration > storedGeneration;
-
-    iotSeedString(preferences, "wifiSsid", cfg.wifiSsid, force);
-    iotSeedString(preferences, "wifiPass", cfg.wifiPassword, force);
-    api._seedFromConfig(preferences, cfg, force);
-
-    if (force)
-    {
-        preferences.putUInt("seedGen", cfg.seedGeneration);
-        log_w("seedCredentials: applied seed generation %u", (unsigned)cfg.seedGeneration);
-    }
-    preferences.end();
 }
 
 static void clearNvsNamespace(const char* ns)

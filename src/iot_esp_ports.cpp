@@ -6,6 +6,7 @@
 #include "iot_esp_ports.h"
 
 #include <cstring>
+#include <vector>
 
 #include <esp_attr.h>
 #include <esp_mac.h>
@@ -208,6 +209,186 @@ void IotNvsStore::clear()
     {
         _preferences.clear();
     }
+}
+
+
+// *****************************************************************************
+// IotEspHttp
+// *****************************************************************************
+
+IotEspHttp::~IotEspHttp()
+{
+    close();
+    delete _http;
+    delete _client;   // _secureClient aliases _client when the URL is https
+}
+
+void IotEspHttp::setTls(const IotTlsConfig& tls)
+{
+    _tls = &tls;
+    if (_secureClient != nullptr)
+    {
+        _applyTls();
+    }
+}
+
+void IotEspHttp::_applyTls()
+{
+    if (_secureClient == nullptr || _tls == nullptr)
+    {
+        return;
+    }
+    switch (_tls->mode)
+    {
+        case IotTlsMode::Bundle:
+        {
+            // symbols of the certificate bundle embedded by the build
+            // (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y, default for arduino-esp32)
+            extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+            extern const uint8_t rootca_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
+            _secureClient->setCACertBundle(rootca_crt_bundle_start,
+                rootca_crt_bundle_end - rootca_crt_bundle_start);
+            _serverTrustConfigured = true;
+            break;
+        }
+        case IotTlsMode::Insecure:
+            log_w("TLS server authentication is DISABLED (tlsMode Insecure) - the "
+                  "connection is encrypted but the server identity is not verified. "
+                  "Do not use in production; seed a CA certificate (CaPin) instead.");
+            _secureClient->setInsecure();
+            _serverTrustConfigured = true;
+            break;
+        case IotTlsMode::CaPin:
+            if (!_tls->caCertPem.empty())
+            {
+                // the core keeps the pointer rather than copying, so the PEM has
+                // to stay alive - it does, in the IotTlsConfig the caller owns
+                _secureClient->setCACert(_tls->caCertPem.c_str());
+                _serverTrustConfigured = true;
+            }
+            if (!_tls->clientCertPem.empty() && !_tls->clientKeyPem.empty())
+            {
+                _secureClient->setCertificate(_tls->clientCertPem.c_str());
+                _secureClient->setPrivateKey(_tls->clientKeyPem.c_str());
+            }
+            break;
+        case IotTlsMode::None:
+            break;
+    }
+}
+
+WiFiClient& IotEspHttp::_clientFor(const std::string& url)
+{
+    if (_client == nullptr)
+    {
+        if (url.rfind("https://", 0) == 0)
+        {
+            log_d("Create WiFiClientSecure");
+            _secureClient = new WiFiClientSecure();
+            _client = _secureClient;
+            _applyTls();
+        } else {
+            log_d("Create WiFiClient");
+            _client = new WiFiClient();
+        }
+    }
+    return *_client;
+}
+
+HTTPClient& IotEspHttp::_httpClient()
+{
+    if (_http == nullptr)
+    {
+        _http = new HTTPClient();
+        if (_connectTimeout_ms >= 0)
+        {
+            _http->setConnectTimeout(_connectTimeout_ms);
+        }
+        if (_requestTimeout_ms > 0)
+        {
+            _http->setTimeout(_requestTimeout_ms);
+        }
+    }
+    _http->setReuse(true);
+    return *_http;
+}
+
+void IotEspHttp::setConnectTimeout_ms(int32_t timeout_ms)
+{
+    _connectTimeout_ms = timeout_ms;
+    if (_http != nullptr)
+    {
+        _http->setConnectTimeout(timeout_ms);
+    }
+}
+
+void IotEspHttp::setRequestTimeout_ms(uint16_t timeout_ms)
+{
+    _requestTimeout_ms = timeout_ms;
+    if (_http != nullptr)
+    {
+        _http->setTimeout(timeout_ms);
+    }
+}
+
+int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
+{
+    oResponse = IotHttpResponse{};
+
+    HTTPClient& http = _httpClient();
+    http.begin(_clientFor(request.url), String(request.url.c_str()));
+
+    for (auto const& kv : request.headers)
+    {
+        if (!kv.second.empty())
+        {
+            log_d("  HTTP header: %s=%s", kv.first.c_str(), kv.second.c_str());
+            http.addHeader(String(kv.first.c_str()), String(kv.second.c_str()));
+        }
+    }
+
+    std::vector<const char*> headerKeys;
+    for (auto const& key : request.collectResponseHeaders)
+    {
+        headerKeys.push_back(key.c_str());
+    }
+    if (!headerKeys.empty())
+    {
+        http.collectHeaders(headerKeys.data(), headerKeys.size());
+    }
+
+    oResponse.status = http.sendRequest(request.method,
+        (uint8_t*)request.body.c_str(), request.body.length());
+
+    for (auto const& key : request.collectResponseHeaders)
+    {
+        if (http.hasHeader(key.c_str()))
+        {
+            oResponse.headers[key] = http.header(key.c_str()).c_str();
+        }
+    }
+    // a HEAD has no body, and a 304 body would be the cached resource
+    if (strcasecmp("HEAD", request.method) != 0 && oResponse.status != HTTP_CODE_NOT_MODIFIED)
+    {
+        oResponse.body = http.getString().c_str();
+    }
+
+    http.end();
+    return oResponse.status;
+}
+
+void IotEspHttp::close()
+{
+    if (_http != nullptr)
+    {
+        _http->setReuse(false);
+        _http->end();
+    }
+}
+
+std::string IotEspHttp::errorToString(int status) const
+{
+    return std::string(HTTPClient::errorToString(status).c_str());
 }
 
 
