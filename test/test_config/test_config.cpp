@@ -202,12 +202,10 @@ void test_every_key_fits_the_store()
     // one key names the value in config.json, in NVS and in the free-form
     // accessors, so it has to fit the NVS limit
     const char* keys[] = {
-        // Iot
-        "log_level", "sleep_s", "watchdog_s", "ntp_timeout_ms", "battery_min_mv",
+        // the complete set the library itself registers
+        "log_level", "sleep_s", "battery_min_mv",
         "panic_init_s", "panic_factor", "panic_max_s",
-        // IotNtpClock
-        "ntp_resync_s", "ntp_server1", "ntp_server2",
-        // IotConfig itself
+        // IotConfig's own cache validators
         "iotCfgEtag", "iotCfgDate",
     };
     for (const char* key : keys)

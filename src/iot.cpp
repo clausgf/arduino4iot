@@ -82,8 +82,7 @@ Iot::Iot() :
 
     _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level"),
     _sleepDuration_s(config, 5 * 60, "sleep_s"),
-    _watchdogTimeout_s(config, 20, "watchdog_s"),
-    _ntpTimeout_ms(config, 10000, "ntp_timeout_ms"),
+
     _batteryMin_mV(config, -1, "battery_min_mv"),
     _panicSleepDurationInit_s(config, 60, "panic_init_s"),
     _panicSleepDurationFactor(config, 2, "panic_factor"),
@@ -91,6 +90,8 @@ Iot::Iot() :
 {
     // initialize variables
     _deviceId = "";
+    _watchdogTimeout_s = DEFAULT_WATCHDOG_TIMEOUT_S;
+    _ntpTimeout_ms = DEFAULT_NTP_TIMEOUT_MS;
     _network = &defaultNetwork();
     _clock = &defaultClock();
     _battery = nullptr;
@@ -141,7 +142,7 @@ void Iot::_beginCycle()
 
     // the watchdog must already run before the no-credentials handler is
     // reached, since that call can block far longer than the timeout
-    startWatchdog(_watchdogTimeout_s.get());
+    startWatchdog(_watchdogTimeout_s);
 
     log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, backoff=%d s",
         (unsigned long)getBootCount(),
@@ -190,7 +191,7 @@ void Iot::_initSubsystems()
     }
 
     // initialize other components
-    startWatchdog(_watchdogTimeout_s.get());
+    startWatchdog(_watchdogTimeout_s);
     logger.setNetwork(_network);
     api.setDeviceName(getDeviceId());
     api.setBoardId(getBoardId());
@@ -395,7 +396,7 @@ time_t Iot::getNtpLastSyncTime()
 
 bool Iot::syncNtpTime()
 {
-    return _clock->sync((uint32_t)_ntpTimeout_ms.get());
+    return _clock->sync(_ntpTimeout_ms);
 }
 
 
@@ -611,13 +612,14 @@ std::string Iot::getBoardId()
 
 void Iot::startWatchdog(int watchdogTimeout_s)
 {
-    // a config.json can set this; too short and every cycle is a watchdog reset
+    // remembered, so a call before begin() chooses what begin() uses
     if (watchdogTimeout_s < MIN_WATCHDOG_TIMEOUT_S)
     {
         log_e("watchdog_s=%d is below the %d s minimum, clamping",
             watchdogTimeout_s, MIN_WATCHDOG_TIMEOUT_S);
         watchdogTimeout_s = MIN_WATCHDOG_TIMEOUT_S;
     }
+    _watchdogTimeout_s = watchdogTimeout_s;
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
     esp_task_wdt_config_t wdtConfig = {
         .timeout_ms = (uint32_t)watchdogTimeout_s * 1000u,

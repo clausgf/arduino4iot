@@ -70,8 +70,8 @@ There are three implementations of `IotClock`:
   directly, bypassing the lwIP SNTP daemon whose randomized 0–5 s startup delay
   would otherwise dominate the wakeup. It syncs only when the clock is
   implausible or the resync interval elapsed, so calling it every wakeup is
-  cheap. Servers and interval are server-configurable (`ntp_server1..3`,
-  `ntp_resync_s`).
+  cheap. Servers and interval are set on the object (`setServers()`,
+  `setResyncInterval_s()`).
 - **`IotFakeClock`** for host tests.
 
 **An `https://` endpoint needs `IotNtpClock`**: TLS checks certificate validity
@@ -445,9 +445,9 @@ The other big time sink is the NTP sync. The system clock has to be correct
 so the sync cannot be hidden behind other work. Instead `syncNtpTime()` sends a
 single manual SNTP request and sets the clock directly, bypassing the lwIP SNTP
 daemon's randomized 0–5 s startup delay; it falls back to the daemon if the
-one-shot query fails. Within the resync interval (`ntp_resync_s`) the sync is
-skipped entirely, relying on the RTC clock that survives deep sleep. Pointing
-`ntp_server1` at an IP or the local router additionally removes DNS from the path.
+one-shot query fails. Within the resync interval the sync is skipped entirely,
+relying on the RTC clock that survives deep sleep. Pointing the first server at
+an IP or the local router additionally removes DNS from the path.
 
 ## Persistence: NVRAM vs. RTC RAM
 
