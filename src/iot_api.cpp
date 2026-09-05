@@ -39,9 +39,8 @@ IotApi::IotApi():
 
 void IotApi::begin()
 {
-    // one NVS handle for the whole wakeup cycle instead of an open/close pair
-    // per value, and every read guarded against the unfilterable "NOT_FOUND"
-    // error Preferences logs for absent keys
+    // one NVS handle for the whole wakeup cycle, and every read guarded
+    // against the unfilterable "NOT_FOUND" error Preferences logs
     _store.begin();
     _setApiUrl(String(_store.getString(_nvram_api_url_key, "").c_str()));
     _projectName = _store.getString(_nvram_project_key, "").c_str();
@@ -60,9 +59,8 @@ void IotApi::begin()
 
 void IotApi::_seedFromConfig(Preferences& preferences, const IotSeedConfig& cfg, bool force)
 {
-    // seeding still goes through the shared Preferences handle opened by
-    // Iot::seedCredentials(); it runs before begin(), i.e. before _store exists.
-    // Moving the seed path onto IotStore belongs with the config rework.
+    // seeding uses the shared Preferences handle opened by
+    // Iot::seedCredentials(), which runs before begin() opens _store
     String oldApiUrl = nvramGetString(preferences, _nvram_api_url_key, "");
     String oldProjectName = nvramGetString(preferences, _nvram_project_key, "");
     String oldProvisioningToken = nvramGetString(preferences, IotTokenManager::KEY_PROVISIONING_TOKEN, "");
@@ -316,8 +314,7 @@ void IotApi::clearDeviceToken()
 
 IotResult IotApi::updateProvisioning(const String& apiPath)
 {
-    // whether the current token still does the job is a decision, not I/O:
-    // IotTokenManager::needsNewToken() (unit tested in test/test_token)
+    // whether the current token still does the job is a decision, not I/O
     if (!_tokens.needsNewToken((int64_t)time(nullptr), iot.isTimePlausible()))
     {
         log_i("updateProvisioning: already provisioned, token still valid");
@@ -345,9 +342,8 @@ IotResult IotApi::_requestDeviceToken(const String& apiPath)
     String request;
     serializeJson(requestDoc, request);
 
-    // the unauthenticated single-shot path: /provision authenticates with the
-    // provisioning token in the body, and a 401 from it must be reported rather
-    // than trigger another provisioning attempt
+    // unauthenticated single-shot: /provision authenticates with the
+    // provisioning token in the body
     String response;
     std::map<String, String> responseHeader;
     int httpStatusCode = _performRequest(response, responseHeader, "POST", apiPath, request,
@@ -499,10 +495,8 @@ int IotApi::apiRequest(String& oResponse, std::map<String, String>& oResponseHea
     const std::map<String, String>& requestHeader,
     const std::vector<String>& collectResponseHeaderKeys)
 {
-    // The authentication policy on top of the transport: attach the device
-    // token, and on a rejection get a new one and try once more. _performRequest()
-    // itself stays unaware of all this, so there is no way for the retry to
-    // re-enter the request path (which is what _inProvisioning used to guard).
+    // the authentication policy on top of the transport: attach the device
+    // token, and on a rejection get a new one and try once more
     int httpStatusCode = _performRequest(oResponse, oResponseHeader,
         requestType, apiPath, requestBody,
         _requestHeaders(requestHeader, /*authenticated=*/true), collectResponseHeaderKeys);
@@ -630,10 +624,8 @@ IotResult IotApi::updateFirmware(const String& apiPath, const std::map<String, S
     };
     for (auto const& kv : header) { conditional[kv.first] = kv.second; }
 
-    // HEAD to check whether an update is available. apiRequest() adds the
-    // Authorization header and may replace the token on a 401 retry - which is
-    // why the OTA headers below are built *after* this call rather than patched
-    // up afterwards as they were up to 3.x.
+    // HEAD to check whether an update is available. apiRequest() may replace
+    // the token on a 401 retry, so the OTA headers are built after this call.
     String response = "";
     std::map<String, String> responseHeader;
     int httpStatusCode = apiRequest(response, responseHeader, "HEAD", apiPath, "", conditional);

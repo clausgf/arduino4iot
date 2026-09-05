@@ -1,16 +1,14 @@
 /**
  * arduino4iot example: first-time provisioning over a SoftAP + captive portal.
  *
- * Same wakeup cycle as examples/main.cpp, plus a setup flow for a device that
- * has no seeded WiFi credentials yet - a factory-fresh board, or one after
+ * Same wakeup cycle as examples/main.cpp, plus a setup flow for a device with
+ * no seeded WiFi credentials yet - a factory-fresh board, or one after
  * iot.clearProvisioning()/iot.factoryReset().
  *
- * The AP module is opt-in: it costs roughly 42 KB of flash (DNSServer +
- * WebServer), which is a lot on the stock esp32dev dual-OTA partition scheme.
- * Because Iot::begin() only calls a handler and never names IotAp itself, a
- * firmware that does not register the handler below does not link any of it.
- * Compare the two builds if you want to see it - examples/main.cpp is the same
- * sketch without the setup flow.
+ * The AP module is opt-in: it costs ~42 KB of flash (DNSServer + WebServer),
+ * a lot on the stock esp32dev dual-OTA partition. Iot::begin() only calls a
+ * handler and never names IotAp, so a firmware without the registration below
+ * links none of it.
  */
 
 #include <Arduino.h>
@@ -40,8 +38,8 @@ void setup()
 {
     Serial.begin(115200);
 
-    // A build with no -D secrets seeds nothing, so a fresh device reaches
-    // begin() without credentials - which is what triggers the handler below.
+    // a build with no -D secrets seeds nothing, so a fresh device reaches
+    // begin() without credentials - which triggers the handler below
     iot.seedCredentials({
         .wifiSsid          = IOT_WIFI_SSID,
         .wifiPassword      = IOT_WIFI_PASSWORD,
@@ -55,7 +53,6 @@ void setup()
     // Open a setup AP when there are no credentials. apProvisioning.run()
     // blocks and does not return: a submitted form ends in iot.restart() so the
     // freshly seeded NVS values take effect, an idle timeout in iot.shutdown().
-    // Without this line begin() would log an error and shut down instead.
     apProvisioning.setSsidPrefix("my-sensor-setup-");
     apProvisioning.setIdleTimeout_s(600);
     iot.setNoCredentialsHandler([] { apProvisioning.run(); });

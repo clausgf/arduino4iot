@@ -15,17 +15,10 @@
 // *****************************************************************************
 // Device authentication: the tokens, their lifetime and their persistence.
 //
-// Split out of IotApi so that the transport does not know about tokens and the
-// token state does not know about HTTP. Up to 3.x these were entangled:
-// apiRequest() cleared the device token and re-provisioned on HTTP 401, which
-// meant the single request path had to guard against re-entering itself while
-// provisioning (an _inProvisioning flag), and updateFirmware() had to re-read
-// the Authorization header after the call because a retry might have replaced
-// the token underneath it.
-//
-// The split here is state and decisions (this file, Arduino-free and unit
-// tested) against I/O (IotApi, which performs the exchange and feeds the
-// parsed result back in).
+// Separate from IotApi so the transport does not know about tokens and the
+// token state does not know about HTTP: state and decisions here (Arduino-free
+// and unit tested), I/O in IotApi, which performs the exchange and feeds the
+// parsed result back in.
 // *****************************************************************************
 
 
@@ -47,10 +40,8 @@ struct IotProvisioningResponse
 
 /**
  * Parse a `/provision` response body.
- *
- * @return true if the body was valid JSON carrying both tokenType and
- *         accessToken. A 2xx response that fails this is reported by the
- *         caller as IotResult::STATUS_MALFORMED_RESPONSE.
+ * @return true if it was valid JSON carrying both tokenType and accessToken.
+ *         A 2xx that fails this becomes IotResult::STATUS_MALFORMED_RESPONSE.
  */
 inline bool iotParseProvisioningResponse(const char* body, IotProvisioningResponse& oResponse)
 {
@@ -86,9 +77,9 @@ inline bool iotParseProvisioningResponse(const char* body, IotProvisioningRespon
  * The device's credentials: the long-lived provisioning token it was seeded
  * with, and the short-lived device token it exchanges that for.
  *
- * Persists the device token through an IotStore, so a device does not
+ * Persists the device token through an IotStore so a device does not
  * re-provision on every wakeup. Knows nothing about HTTP - the caller performs
- * the exchange and hands the parsed response to applyProvisioningResponse().
+ * the exchange and passes the parsed response to applyProvisioningResponse().
  */
 class IotTokenManager
 {
@@ -124,9 +115,9 @@ public:
     int64_t deviceTokenExpiresAt() const { return _deviceTokenExpiresAt; }
 
     /**
-     * Set the margin before the expiry at which a new token is requested.
-     * Choose it larger than the sleep interval, so a device never wakes up
-     * with an already-expired token.
+     * Margin before the expiry at which a new token is requested. Larger than
+     * the sleep interval, so a device never wakes with an expired token - but
+     * smaller than the lifetime the server issues, or every wakeup re-provisions.
      */
     void setExpiryMargin_s(int32_t margin_s) { _expiryMargin_s = margin_s; }
     int32_t expiryMargin_s() const { return _expiryMargin_s; }
@@ -134,12 +125,11 @@ public:
     /**
      * Decide whether a new device token has to be requested.
      *
-     * Two cases deliberately count as "still good", because guessing wrong
-     * costs a needless provisioning round trip on every wakeup:
-     * - the expiry is unknown (0), e.g. a token issued by an older library
-     *   version or by a server that sent no expiresIn;
-     * - the clock is not plausible, so the arithmetic would be meaningless -
-     *   an expired token then surfaces as an HTTP 401, which re-provisions.
+     * Two cases deliberately count as "still good", since guessing wrong costs
+     * a provisioning round trip on every wakeup: an unknown expiry (0, e.g. a
+     * server that sent no expiresIn), and an implausible clock, where the
+     * arithmetic would be meaningless. Either way an actually expired token
+     * surfaces as an HTTP 401, which re-provisions.
      */
     bool needsNewToken(int64_t now, bool isTimePlausible) const
     {
@@ -155,7 +145,7 @@ public:
     }
 
     /// Store a device token and its absolute expiry (0 = unknown), persisting
-    /// both. Writes nothing when the value is unchanged.
+    /// both. Writes nothing when unchanged.
     void setDeviceToken(const std::string& token, int64_t expiresAt)
     {
         if (_deviceToken == token && _deviceTokenExpiresAt == expiresAt)
@@ -174,11 +164,9 @@ public:
     void clearDeviceToken() { setDeviceToken("", 0); }
 
     /**
-     * Adopt a parsed provisioning response.
-     *
-     * The absolute expiry is derived from the response's relative expiresIn,
-     * which needs a plausible clock; without one the token is stored with an
-     * unknown expiry (0) rather than a wrong one.
+     * Adopt a parsed provisioning response. The absolute expiry derives from
+     * the relative expiresIn, which needs a plausible clock; without one the
+     * token is stored with an unknown expiry (0) rather than a wrong one.
      *
      * @return the absolute expiry that was stored, 0 if unknown.
      */

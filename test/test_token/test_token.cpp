@@ -2,11 +2,9 @@
  * Native unit tests for IotTokenManager and the /provision response parser
  * (pio test -e native).
  *
- * The token lifetime rules used to be a handful of conditions inside
- * IotApi::updateProvisioning(), reachable only with a real server and a real
- * clock. They are plain decisions now, so the awkward cases - an unknown
- * expiry, an implausible clock, a token that expires during the next sleep -
- * can simply be asserted.
+ * The token lifetime rules are plain decisions here, so the awkward cases - an
+ * unknown expiry, an implausible clock, a token that expires during the next
+ * sleep - can simply be asserted, without a server or a real clock.
  */
 
 #include <unity.h>
@@ -110,8 +108,7 @@ void test_an_expired_token_is_renewed()
 
 void test_an_unknown_expiry_counts_as_still_good()
 {
-    // e.g. issued by an older library version; guessing "stale" would
-    // re-provision on every single wakeup
+    // guessing "stale" here would re-provision on every single wakeup
     IotFakeStore store;
     IotTokenManager tokens;
     tokens.begin(store);
@@ -216,10 +213,8 @@ void test_applying_a_response_computes_the_absolute_expiry()
 
 void test_a_token_shorter_lived_than_the_margin_is_always_stale()
 {
-    // a deployment worth catching: if the server issues tokens whose lifetime
-    // is below the renewal margin, every wakeup re-provisions. Not a bug in the
-    // rule - the margin is a promise that the token outlives the next sleep -
-    // but it means margin and server-side lifetime have to be chosen together.
+    // if the server issues tokens shorter-lived than the renewal margin, every
+    // wakeup re-provisions: margin and server-side lifetime belong together
     IotFakeStore store;
     IotTokenManager tokens;
     tokens.begin(store);

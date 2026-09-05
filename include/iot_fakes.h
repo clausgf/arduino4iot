@@ -15,24 +15,17 @@
 // *****************************************************************************
 // Test doubles for the ports in iot_ports.h.
 //
-// Header-only and Arduino-free, so they work in a native (host) test build.
-// This is the payoff of the ports layer: a service written against IotStore,
-// IotClock, IotNetwork, IotBattery and IotPower can be exercised completely on
-// the host - including the failure paths, which used to be untestable because
-// reaching one terminated the process in a real esp_deep_sleep().
-//
-// Firmware never includes this header; nothing here costs flash unless it does.
+// Header-only and Arduino-free, for native test builds: a service written
+// against the ports can be exercised entirely on the host, failure paths
+// included. Firmware never includes this header.
 // *****************************************************************************
 
 
 // *****************************************************************************
 
 /**
- * In-memory IotStore.
- *
- * Also counts writes, so a test can assert the port's central promise: put*
- * must not write when the value is unchanged. On a real device every avoided
- * write is a saved flash cycle.
+ * In-memory IotStore. Counts writes, so a test can assert the port's central
+ * promise: put* must not write when the value is unchanged.
  */
 class IotFakeStore : public IotStore
 {
@@ -203,8 +196,7 @@ private:
 
 // *****************************************************************************
 
-/// IotBattery returning a voltage a test sets. Default -1, i.e. "unavailable" -
-/// the same thing the library sees when no battery port is configured at all.
+/// IotBattery returning a voltage a test sets. Default -1, "unavailable".
 class IotFakeBattery : public IotBattery
 {
 public:
@@ -226,11 +218,8 @@ private:
 // *****************************************************************************
 
 /**
- * IotPower that records how the cycle ended instead of ending it.
- *
- * The exit methods return, so a test can assert what the code under test
- * decided - which sleep duration the backoff picked, whether it restarted or
- * shut down - and then continue.
+ * IotPower that records how the cycle ended instead of ending it: the exit
+ * methods return, so a test can assert what was decided and carry on.
  */
 class IotFakePower : public IotPower
 {

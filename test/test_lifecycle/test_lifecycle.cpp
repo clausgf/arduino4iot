@@ -1,10 +1,9 @@
 /**
  * Native unit tests for IotBackoffPolicy and IotLifecycle (pio test -e native).
  *
- * This is the failure behaviour of a battery-powered device with nobody
- * watching it - previously untestable, because every path through it ended the
- * process in a real esp_deep_sleep(). IotFakePower records the exit instead of
- * taking it, so the assertions below are about what the device *decided*.
+ * The failure behaviour of a battery-powered device with nobody watching it.
+ * IotFakePower records the exit instead of taking it, so the assertions are
+ * about what the device *decided*.
  */
 
 #include <unity.h>
@@ -56,8 +55,8 @@ void test_backoff_saturates_at_the_maximum()
 
 void test_backoff_does_not_overflow()
 {
-    // int32 multiplication would wrap here and could yield a negative duration,
-    // i.e. an immediate wakeup - the exact opposite of backing off
+    // int32 multiplication would wrap here and yield a negative duration,
+    // i.e. an immediate wakeup - the opposite of backing off
     IotBackoffPolicy policy{ 60, 10, 24 * 60 * 60 };
     TEST_ASSERT_EQUAL_INT32(24 * 60 * 60, policy.next(2000000000));
     TEST_ASSERT_TRUE(policy.next(2000000000) > 0);
@@ -116,8 +115,7 @@ void test_begin_counts_up_across_deep_sleep_cycles()
 
 void test_begin_does_not_act_on_an_abnormal_reset()
 {
-    // the caller decides, once its logging works - the pre-4.0 code went to
-    // sleep from inside the constructor, before Serial.begin()
+    // the caller decides, once its logging works
     IotRtcState rtc = freshRtcState();
     IotFakePower power;
     power.resetReasonValue = IotResetReason::Watchdog;
@@ -218,8 +216,7 @@ void test_exit_hooks_run_before_the_device_sleeps()
     std::vector<int> order;
     lifecycle.addExitHook([&order, &power] {
         order.push_back(1);
-        // the hook still runs before the exit, which is what lets the logger
-        // flush and the API connection close cleanly
+        // still before the exit: this is what lets the logger flush
         TEST_ASSERT_FALSE(power.wasCalled());
     });
     lifecycle.addExitHook([&order] { order.push_back(2); });
@@ -306,8 +303,8 @@ void test_an_orderly_cycle_ends_the_backoff()
 
 void test_a_power_loss_starts_the_backoff_over()
 {
-    // RTC memory does not survive a power-on reset, and that is the wanted
-    // behaviour: someone physically touched the device
+    // RTC memory does not survive a power-on reset, which is wanted here:
+    // someone physically touched the device
     IotRtcState rtc = freshRtcState();
     IotFakePower power;
     IotLifecycle lifecycle(power, rtc);
@@ -325,7 +322,6 @@ void test_a_power_loss_starts_the_backoff_over()
 
 void test_custom_power_adapter_replaces_the_default()
 {
-    // what the three pre-4.0 handler setters were for
     IotRtcState rtc = freshRtcState();
     IotFakePower defaultPower;
     IotFakePower customPower;

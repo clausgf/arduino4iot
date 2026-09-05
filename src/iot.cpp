@@ -18,11 +18,10 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
-// Deliberately no #include "iot_ap.h": naming the provisioning module here
-// would make the linker keep DNSServer/WebServer (~42 KB) in every firmware,
-// whether or not it can ever open a setup AP. The application wires it in via
-// setNoCredentialsHandler(). This also breaks the iot <-> iot_ap include cycle:
-// the dependency now runs one way, iot_ap -> iot.
+// Deliberately no #include "iot_ap.h": naming the provisioning module would
+// keep DNSServer/WebServer (~42 KB) in every firmware. The application wires it
+// in via setNoCredentialsHandler(), and the dependency stays one-way,
+// iot_ap -> iot.
 #include "iot_esp_ports.h"
 
 // *****************************************************************************
@@ -35,12 +34,9 @@ bool Iot::_isWatchdogEnabled = false;
 // *****************************************************************************
 
 /**
- * The default power adapter.
- *
- * A function-local static rather than a namespace-scope object: it is
- * constructed on first use, so Iot's own constructor - which runs before
- * main() and in an unspecified order relative to other translation units - can
- * safely bind to it. Replaceable via Iot::setPower().
+ * The default power adapter. A function-local static, so it is constructed on
+ * first use and Iot's constructor - which runs before main() in an unspecified
+ * order across translation units - can safely bind to it.
  */
 static IotPower& defaultPower()
 {
@@ -93,13 +89,9 @@ Iot::Iot() :
     __ntpServer2 = _ntpServer2.get();
     __ntpServer3 = _ntpServer3.get();
 
-    // Nothing else happens here on purpose. Up to 3.x this constructor
-    // initialized NVS and, after an abnormal reset, went straight into the
-    // panic handler - before main(), before the sketch could open a serial
-    // console to see the diagnosis, while the persistent values it read were
-    // still uninitialized, and while the logger and api singletons of other
-    // translation units may not have been constructed yet. All of that now
-    // happens in begin().
+    // Nothing else happens here on purpose: NVS init, boot accounting and the
+    // reaction to an abnormal reset all belong in begin(), where the serial
+    // console is open and the other singletons are constructed.
 }
 
 void Iot::_registerExitHooks()
@@ -111,8 +103,8 @@ void Iot::_registerExitHooks()
     _exitHooksRegistered = true;
 
     // runs before every deep sleep, restart, shutdown and backoff sleep.
-    // logger.flush() is a no-op without connectivity, so this is also safe on
-    // the early failure paths where no network was ever established.
+    // logger.flush() is a no-op without connectivity, so this is safe on the
+    // early failure paths too.
     _lifecycle.addExitHook([this] {
         logger.flush();
         api.closeConnection();
@@ -150,9 +142,8 @@ void Iot::_beginCycle()
     log_i("--- Firmware id %s", getFirmwareId().c_str());
     log_i("--- SHA256 %s", getFirmwareSha256().c_str());
 
-    // The previous cycle crashed, hung or browned out. Back off instead of
-    // retrying immediately - and do it here rather than in the constructor, so
-    // the message above has been printed first.
+    // the previous cycle crashed, hung or browned out: back off rather than
+    // retry immediately
     if (_lifecycle.isAbnormalStart())
     {
         panicEarly("*** PANIC *** Previous cycle ended abnormally: %s",
@@ -220,9 +211,9 @@ bool Iot::begin(unsigned long timeout_ms)
                   "or an NVS partition image, or register a setup flow with "
                   "iot.setNoCredentialsHandler([]{ apProvisioning.run(); }).");
         }
-        // indefinite deep sleep, no wake timer: nothing can change the "no
-        // credentials" condition between wakeups, so retrying on a timer would
-        // only drain the battery. Only a physical reset tries again.
+        // indefinite deep sleep: nothing can change the "no credentials"
+        // condition between wakeups, so a timer retry would only drain the
+        // battery. Only a physical reset tries again.
         shutdown();  // never returns
     }
 
@@ -273,8 +264,6 @@ static void clearNvsNamespace(const char* ns)
 void Iot::factoryReset()
 {
     log_w("factoryReset: erasing all persisted NVS state");
-    // "iot-var" is gone in 4.0: the values it held (last NTP sync, backoff
-    // state) live in the RTC state now, which no longer costs flash writes
     for (const char* ns : { "iot", "iot-cfg" })
     {
         clearNvsNamespace(ns);
@@ -883,8 +872,7 @@ void Iot::panicEarly(const char* format...)
 
 void Iot::escalatingSleepPanicHandler()
 {
-    // the escalation itself is IotBackoffPolicy (iot_lifecycle.h): plain,
-    // unit-tested logic rather than arithmetic scattered over this method
+    // the escalation itself is IotBackoffPolicy (iot_lifecycle.h)
     log_w("Entering failure backoff (current %d s)", _lifecycle.backoffDuration_s());
     _lifecycle.enterBackoff();  // runs the exit hooks and does not return
 }
@@ -1033,8 +1021,7 @@ void Iot::setPower(IotPower& power)
 
 void Iot::addExitHook(std::function<void()> hook)
 {
-    // make sure the library's own hook (log flush, connection close) is first
-    _registerExitHooks();
+    _registerExitHooks();  // keeps the library's own hook first
     _lifecycle.addExitHook(std::move(hook));
 }
 
@@ -1045,11 +1032,9 @@ void Iot::deepSleep()
     deepSleep(_sleepDuration_s);
 }
 
-// The three exits below are thin: IotLifecycle records the cycle in the RTC
-// state, runs the exit hooks (log flush, connection close, LED off) and then
-// dispatches to the IotPower adapter. `panic` keeps its 3.x meaning - true
-// leaves the escalating backoff state untouched, false clears it because the
-// cycle ended in an orderly way.
+// IotLifecycle records the cycle in the RTC state, runs the exit hooks (log
+// flush, connection close, LED off) and dispatches to the IotPower adapter.
+// `panic` true leaves the escalating backoff state untouched, false clears it.
 
 void Iot::deepSleep(int sleep_duration_s, bool panic)
 {

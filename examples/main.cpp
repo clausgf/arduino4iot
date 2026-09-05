@@ -49,13 +49,12 @@ void setup()
         .seedGeneration    = IOT_SEED_GENERATION,
     });
 
-    // A device that finds no seeded WiFi SSID cannot reach the server at all.
-    // Without a handler, begin() logs an error and shuts down. To offer a
-    // SoftAP setup form instead, register it - opt-in because the module costs
-    // ~42 KB of flash and is only linked when referenced:
+    // Without seeded WiFi credentials begin() logs an error and shuts down.
+    // To offer a SoftAP setup form instead (opt-in, ~42 KB of flash, linked
+    // only when referenced):
     //   #include <iot_ap.h>
     //   iot.setNoCredentialsHandler([] { apProvisioning.run(); });
-    // See examples/ap_provisioning/main.cpp for the complete sketch.
+    // See examples/ap_provisioning/main.cpp.
 
     // shorten the per-wakeup radio-on time (optional, falls back automatically).
     // A static IP skips DHCP - pass DNS too if the API URL uses a hostname
