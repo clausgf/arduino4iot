@@ -301,15 +301,46 @@ relying on the stock `esp32dev` scheme.
 
 ## Configuration (runtime, config.json)
 
-`config` mirrors a server-side JSON file into NVRAM. `config.updateConfig()`
-downloads it using `ETag`/`If-None-Match` (and `Last-Modified`), so an unchanged
-file is not transferred again. Values are read back with
-`config.getConfigInt32/Bool/String(...)`.
+`config` mirrors a server-side JSON file into an `IotStore` (NVS namespace
+`iot-cfg`). `config.updateConfig()` downloads it using `ETag`/`If-None-Match`
+(and `Last-Modified`), so an unchanged file is not transferred again. Values are
+read back with `config.getInt/getBool/getString(...)`.
 
-`IotConfigValue<T>` binds a C++ variable to a config key: it reads from the
-config/NVRAM on construction and can be assigned back, which keeps the library's
-own tunables (log level, sleep duration, panic parameters, …) configurable from
-the server without extra plumbing.
+`IotConfigValue<T>` binds a C++ variable to a config key, which keeps the
+library's own tunables (log level, sleep duration, panic parameters, …)
+configurable from the server without extra plumbing. It is instantiated for
+`int32_t`, `bool` and `std::string`.
+
+### One key per value
+
+The same name identifies a value in `config.json`, in NVS and in the free-form
+accessors, so there is a single naming scheme rather than one name per storage
+layer. The consequence is that a key must fit `IotStore::MAX_KEY_LENGTH` (15,
+the NVS limit); `config.begin()` logs an error for any key that does not.
+
+### Precedence
+
+From weakest to strongest:
+
+```
+compile-time default  <  NVS mirror  <  config.json  <  set() at runtime
+```
+
+A value the application sets explicitly — `iot.setSleepDuration_s(60)`, or an
+assignment to an `IotConfigValue` — keeps that value for the rest of the cycle:
+neither `begin()` nor `updateConfig()` overwrite it. Configuring something in
+`setup()` therefore sticks, instead of being silently replaced from the mirror.
+
+Server values are **still mirrored into NVS** even for an overridden value, so
+they take effect from the next boot. The override is per cycle, not a veto.
+`clearOverride()` hands a value back to the server within the same cycle.
+
+The rule of thumb: use the setter for values the application owns, and leave a
+value alone to let the server own it.
+
+An unknown key or a type mismatch in `config.json` is counted and skipped, so
+one bad entry cannot discard the rest of the file; `updateConfig()` logs the
+tally.
 
 ## Logging
 

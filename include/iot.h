@@ -627,12 +627,9 @@ private:
 
     IotConfigValue<int32_t> _ntpResyncInterval_s;
     IotConfigValue<int32_t> _ntpTimeout_ms;
-    IotConfigValue<String> _ntpServer1;
-    IotConfigValue<String> _ntpServer2;
-    IotConfigValue<String> _ntpServer3;
-    String __ntpServer1; // needed to keep the string in memory
-    String __ntpServer2;
-    String __ntpServer3;
+    IotConfigValue<std::string> _ntpServer1;
+    IotConfigValue<std::string> _ntpServer2;
+    IotConfigValue<std::string> _ntpServer3;
 
     IotConfigValue<int32_t> _batteryOffset_mV;
     IotConfigValue<int32_t> _batteryFactor;
