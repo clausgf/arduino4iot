@@ -125,8 +125,8 @@ void Iot::_beginCycle()
         _panicSleepDurationMax_s.get() });
     _lifecycle.begin();
 
-    // the watchdog must already run before apProvisioning.run() is reached,
-    // since that call can block far longer than _watchdogTimeout_s
+    // the watchdog must already run before the no-credentials handler is
+    // reached, since that call can block far longer than the timeout
     startWatchdog(_watchdogTimeout_s.get());
 
     log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, backoff=%d s",
@@ -611,6 +611,13 @@ std::string Iot::getBoardId()
 
 void Iot::startWatchdog(int watchdogTimeout_s)
 {
+    // a config.json can set this; too short and every cycle is a watchdog reset
+    if (watchdogTimeout_s < MIN_WATCHDOG_TIMEOUT_S)
+    {
+        log_e("watchdog_s=%d is below the %d s minimum, clamping",
+            watchdogTimeout_s, MIN_WATCHDOG_TIMEOUT_S);
+        watchdogTimeout_s = MIN_WATCHDOG_TIMEOUT_S;
+    }
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
     esp_task_wdt_config_t wdtConfig = {
         .timeout_ms = (uint32_t)watchdogTimeout_s * 1000u,
@@ -684,7 +691,15 @@ void Iot::addExitHook(std::function<void()> hook)
 
 void Iot::deepSleep()
 {
-    deepSleep(_sleepDuration_s);
+    // a config.json can set this, and 0 would wake the device immediately and
+    // flatten the battery - clamp rather than obey
+    int32_t duration_s = _sleepDuration_s.get();
+    if (duration_s < MIN_SLEEP_DURATION_S)
+    {
+        log_e("sleep_s=%d is below the %d s minimum, clamping", duration_s, MIN_SLEEP_DURATION_S);
+        duration_s = MIN_SLEEP_DURATION_S;
+    }
+    deepSleep(duration_s);
 }
 
 // IotLifecycle records the cycle in the RTC state, runs the exit hooks (log

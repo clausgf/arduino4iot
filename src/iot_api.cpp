@@ -558,22 +558,6 @@ int IotApi::apiPut(std::string& response, const std::string& apiPath, const std:
 
 // *****************************************************************************
 
-IotResult IotApi::apiCheckForUpdate(const std::string& apiPath, const char *nvram_etag_key, const char *nvram_date_key)
-{
-    std::string etag = _store.getString(nvram_etag_key, "");
-    std::string date = _store.getString(nvram_date_key, "");
-
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    // Ok (2xx) means an update is available, isNotModified() (304) means the
-    // resource is unchanged; both are non-errors
-    return apiRequest(response, responseHeader, "HEAD", apiPath, "", {
-        {"If-None-Match", etag},
-        {"If-Modified-Since", date}
-    });
-}
-
-
 // *****************************************************************************
 // Firmware
 // *****************************************************************************

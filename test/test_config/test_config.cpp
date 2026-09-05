@@ -206,7 +206,7 @@ void test_every_key_fits_the_store()
         "log_level", "sleep_s", "watchdog_s", "ntp_timeout_ms", "battery_min_mv",
         "panic_init_s", "panic_factor", "panic_max_s",
         // IotNtpClock
-        "ntp_resync_s", "ntp_server1", "ntp_server2", "ntp_server3",
+        "ntp_resync_s", "ntp_server1", "ntp_server2",
         // IotConfig itself
         "iotCfgEtag", "iotCfgDate",
     };
