@@ -5,10 +5,7 @@
 
 #include "iot_config.h"
 
-#include <cctype>
-#include <map>
-
-#include "iot_api.h"
+#include "iot_cache.h"
 #include "iot_log.h"
 
 // *****************************************************************************
@@ -107,28 +104,22 @@ IotResult IotConfig::updateConfig()
         return IotResult();  // default: transport error, no request was made
     }
 
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    int httpStatusCode = api.apiRequest(
-        response, responseHeader, "GET", _apiPath, "",
-        { { "If-None-Match", etag() },
-          { "If-Modified-Since", lastModified() } },
-        { "ETag", "Last-Modified" });
-
-    if (httpStatusCode < 200 || httpStatusCode >= 300)
+    IotStoredValidators cache(*_store, KEY_ETAG, KEY_DATE);
+    IotCachedResponse response = iotGetCached(_apiPath, cache.load());
+    if (response.result.isNotModified())
     {
-        if (httpStatusCode == 304)
-        {
-            log_i("Configuration data not modified");
-        } else {
-            log_e("HTTP GET failed status=%d", httpStatusCode);
-        }
-        return IotResult(httpStatusCode);
+        log_i("Configuration data not modified");
+        cache.commit(response.validators);
+        return response.result;
+    }
+    if (!response.result.isOk())
+    {
+        return response.result;
     }
 
     int unknown = 0;
     int mismatched = 0;
-    int applied = applyJsonBody(response.c_str(), &unknown, &mismatched);
+    int applied = applyJsonBody(response.body.c_str(), &unknown, &mismatched);
     if (applied < 0)
     {
         log_e("Config JSON deserialization failed");
@@ -140,20 +131,7 @@ IotResult IotConfig::updateConfig()
             applied, unknown, mismatched);
     }
 
-    for (auto const& kv : responseHeader)
-    {
-        // the header name comes back as the server spelled it
-        std::string name = kv.first;
-        for (char& c : name) { c = (char)tolower((unsigned char)c); }
-        if (name == "etag")
-        {
-            _store->putString(KEY_ETAG, kv.second);
-        } else if (name == "last-modified")
-        {
-            _store->putString(KEY_DATE, kv.second);
-        }
-    }
-
+    cache.commit(response.validators);
     log_i("Configuration data update finished (%d values)", applied);
-    return IotResult(200);
+    return response.result;
 }
