@@ -194,8 +194,8 @@ the linker drops every one an application does not reference.
 - **Internal headers moved from `include/` to `src/`** (`iot_text.h`,
   `iot_ap_text.h`, `iot_ota_internal.h`, `iot_log.h`). `include/` is the public
   interface; none of these appear in a public header or a sketch.
-- **`api.updateFirmware()` → `iotUpdateFirmware()`** (`iot_endpoints.h`), together
-  with `getFirmwareHttpEtag()/Date()` → `iotFirmwareHttpEtag()/Date()`. The OTA
+- **`api.updateFirmware()` → `iot.ota.update()`**, together with
+  `getFirmwareHttpEtag()/Date()` → `iot.ota.etag()/lastModified()`. The OTA
   downloader is ESP-specific, and `IotApi` is now Arduino-free: it builds URLs,
   merges headers and handles the 401 retry over an `IotHttp` port, while sockets
   and TLS belong to `IotEspHttp`. That is what makes the transport testable —
@@ -204,14 +204,14 @@ the linker drops every one an application does not reference.
 - **The library's string type is `std::string` (action required).** `String` is
   defined by the Arduino core, so any file naming it cannot be compiled — and
   therefore not tested — on the host. Public signatures that took or returned
-  `String` now take `std::string`: `iot.postTelemetry()`, `iot.getDeviceId()`,
+  `String` now take `std::string`: `iot.telemetry.post()`, `iot.getDeviceId()`,
   `iot.getTimeIso()`, `iot.getFirmwareVersion()/Id()/Sha256()/BoardId()`, all of
-  `api.*`, `logger.*`, `iotForward()`/`iotUploadFile()`. String *literals* keep
+  `api.*`, `logger.*`, `iot.forward.get()`/`iot.files.upload()`. String *literals* keep
   working unchanged, because `std::string` constructs implicitly from
   `const char*`; only a sketch holding an Arduino `String` needs `.c_str()`:
   ```cpp
-  iot.postTelemetry("sensors", t);              // unchanged
-  iot.postTelemetry(kindAsArduinoString.c_str(), t);   // now needs .c_str()
+  iot.telemetry.post("sensors", t);                       // a literal: fine
+  iot.telemetry.post(kindAsArduinoString.c_str(), t);     // String: .c_str()
   ```
   Inside the library `String` survives only at Arduino call boundaries
   (`Preferences`, `HTTPClient`), converted on the spot.
@@ -245,9 +245,9 @@ the linker drops every one an application does not reference.
   `battery_V` telemetry and no undervoltage check. `battery_min_mv` is unchanged.
 - **The LED helpers are removed.** `iot.setLedPin()`, `iot.setLed()` and the
   `led_pin` config key were a `digitalWrite()` wrapper; do it in the sketch.
-- **`api.apiForward()` → `iotForward()` and `api.uploadFile()` → `iotUploadFile()`**,
-  declared in the new `iot_endpoints.h`. The transport no longer carries the
-  server's endpoint map, and both are linked only when referenced.
+- **`api.apiForward()` → `iot.forward.get()` and `api.uploadFile()` →
+  `iot.files.upload()`**. The transport no longer carries the server's endpoint
+  map, and both are linked only when referenced.
 - **`api.apiSetConnectionTimeout()` / `api.apiSetRequestTimeout()` are removed**
   (deprecated since 2.x); use `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.
 - **`iot.setStaticIp()`, `iot.setFastReconnect()` and `iot.setDhcpCache()` →
@@ -292,7 +292,9 @@ the linker drops every one an application does not reference.
   a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
   ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
   See [`examples/ap_provisioning/`](examples/ap_provisioning/).
-- **Endpoint functions move into groups on `iot`** (see [API overview](#api-overview)):
+- **Endpoint functions move into groups on `iot`** (see [API overview](#api-overview)).
+  Coming from 3.x, the bullets above already name the result; for code written
+  against an earlier 4.0 development state:
   `iot.postTelemetry()` → `iot.telemetry.post()`, `iot.postSystemTelemetry()` →
   `iot.telemetry.postSystem()`, `iotUploadFile()` → `iot.files.upload()`,
   `iotForward()` → `iot.forward.get()`, `iotUpdateFirmware()` →

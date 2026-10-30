@@ -1,7 +1,7 @@
 /**
  * Native unit tests for the conditional GET (pio test -e native).
  *
- * The decisions of iotGetCached() against IotFakeHttp: which validators a
+ * The decisions of api.getCached() against IotFakeHttp: which validators a
  * request carries, which ones come back for the caller to commit, and how a
  * Cache-Control header becomes a max-age. Also IotConfig::updateConfig(), which
  * is built on it, and IotConfig::publishSchema() - both over the global api.
