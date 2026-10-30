@@ -58,8 +58,9 @@ void setup()
     apProvisioning.setIdleTimeout_s(600);
     iot.setNoCredentialsHandler([] { apProvisioning.run(); });
 
-    // A real clock. Needed for an https:// endpoint, whose certificate validity
-    // is checked against it.
+    // A real clock, for timestamps and to renew the device token before it
+    // expires. TLS does not need it: arduino-esp32 does not check certificate
+    // validity dates.
     static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
     iot.setClock(ntpClock);
 

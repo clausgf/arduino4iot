@@ -180,13 +180,15 @@ public:
 /**
  * Wall-clock time and its synchronization.
  *
- * Needed for the device token's expiry arithmetic and for the certificate
- * validity check in the TLS handshake. Both tolerate an unsynchronized clock,
+ * Needed for the device token's expiry arithmetic, timestamps and whatever the
+ * application does with the time. All of it tolerates an unsynchronized clock,
  * hence optional.
  *
  * **Absent (nullptr):** a device token is used until the server rejects it with
  * 401 instead of being renewed before its expiry; ETag caching is unaffected.
- * An https:// endpoint does need a plausible clock, http:// does not.
+ * TLS is unaffected too: arduino-esp32 builds mbedTLS without
+ * MBEDTLS_HAVE_TIME_DATE, so certificate validity dates are not checked. Only a
+ * custom sdkconfig enabling that check makes https depend on the clock.
  */
 class IotClock
 {

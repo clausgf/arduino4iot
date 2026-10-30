@@ -187,19 +187,19 @@ the linker drops every one an application does not reference.
   ```
   Inside the library `String` survives only at Arduino call boundaries
   (`Preferences`, `HTTPClient`), converted on the spot.
-- **The clock no longer synchronizes by default (action required for https).**
-  `iot.begin()` used to run SNTP unconditionally. The default `IotClock` is now
-  `IotSystemClock`, which reads the system time and never syncs — so no firmware
-  links SNTP code it does not use. An `https://` endpoint verifies certificate
-  validity against the clock and therefore needs:
+- **The clock no longer synchronizes by default (action required if you need
+  the time).** `iot.begin()` used to run SNTP unconditionally. The default
+  `IotClock` is now `IotSystemClock`, which reads the system time and never
+  syncs — so no firmware links SNTP code it does not use. TLS does not need it
+  (arduino-esp32 does not check certificate validity dates); timestamps, renewing
+  the device token before it expires and the application's own time logic do:
   ```cpp
   static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
   iot.setClock(ntpClock);
   ```
   `begin()` logs a warning when the clock is implausible. `iot.setNtp()` is gone;
-  configure servers and interval on the `IotNtpClock` (or via the unchanged
-  `ntp_server1..3` / `ntp_resync_s` config keys). The lwIP SNTP daemon fallback
-  is removed — the one-shot query is the only path.
+  configure servers and interval on the `IotNtpClock`. The lwIP SNTP daemon
+  fallback is removed — the one-shot query is the only path.
 - **`iot.begin()` now reports the network only.** It used to return "WiFi
   connected AND NTP synced", which conflated two unrelated failures. A device on
   `http://` works with an unsynchronized clock; check `iot.isTimePlausible()`

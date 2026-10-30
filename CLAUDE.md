@@ -86,7 +86,7 @@ excluded there. Use `iot_log.h` rather than Arduino's logging macros.
 | `IotHttp` | `IotEspHttp` (mandatory) | a fake in tests |
 | `IotPower` | `IotEspPower` (mandatory) | — |
 | `IotNetwork` | `IotWifiNetwork` | Ethernet/LTE would slot in here |
-| `IotClock` | `IotSystemClock` — **never synchronizes** | `IotNtpClock` (opt-in; https needs it) |
+| `IotClock` | `IotSystemClock` — **never synchronizes** | `IotNtpClock` (opt-in; TLS does not need it — mbedTLS is built without `MBEDTLS_HAVE_TIME_DATE`) |
 | `IotBattery` | none (`nullptr`) | `IotAdcBattery`, `IotCallbackBattery` |
 
 An absent optional port is not an error: each port documents how the library
