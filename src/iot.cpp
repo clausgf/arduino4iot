@@ -195,7 +195,7 @@ void Iot::_initSubsystems()
         if (batteryVoltage_mV >= 0 && batteryVoltage_mV < _batteryMin_mV.get())
         {
             log_e("Battery voltage too low: %d mV < %d mV", batteryVoltage_mV, _batteryMin_mV.get());
-            shutdown(true);
+            _shutdown(/*isFailure=*/true);
         }
     }
 
@@ -701,33 +701,46 @@ void Iot::deepSleep()
 }
 
 // IotLifecycle records the cycle in the RTC state, runs the exit hooks (log
-// flush, connection close, LED off) and dispatches to the IotPower adapter.
-// `panic` true leaves the escalating backoff state untouched, false clears it.
+// flush, connection close) and dispatches to the IotPower adapter. The public
+// methods end a cycle cleanly and clear the escalating backoff; a failure exit
+// (isFailure) leaves it untouched and is reached only through panic() and the
+// undervoltage check.
 
-void Iot::deepSleep(int sleep_duration_s, bool panic)
+void Iot::deepSleep(int sleep_duration_s)
+{
+    _deepSleep(sleep_duration_s, /*isFailure=*/false);
+}
+
+void Iot::restart()
+{
+    _restart(/*isFailure=*/false);
+}
+
+void Iot::shutdown()
+{
+    _shutdown(/*isFailure=*/false);
+}
+
+void Iot::_deepSleep(int sleep_duration_s, bool isFailure)
 {
     _registerExitHooks();
     log_w("Active for %lu ms, going to deep sleep for %d s",
         (unsigned long)millis(), sleep_duration_s);
-    _lifecycle.deepSleep(sleep_duration_s > 0 ? (uint32_t)sleep_duration_s : 0, panic);
+    _lifecycle.deepSleep(sleep_duration_s > 0 ? (uint32_t)sleep_duration_s : 0, isFailure);
 }
 
-// *****************************************************************************
-
-void Iot::restart(bool panic)
+void Iot::_restart(bool isFailure)
 {
     _registerExitHooks();
     log_w("Active for %lu ms, restarting", (unsigned long)millis());
-    _lifecycle.restart(panic);
+    _lifecycle.restart(isFailure);
 }
 
-// *****************************************************************************
-
-void Iot::shutdown(bool panic)
+void Iot::_shutdown(bool isFailure)
 {
     _registerExitHooks();
     log_w("Active for %lu ms, shutting down", (unsigned long)millis());
-    _lifecycle.shutdown(panic);
+    _lifecycle.shutdown(isFailure);
 }
 
 // *****************************************************************************

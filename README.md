@@ -246,6 +246,10 @@ the linker drops every one an application does not reference.
   a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
   ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
   See [`examples/ap_provisioning/`](examples/ap_provisioning/).
+- **`deepSleep()`, `restart()` and `shutdown()` lose their `bool panic`
+  parameter.** They end a cycle cleanly and clear the escalating backoff; a
+  failure exit goes through `iot.panic()`. `iot.deepSleep(s, false)` becomes
+  `iot.deepSleep(s)`; a call passing `true` becomes `iot.panic("...")`.
 - **`setDeepSleepHandler()`/`setRestartHandler()`/`setShutdownHandler()` are
   replaced** by `iot.setPower(IotPower&)` (replace the mechanism) and
   `iot.addExitHook()` (run something at every exit, including the backoff path).
