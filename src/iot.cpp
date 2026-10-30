@@ -413,9 +413,8 @@ IotResult Iot::postTelemetry(const std::string& kind, const std::string& jsonDat
     {
         path.replace(kindPos, 6, kind);
     }
-    // other variables are replaced in apiPost()
-    std::string oResult;
-    return api.apiPost(oResult, path, jsonData);
+    // other variables are replaced by the api
+    return api.post(path, jsonData).result;
 }
 
 // *****************************************************************************

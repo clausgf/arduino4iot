@@ -8,7 +8,7 @@
 // *****************************************************************************
 // Typed result of an API operation.
 //
-// The api* methods return a raw status code where negative values are ESP
+// A transport returns a raw status code where negative values are ESP
 // transport errors (e.g. connection refused, timeout) and non-negative values
 // are HTTP status codes. IotResult disentangles these three states so that
 // application code can write `if (iot.postTelemetry(...))` and still inspect
@@ -38,12 +38,12 @@ struct IotResult
     IotResult(): kind(TransportError), httpStatus(0), transportError(0) {}
 
     /**
-     * Classify a raw status code as returned by the api* methods:
+     * Classify a raw status code as returned by an IotHttp transport:
      * a value < 0 is an ESP transport error, 2xx is success, any other
      * non-negative value is an HTTP error.
      *
-     * The constructor is intentionally non-explicit so that a function
-     * returning IotResult can `return api.apiPost(...);` directly.
+     * Non-explicit, so a raw status and a synthetic STATUS_* code can be
+     * returned as an IotResult directly.
      */
     IotResult(int status);
 

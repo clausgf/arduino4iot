@@ -126,12 +126,13 @@ registration during static init touches no constructed object.
 ### Two value types (Arduino-free, unit-tested on host — see `test/`)
 
 - `IotResult` (`iot_result.h`): the return type of high-level operations. Separates
-  **Ok (2xx) / HttpError / TransportError**, is implicitly constructible from an
-  `int` (so low-level `api.*` calls returning raw status can be viewed as one), and
-  carries synthetic statuses ≥ 600 (`STATUS_NO_PROVISIONING_TOKEN`,
-  `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`). **Design rule:** high-level
-  ops return `IotResult`; low-level `apiGet/apiPost/apiPut/apiHead/apiRequest` stay
-  raw `int`. For cache-aware calls (`updateConfig`, `iotUpdateFirmware`,
+  **Ok (2xx) / HttpError / TransportError**, is implicitly constructible from a
+  raw transport `int`, and carries synthetic statuses ≥ 600
+  (`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`,
+  `STATUS_UPDATE_FAILED`). **Design rule:** every operation reports an
+  `IotResult`; the request methods `api.send/get/head/post/put` return it inside an
+  `IotApiResponse` (result, body, collected headers) and take an
+  `IotApiRequest`/`IotApiOptions` with named fields — no raw `int`, no out-params. For cache-aware calls (`updateConfig`, `iotUpdateFirmware`,
   `iotGetCached`) **HTTP 304 is success** — test with `isNotModified()` /
   `isOkOrNotModified()`, not plain `operator bool` (which is strict-2xx).
 - `IotTelemetry` (`iot_telemetry.h`): builder guaranteeing the server's required

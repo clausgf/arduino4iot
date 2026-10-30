@@ -174,8 +174,8 @@ int IotLogger::postLog(const char * body, const char * apiPath)
     {
         size_t chunkLen = iot_text::nextLogChunkLength(body, bodyLen, offset, IOT_MAX_TELEMETRY_SIZE);
         std::string chunk(body + offset, chunkLen);
-        std::string oResult;
-        httpStatusCode = api.apiPost(oResult, apiPath, chunk, {{"Content-Type", "text/plain"}});
+        IotResult result = api.post(apiPath, chunk, { .headers = { { "Content-Type", "text/plain" } } }).result;
+        httpStatusCode = result.isTransportError() ? result.transportError : result.httpStatus;
         offset += chunkLen;
     } while (offset < bodyLen);
 

@@ -251,7 +251,7 @@ public:
      * Bodies larger than IOT_MAX_TELEMETRY_SIZE trigger a warning as the
      * server rejects them by default (HTTP 413).
      *
-     * This method is similar to apiGet().
+     * Goes through api.post(), so the device token and the 401 retry apply.
      */
     IotResult postTelemetry(const std::string& kind, const std::string& jsonData, const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
 
@@ -270,7 +270,7 @@ public:
      * boot count, active duration, sleep durations, time and firmware
      * information) to the API.
      *
-     * This method is similar to apiGet().
+     * Goes through api.post(), so the device token and the 401 retry apply.
      */
     IotResult postSystemTelemetry(const std::string& kind = "system", const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
 

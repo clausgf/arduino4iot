@@ -13,25 +13,23 @@
 
 // *****************************************************************************
 
-IotResult iotForward(std::string& oResponse, const std::string& forwardingName,
-    const std::string& remainingPath, const std::string& body,
-    const std::map<std::string, std::string>& headers)
+IotApiResponse iotForward(const std::string& forwardingName, const std::string& remainingPath,
+    const IotApiOptions& options)
 {
     std::string apiPath = std::string(iot_paths::FORWARD) + forwardingName;
     if (!remainingPath.empty())
     {
         apiPath += (remainingPath[0] == '/') ? remainingPath : "/" + remainingPath;
     }
-    return api.apiGet(oResponse, apiPath, body, headers);
+    return api.get(apiPath, options);
 }
 
 // *****************************************************************************
 
 IotResult iotUploadFile(const std::string& filename, const std::string& content, const std::string& contentType)
 {
-    std::string response;
-    return api.apiPut(response, std::string(iot_paths::FILE_DIR) + filename, content,
-        {{"Content-Type", contentType}});
+    return api.put(std::string(iot_paths::FILE_DIR) + filename, content,
+        { .headers = { { "Content-Type", contentType } } }).result;
 }
 
 // *****************************************************************************
@@ -89,15 +87,13 @@ IotResult iotUpdateFirmware(const std::string& apiPath,
     };
     for (auto const& kv : header) { conditional[kv.first] = kv.second; }
 
-    // HEAD first. apiRequest() may replace the token on a 401 retry, so the OTA
+    // HEAD first. send() may replace the token on a 401 retry, so the OTA
     // headers are built after this call.
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    const int httpStatusCode = api.apiRequest(response, responseHeader, "HEAD", apiPath, "", conditional);
-    if (httpStatusCode != 200)
+    const IotResult check = api.head(apiPath, { .headers = conditional }).result;
+    if (check.httpStatus != 200)
     {
-        log_i("No firmware update available status=%d", httpStatusCode);
-        return IotResult(httpStatusCode);
+        log_i("No firmware update available status=%d", check.httpStatus);
+        return check;
     }
 
     // an OTA download wants the cache validators and the token, but none of the
