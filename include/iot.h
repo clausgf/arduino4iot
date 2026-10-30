@@ -506,35 +506,20 @@ public:
     void deepSleep();
 
     /**
-     * Put the system into deep sleep mode for the given duration.
-     * Call this function for an orderly shutdown or a panic() situation.
-     * This function keeps track of getActiveDuration_ms() and
-     * getLastSleepDuration_s(). It internally calls the deep sleep
-     * handler registered with setDeepSleepHandler().
+     * Put the system into deep sleep mode for the given duration, ending the
+     * cycle cleanly: the escalating backoff is cleared. A failure goes through
+     * panic() instead. Records getActiveDuration_ms() and
+     * getLastSleepDuration_s() and runs the exit hooks.
      * @param sleep_duration_s the sleep duration in seconds
-     * @param panic set this to true if the sleep is due to a panic; it defaults to false for a regular sleep
      */
-    void deepSleep(int sleep_duration_s, bool panic = false);
+    void deepSleep(int sleep_duration_s);
 
-    /**
-     * Restart the system immediately.
-     * Call this function for an orderly shutdown or a panic() situation.
-     * This function keeps track of getActiveDuration_ms() and
-     * getLastSleepDuration_s(). It internally calls the restart
-     * handler registered with setRestartHandler().
-     * @param panic set this to true if the restart is due to a panic; it defaults to false for a regular restart
-     */
-    void restart(bool panic = false);
+    /// Restart the system, ending the cycle cleanly; @see deepSleep(int).
+    void restart();
 
-    /**
-     * Shutdown the system immediately.
-     * Call this function for an orderly shutdown or a panic() situation.
-     * This function keeps track of getActiveDuration_ms() and
-     * getLastSleepDuration_s(). It internally calls the shutdown
-     * handler registered with setShutdownHandler().
-     * @param panic set this to true if the shutdown is due to a panic; it defaults to false for a regular shutdown
-     */
-    void shutdown(bool panic = false);
+    /// Deep sleep without a wakeup timer - only a reset wakes the device.
+    /// Ends the cycle cleanly; @see deepSleep(int).
+    void shutdown();
 
 
     // **********************************************************************
@@ -578,6 +563,9 @@ private:
     /// Register the library's own exit hooks (log flush, connection close)
     /// exactly once; idempotent, so every exit path can call it.
     void _registerExitHooks();
+    void _deepSleep(int sleep_duration_s, bool isFailure);
+    void _restart(bool isFailure);
+    void _shutdown(bool isFailure);
 
     /// Start the wakeup cycle before any network exists: initialize NVS, count
     /// the boot, latch the reset reason, start the watchdog, and enter the
