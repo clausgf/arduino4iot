@@ -22,6 +22,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Telemetry:** post measurements built with the `IotTelemetry` builder, which guarantees the flat JSON format expected by the server.
 - **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit.
 - **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
+- **Conditional GET:** `iotGetCached()` fetches an application resource only if it changed, hands back the validators for the caller to commit once the resource was used, and reports the `Cache-Control` max-age.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
 - **File upload:** `iotUploadFile()` pushes files to the device-specific storage on the server.
 - **Forwarding:** `iotForward()` proxies requests to upstream services configured in the project settings.
@@ -88,7 +89,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 - **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_V": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
 - **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). On the device endpoints (telemetry, log, file, forward) the server normalizes *every* authentication failure to **HTTP 401** — devices are deliberately not told why auth failed — which triggers automatic re-provisioning and a single retry. The `/provision` endpoint itself still returns **HTTP 403** for configuration problems that re-provisioning cannot fix (project inactive, device inactive or not approved, HTTP API disabled for the project); this surfaces as a failed `api.updateProvisioningOk()`. Should a device endpoint ever return 403, the library treats it the same way — it keeps the token and does not retry — but current nice4iot emits 403 only from `/provision`.
-- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again.
+- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again. `iotGetCached()` (`iot_cache.h`) offers the same for an application's own resources and returns the `Cache-Control` max-age; see [Conditional GET](docs/concepts.md#conditional-get-for-application-resources).
 - **Connection reuse:** all HTTP(S) requests within a wakeup cycle share a single keep-alive TCP/TLS connection, so the (expensive) TLS handshake is paid only once per cycle. The connection is closed automatically before deep sleep, restart and shutdown (or manually via `api.closeConnection()`).
 - **TLS server authentication:** for an `https://` API URL you must choose how the server certificate is verified — pick exactly one:
   - `api.setCACert(caPem)` — pin your server's CA (recommended for a self-hosted nice4iot with a private/self-signed certificate);
@@ -232,6 +233,9 @@ the linker drops every one an application does not reference.
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **New: `iotGetCached()`** (`iot_cache.h`), a conditional GET for an
+  application's own resources, with `IotStoredValidators` to keep the
+  validators in an `IotStore`. `config.updateConfig()` is built on it.
 - **`config.begin()` takes the store.** The overload binding the default NVS
   namespace is gone, so the configuration service names no adapter;
   `iot.begin()` binds `config` to `iot-cfg` as before. A sketch calling

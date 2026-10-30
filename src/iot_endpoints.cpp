@@ -8,6 +8,7 @@
 #include "Arduino.h"
 
 #include "iot_api.h"
+#include "iot_cache.h"
 #include "iot_ota_internal.h"
 
 // *****************************************************************************
@@ -80,9 +81,11 @@ std::string iotFirmwareHttpDate()
 IotResult iotUpdateFirmware(const std::string& apiPath,
     const std::map<std::string, std::string>& header)
 {
+    IotStoredValidators cache(api.store(), iot_nvs_keys::FIRMWARE_ETAG, iot_nvs_keys::FIRMWARE_DATE);
+    const IotCacheValidators current = cache.load();
     std::map<std::string, std::string> conditional = {
-        { "If-None-Match", iotFirmwareHttpEtag() },
-        { "If-Modified-Since", iotFirmwareHttpDate() },
+        { "If-None-Match", current.etag },
+        { "If-Modified-Since", current.lastModified },
     };
     for (auto const& kv : header) { conditional[kv.first] = kv.second; }
 
@@ -119,8 +122,7 @@ IotResult iotUpdateFirmware(const std::string& apiPath,
         return IotResult(IotResult::STATUS_UPDATE_FAILED);
     }
 
-    api.store().putString(iot_nvs_keys::FIRMWARE_ETAG, newEtag);
-    api.store().putString(iot_nvs_keys::FIRMWARE_DATE, newDate);
+    cache.commit({ newEtag, newDate });
     log_i("Firmware update successful");
     return IotResult(200);
 }

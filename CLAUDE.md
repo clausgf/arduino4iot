@@ -16,7 +16,8 @@ provisioning + config/OTA check + telemetry + log flush) in well under a second.
 pio test -e native                 # run all native (host) unit tests
 pio test -e native -f test_ports    # run one suite: test_result | test_telemetry |
                                     # test_text | test_ap_text | test_ports |
-                                    # test_lifecycle | test_token | test_config
+                                    # test_lifecycle | test_token | test_config |
+                                    # test_api | test_cache
 ```
 
 - **ESP32 builds are never done from this repo directly.** There is no ESP32 env in
@@ -47,12 +48,12 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Layer | Files | Arduino? |
 |---|---|---|
 | Ports (interfaces + contracts) | `iot_ports.h` | no |
-| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_endpoints.h` `iot_logger.h` | no |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_endpoints.h` `iot_logger.h` | no |
 | ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
 | Facade | `iot.{h,cpp}` | yes |
 
 The services are Arduino-free including their implementations (`iot_api`,
-`iot_config`, `iot_token`, `iot_lifecycle`, `iot_ports`, `iot_result`,
+`iot_cache`, `iot_config`, `iot_token`, `iot_lifecycle`, `iot_ports`, `iot_result`,
 `iot_seed`), which is why `platformio.ini` compiles `src/` into the native test
 build (`test_build_src = yes`). Its `build_src_filter` includes everything and
 **excludes** the Arduino sources, so a new source file is tested by default and
@@ -130,8 +131,8 @@ registration during static init touches no constructed object.
   carries synthetic statuses ≥ 600 (`STATUS_NO_PROVISIONING_TOKEN`,
   `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`). **Design rule:** high-level
   ops return `IotResult`; low-level `apiGet/apiPost/apiPut/apiHead/apiRequest` stay
-  raw `int`. For cache-aware calls (`updateConfig`, `updateFirmware`,
-  `apiCheckForUpdate`) **HTTP 304 is success** — test with `isNotModified()` /
+  raw `int`. For cache-aware calls (`updateConfig`, `iotUpdateFirmware`,
+  `iotGetCached`) **HTTP 304 is success** — test with `isNotModified()` /
   `isOkOrNotModified()`, not plain `operator bool` (which is strict-2xx).
 - `IotTelemetry` (`iot_telemetry.h`): builder guaranteeing the server's required
   flat-JSON-of-numbers shape.

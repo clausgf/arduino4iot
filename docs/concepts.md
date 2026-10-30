@@ -487,7 +487,7 @@ time.
 
 ## Firmware updates (OTA)
 
-`api.updateFirmware()` does a conditional check (ETag/Last-Modified) and streams
+`iotUpdateFirmware()` (`iot_endpoints.h`) does a conditional check (ETag/Last-Modified) and streams
 a new image only when one is available. The same TLS trust configuration used
 for API calls applies to the OTA download.
 
@@ -498,6 +498,36 @@ distinct firmware images per hardware variant from the same project/device
 namespace. If `IOT_BOARD_ID` is undefined, `{board}` substitutes to an empty
 string. `{board}` is available in **any** apiPath template, not just for
 firmware (see `IotApi::getApiUrlForPath()`).
+
+## Conditional GET for application resources
+
+`iotGetCached()` (`iot_cache.h`) is the conditional GET that `config.json` uses,
+open to any resource an application fetches — an image, a schedule, a lookup
+table:
+
+```cpp
+static IotStoredValidators imageCache(api.store(), "imgEtag", "imgDate");
+
+IotCachedResponse r = iotGetCached("forward/{project}/{device}/img/latest.png",
+    imageCache.load(), { { "Accept", "image/png" } });
+if (r.result.isOk() && render(r.body)) { imageCache.commit(r.validators); }
+else if (r.result.isNotModified()) { /* the shown copy is current */ }
+```
+
+- **The caller commits the validators.** `iotGetCached()` takes the current
+  `ETag`/`Last-Modified` and hands back the new ones; it stores nothing. Commit
+  them only once the body was used: a resource that failed to apply is then
+  fetched again next cycle instead of answered with 304 forever.
+- **Where they live is the caller's choice.** `IotStoredValidators` keeps them
+  in an `IotStore` (survives a power loss); RTC RAM is enough for a resource
+  that is cheap to fetch once after power-on; a plain struct passed in works
+  for both.
+- **`maxAge_s`** is the response's `Cache-Control: max-age`, or -1 if absent or
+  if `no-cache`/`no-store` forbid reusing it unvalidated. nice4iot's file
+  endpoint always sends `no-cache`; a forwarded upstream may send a max-age, e.g.
+  to derive the next sleep duration from it.
+- The body is read into RAM as a whole. It goes through `api`, so the device
+  token, the 401 re-provisioning and the keep-alive connection apply as usual.
 
 ## TLS server trust
 
