@@ -23,13 +23,39 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit. Lines that cannot be sent — offline, or after `iot.radioOff()` — are kept in RTC RAM and sent with a later cycle.
 - **Radio off:** `iot.radioOff()` flushes the log, closes the connection and powers the radio down for a long stretch without network, such as an e-paper refresh.
 - **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
-- **Conditional GET:** `iotGetCached()` fetches an application resource only if it changed, hands back the validators for the caller to commit once the resource was used, and reports the `Cache-Control` max-age.
+- **Conditional GET:** `api.getCached()` fetches an application resource only if it changed, hands back the validators for the caller to commit once the resource was used, and reports the `Cache-Control` max-age.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
-- **File upload:** `iotUploadFile()` pushes files to the device-specific storage on the server.
-- **Forwarding:** `iotForward()` proxies requests to upstream services configured in the project settings.
+- **File upload:** `iot.files.upload()` pushes files to the device-specific storage on the server.
+- **Forwarding:** `iot.forward.get()` proxies requests to upstream services configured in the project settings.
 - **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.wifi().setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.wifi().setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.wifi().setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
 - **System management:** deep sleep cycle bookkeeping, watchdog supervision, battery monitoring with undervoltage shutdown, escalating panic/backoff strategy.
 - **Application state:** `IotRtcSlot<T>` keeps a struct in RTC RAM across deep sleep and resets it when it did not survive; an own `IotNvsStore` namespace holds what must survive a power loss.
+
+## API overview
+
+Five global objects, each with one job. Everything a sketch calls starts with
+one of them:
+
+| Task | Call |
+|---|---|
+| Wakeup cycle | `iot.begin()`, `iot.deepSleep()`, `iot.radioOff()`, `iot.panic()`, `iot.restart()`, `iot.shutdown()` |
+| Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()` |
+| Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
+| Device info | `iot.getDeviceId()`, `iot.getBoardId()`, `iot.getFirmwareVersion()`, `iot.isTimePlausible()`, `iot.getBatteryVoltage_mV()` |
+| Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
+| Files | `iot.files.upload()`, `iot.files.getCached()` |
+| Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
+| Firmware update | `iot.ota.update()`, `iot.ota.etag()` |
+| HTTP to the server | `api.get()`, `api.post()`, `api.put()`, `api.head()`, `api.send()`, `api.getCached()` |
+| Provisioning | `api.updateProvisioning()`, `api.updateProvisioningOk()` |
+| Configuration | `config.updateConfig()`, `IotConfigValue<T>`, `config.getInt()`/`getString()`/... |
+| Logging | `logger.info()`/`warn()`/`error()`, `logger.flush()` |
+| Application state | `IotRtcSlot<T>` (RTC RAM), `IotNvsStore` (NVS) |
+
+`iot.telemetry`, `iot.files`, `iot.forward` and `iot.ota` are the nice4iot
+endpoints; a method an application never calls is not linked, so grouping them
+under `iot` costs nothing. `api` is the plain HTTP layer underneath, for paths
+the library has no group for.
 
 ## Getting started
 
@@ -54,9 +80,9 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
        .provisioningToken = IOT_PROVISIONING_TOKEN,
        .seedGeneration    = IOT_SEED_GENERATION,
    });
-   if (!iot.begin())                     // WiFi from NVS, subsystems, NTP
+   if (!iot.begin())                     // WiFi from NVS, subsystems, clock
    {
-       iot.panic("*** PANIC *** WiFi connection or NTP sync failed");
+       iot.panic("*** PANIC *** network connection failed");
    }
    if (!api.updateProvisioningOk())
    {
@@ -64,13 +90,13 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
    }
    config.updateConfig();
    iot.resetWatchdog();
-   api.updateFirmware();
-   iot.postSystemTelemetry();
+   iot.ota.update();
+   iot.telemetry.postSystem();
 
    // measure something
    IotTelemetry telemetry;
    telemetry.add("temperature", 22.5);
-   iot.postTelemetry("sensors", telemetry);
+   iot.telemetry.post("sensors", telemetry);
 
    iot.deepSleep();
    ```
@@ -91,7 +117,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 - **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_V": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
 - **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). On the device endpoints (telemetry, log, file, forward) the server normalizes *every* authentication failure to **HTTP 401** — devices are deliberately not told why auth failed — which triggers automatic re-provisioning and a single retry. The `/provision` endpoint itself still returns **HTTP 403** for configuration problems that re-provisioning cannot fix (project inactive, device inactive or not approved, HTTP API disabled for the project); this surfaces as a failed `api.updateProvisioningOk()`. Should a device endpoint ever return 403, the library treats it the same way — it keeps the token and does not retry — but current nice4iot emits 403 only from `/provision`.
-- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again. `iotGetCached()` (`iot_cache.h`) offers the same for an application's own resources and returns the `Cache-Control` max-age; see [Conditional GET](docs/concepts.md#conditional-get-for-application-resources).
+- **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again. `api.getCached()` offers the same for an application's own resources and returns the `Cache-Control` max-age; see [Conditional GET](docs/concepts.md#conditional-get-for-application-resources).
 - **Connection reuse:** all HTTP(S) requests within a wakeup cycle share a single keep-alive TCP/TLS connection, so the (expensive) TLS handshake is paid only once per cycle. The connection is closed automatically before deep sleep, restart and shutdown (or manually via `api.closeConnection()`).
 - **TLS server authentication:** for an `https://` API URL you must choose how the server certificate is verified — pick exactly one:
   - `api.setCACert(caPem)` — pin your server's CA (recommended for a self-hosted nice4iot with a private/self-signed certificate);
@@ -245,7 +271,7 @@ the linker drops every one an application does not reference.
   validated against power-on garbage and layout changes, and a documented
   pattern for application NVS through an own `IotNvsStore` namespace. See
   [Application data](docs/concepts.md#application-data).
-- **New: `iotGetCached()`** (`iot_cache.h`), a conditional GET for an
+- **New: `api.getCached()`** (types in `iot_cache.h`), a conditional GET for an
   application's own resources, with `IotStoredValidators` to keep the
   validators in an `IotStore`. `config.updateConfig()` is built on it.
 - **`config.begin()` takes the store.** The overload binding the default NVS
@@ -258,6 +284,13 @@ the linker drops every one an application does not reference.
   a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
   ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
   See [`examples/ap_provisioning/`](examples/ap_provisioning/).
+- **Endpoint functions move into groups on `iot`** (see [API overview](#api-overview)):
+  `iot.postTelemetry()` → `iot.telemetry.post()`, `iot.postSystemTelemetry()` →
+  `iot.telemetry.postSystem()`, `iotUploadFile()` → `iot.files.upload()`,
+  `iotForward()` → `iot.forward.get()`, `iotUpdateFirmware()` →
+  `iot.ota.update()`, `iotFirmwareHttpEtag()/Date()` →
+  `iot.ota.etag()/lastModified()`, `iotGetCached()` → `api.getCached()`. Including
+  `iot_endpoints.h` is no longer necessary; `iot.h` brings it.
 - **`api.apiGet/apiPost/apiPut/apiHead/apiRequest()` → `api.get/post/put/head/send()`.**
   They return an `IotApiResponse` (`.result`, `.body`, `.header(name)`) instead
   of a raw `int` with out-parameters, and take the optional parts as named

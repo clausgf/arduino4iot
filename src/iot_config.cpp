@@ -5,7 +5,7 @@
 
 #include "iot_config.h"
 
-#include "iot_cache.h"
+#include "iot_api.h"
 #include "iot_log.h"
 
 // *****************************************************************************
@@ -105,7 +105,7 @@ IotResult IotConfig::updateConfig()
     }
 
     IotStoredValidators cache(*_store, KEY_ETAG, KEY_DATE);
-    IotCachedResponse response = iotGetCached(_apiPath, cache.load());
+    IotCachedResponse response = api.getCached(_apiPath, cache.load());
     if (response.result.isNotModified())
     {
         log_i("Configuration data not modified");

@@ -1,13 +1,12 @@
 /**
  * arduino4iot example: complete wakeup cycle for a battery powered device.
  *
- * Connect WiFi, sync NTP, provision, update config and firmware,
+ * Connect WiFi, provision, update config and firmware,
  * post telemetry and go to deep sleep.
  */
 
 #include <Arduino.h>
 #include <iot.h>
-#include <iot_endpoints.h>   // iotUpdateFirmware()
 
 // Deployment-specific values come from build-time -D defines (see
 // secrets-example.ini and examples/README.md). A secretless build leaves these
@@ -115,19 +114,19 @@ void setup()
     // failure (server unreachable, rejected) is easy to single out.
     config.updateConfig();
     iot.resetWatchdog();
-    IotResult fw = iotUpdateFirmware();
+    IotResult fw = iot.ota.update();
     if (!fw.isOkOrNotModified())
     {
         logger.warn("app", "firmware update failed (http=%d, transport=%d)",
             fw.httpStatus, fw.transportError);
     }
-    iot.postSystemTelemetry();
+    iot.telemetry.postSystem();
 
     // measure something and post it as telemetry
     IotTelemetry telemetry;
     telemetry.add("temperature", 22.5);
     telemetry.add("humidity", 40);
-    IotResult result = iot.postTelemetry("sensors", telemetry);
+    IotResult result = iot.telemetry.post("sensors", telemetry);
     if (!result)
     {
         logger.warn("app", "telemetry post failed (http=%d, transport=%d)",

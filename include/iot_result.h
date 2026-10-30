@@ -11,7 +11,7 @@
 // A transport returns a raw status code where negative values are ESP
 // transport errors (e.g. connection refused, timeout) and non-negative values
 // are HTTP status codes. IotResult disentangles these three states so that
-// application code can write `if (iot.postTelemetry(...))` and still inspect
+// application code can write `if (iot.telemetry.post(...))` and still inspect
 // the underlying status on failure.
 //
 // This type is intentionally free of Arduino dependencies so it can be

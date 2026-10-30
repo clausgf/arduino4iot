@@ -14,7 +14,6 @@
 #include <Arduino.h>
 #include <iot.h>
 #include <iot_ap.h>          // pulls in DNSServer + WebServer
-#include <iot_endpoints.h>   // iotUploadFile()
 #include <iot_esp_ports.h>   // IotNtpClock, IotAdcBattery, IotNvsStore
 #include <iot_rtc_slot.h>    // IotRtcSlot
 
@@ -101,7 +100,7 @@ void setup()
     }
 
     config.updateConfig();
-    iot.postSystemTelemetry();
+    iot.telemetry.postSystem();
 
     // a lost RTC slot means a power-on (or a new firmware layout): count it
     appStore.begin();
@@ -115,7 +114,7 @@ void setup()
     if (!iot.isTimePlausible() && !appRtc->clockReported)
     {
         appRtc->clockReported =
-            (bool)iotUploadFile("clock.txt", "the clock never synchronized", "text/plain");
+            (bool)iot.files.upload("clock.txt", "the clock never synchronized", "text/plain");
     }
 
     // The network part is done: radio off for the rest of the cycle, e.g.

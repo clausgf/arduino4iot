@@ -5,6 +5,8 @@
 
 #include "iot_cache.h"
 
+#include "iot_api.h"
+
 #include <cctype>
 #include <cstdlib>
 
@@ -64,15 +66,15 @@ int32_t iotParseMaxAge(const std::string& cacheControl)
 
 // *****************************************************************************
 
-IotCachedResponse iotGetCached(const std::string& apiPath, const IotCacheValidators& current,
-    const std::map<std::string, std::string>& header, IotApi& via)
+IotCachedResponse IotApi::getCached(const std::string& apiPath, const IotCacheValidators& current,
+    const IotApiOptions& options)
 {
     std::map<std::string, std::string> request;
     if (!current.etag.empty()) { request["If-None-Match"] = current.etag; }
     if (!current.lastModified.empty()) { request["If-Modified-Since"] = current.lastModified; }
-    for (auto const& kv : header) { request[kv.first] = kv.second; }
+    for (auto const& kv : options.headers) { request[kv.first] = kv.second; }
 
-    IotApiResponse response = via.get(apiPath,
+    IotApiResponse response = get(apiPath,
         { .headers = request, .collectHeaders = { "ETag", "Last-Modified", "Cache-Control" } });
 
     IotCachedResponse out;

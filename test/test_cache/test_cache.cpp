@@ -42,7 +42,7 @@ struct Fixture
     IotCachedResponse get(const IotCacheValidators& current,
         const std::map<std::string, std::string>& header = {})
     {
-        return iotGetCached("forward/{project}/{device}/img/latest.png", current, header, api);
+        return api.getCached("forward/{project}/{device}/img/latest.png", current, { .headers = header });
     }
 };
 
