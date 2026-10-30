@@ -51,10 +51,13 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
 | Facade | `iot.{h,cpp}` | yes |
 
-`iot_api.{h,cpp}` is Arduino-free including its implementation, which is why
-`platformio.ini` compiles it into the native test build (`test_build_src = yes`
-plus a `build_src_filter`). Add a service source there when it becomes
-Arduino-free, and use `iot_log.h` rather than Arduino's logging macros.
+The services are Arduino-free including their implementations (`iot_api`,
+`iot_config`, `iot_token`, `iot_lifecycle`, `iot_ports`, `iot_result`,
+`iot_seed`), which is why `platformio.ini` compiles `src/` into the native test
+build (`test_build_src = yes`). Its `build_src_filter` includes everything and
+**excludes** the Arduino sources, so a new source file is tested by default and
+one that names Arduino breaks the native build until it is made Arduino-free or
+excluded there. Use `iot_log.h` rather than Arduino's logging macros.
 
 **Rules that keep this true — check them when adding code:**
 

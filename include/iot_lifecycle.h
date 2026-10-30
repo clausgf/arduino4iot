@@ -44,25 +44,7 @@ struct IotBackoffPolicy
      * @param current_s the running backoff duration, <= 0 meaning "not in backoff"
      * @return the duration to sleep now, always >= 1 s and <= maxDuration_s
      */
-    int32_t next(int32_t current_s) const
-    {
-        // int64 intermediate: current_s * factor overflows int32 within a few
-        // escalations of a large initial duration
-        int64_t result = (current_s <= 0)
-            ? initialDuration_s
-            : (int64_t)current_s * (factor > 1 ? factor : 1);
-
-        int64_t cap = maxDuration_s > 0 ? maxDuration_s : 1;
-        if (result > cap)
-        {
-            result = cap;
-        }
-        if (result < 1)
-        {
-            result = 1;  // never a zero-length sleep: that would be a busy loop
-        }
-        return (int32_t)result;
-    }
+    int32_t next(int32_t current_s) const;
 };
 
 
@@ -113,18 +95,7 @@ public:
      * Deliberately does *not* act on an abnormal reset - the caller decides,
      * once its logging works.
      */
-    void begin()
-    {
-        if (!_rtc.isValid())
-        {
-            // power-on reset, or a firmware whose RTC layout changed
-            _rtc.reset();
-        }
-        _resetReason = _power->resetReason();
-        _wakeupCause = _power->wakeupCause();
-        _rtc.bootCount++;
-        _begun = true;
-    }
+    void begin();
 
     bool isBegun() const { return _begun; }
 
@@ -179,41 +150,12 @@ public:
      *
      * @return the duration slept for, for the caller's log.
      */
-    uint32_t enterBackoff()
-    {
-        int32_t duration_s = _backoff.next(_rtc.panicSleepDuration_s);
-        _rtc.panicSleepDuration_s = duration_s;
-        _exit(Exit::DeepSleep, (uint32_t)duration_s, true);
-        return (uint32_t)duration_s;
-    }
+    uint32_t enterBackoff();
 
 private:
     enum class Exit { DeepSleep, Restart, Shutdown };
 
-    void _exit(Exit exit, uint32_t duration_s, bool isFailure)
-    {
-        if (!isFailure)
-        {
-            _rtc.panicSleepDuration_s = -1;  // the cycle ended cleanly
-        }
-        _rtc.lastSleepDuration_s = (exit == Exit::DeepSleep) ? (int32_t)duration_s : 0;
-        _rtc.activeDuration_ms = (int64_t)_power->uptime_ms();
-
-        for (auto& hook : _exitHooks)
-        {
-            if (hook)
-            {
-                hook();
-            }
-        }
-
-        switch (exit)
-        {
-            case Exit::DeepSleep: _power->deepSleep(duration_s); break;
-            case Exit::Restart:   _power->restart(); break;
-            case Exit::Shutdown:  _power->shutdown(); break;
-        }
-    }
+    void _exit(Exit exit, uint32_t duration_s, bool isFailure);
 
     IotPower* _power;
     IotRtcState& _rtc;

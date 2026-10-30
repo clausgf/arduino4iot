@@ -59,8 +59,7 @@ void setup()
     iot.setNoCredentialsHandler([] { apProvisioning.run(); });
 
     // A real clock. Needed for an https:// endpoint, whose certificate validity
-    // is checked against it. The servers and the resync interval are
-    // server-configurable (ntp_server1..3, ntp_resync_s).
+    // is checked against it.
     static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
     iot.setClock(ntpClock);
 
@@ -71,9 +70,13 @@ void setup()
     iot.setBattery(battery);
     iot.setBatteryMin_mV(3300);
 
+    // Reuse the DHCP lease from RTC RAM on the next wakeups, renewing it via
+    // DHCP every 20th connect. Tunes the built-in WiFi station.
+    iot.wifi().setDhcpCache(true);
+
     if (!iot.begin())
     {
-        iot.panic("*** PANIC *** WiFi connection or NTP sync failed");
+        iot.panic("*** PANIC *** network connection failed");
     }
 
     if (!api.updateProvisioningOk())

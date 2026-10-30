@@ -68,19 +68,19 @@ void setup()
     //   iot.setNoCredentialsHandler([] { apProvisioning.run(); });
     // See examples/ap_provisioning/main.cpp.
 
-    // shorten the per-wakeup radio-on time (optional, falls back automatically).
-    // A static IP skips DHCP - pass DNS too if the API URL uses a hostname
-    // instead of an IP literal:
-    //   iot.setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
-    //                   IPAddress(255,255,255,0));
+    // shorten the per-wakeup radio-on time (optional, falls back automatically,
+    // needs #include <iot_esp_ports.h>). A static IP skips DHCP - pass DNS too
+    // if the API URL uses a hostname instead of an IP literal:
+    //   iot.wifi().setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
+    //                          IPAddress(255,255,255,0));
     // Or cache the DHCP-assigned lease automatically (no per-device config) and
     // reuse it for the next wakeups, renewing via DHCP every 20th connect:
-    //   iot.setDhcpCache(true);
+    //   iot.wifi().setDhcpCache(true);
 
-    // connect WiFi (seeded credentials from NVS), init all subsystems, sync NTP
+    // connect WiFi (seeded credentials from NVS), init all subsystems, sync the clock
     if (!iot.begin())
     {
-        iot.panic("*** PANIC *** WiFi connection or NTP sync failed");
+        iot.panic("*** PANIC *** network connection failed");
     }
 
     // provision the device (re-provisions automatically before token expiry).

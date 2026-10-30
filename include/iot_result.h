@@ -45,24 +45,7 @@ struct IotResult
      * The constructor is intentionally non-explicit so that a function
      * returning IotResult can `return api.apiPost(...);` directly.
      */
-    IotResult(int status)
-    {
-        if (status < 0)
-        {
-            kind = TransportError;
-            httpStatus = 0;
-            transportError = status;
-        } else if (status >= 200 && status < 300)
-        {
-            kind = Ok;
-            httpStatus = status;
-            transportError = 0;
-        } else {
-            kind = HttpError;
-            httpStatus = status;
-            transportError = 0;
-        }
-    }
+    IotResult(int status);
 
     /// @return true if the operation succeeded (2xx). Explicit, so it only
     /// applies in a boolean context like `if (result)`, never as a silent

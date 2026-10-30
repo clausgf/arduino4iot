@@ -56,6 +56,15 @@ static IotClock& defaultClock()
     return clock;
 }
 
+/// The server config mirror. Bound here rather than inside IotConfig, so the
+/// configuration service itself names no adapter.
+static IotStore& configStore()
+{
+    static IotNvsStore store(iot_nvs_keys::CONFIG_NAMESPACE);
+    store.begin();
+    return store;
+}
+
 IotStore& iotBootstrapStore()
 {
     static IotNvsStore store(iot_nvs_keys::NAMESPACE);
@@ -170,7 +179,7 @@ void Iot::_initSubsystems()
     }
 
     // read configuration again to allow overwriting hardcoded parameters with WiFi config
-    config.begin();
+    config.begin(configStore());
     logger.begin((IotLogger::LogLevel)_logLevel.get());
 
     // the backoff parameters may have been changed by the server config
@@ -275,7 +284,7 @@ static void clearNvsNamespace(const char* ns)
 void Iot::factoryReset()
 {
     log_w("factoryReset: erasing all persisted NVS state");
-    for (const char* ns : { "iot", "iot-cfg" })
+    for (const char* ns : { iot_nvs_keys::NAMESPACE, iot_nvs_keys::CONFIG_NAMESPACE })
     {
         clearNvsNamespace(ns);
     }
@@ -284,7 +293,7 @@ void Iot::factoryReset()
 void Iot::clearProvisioning()
 {
     log_w("clearProvisioning: erasing seed/provisioning state ('iot' namespace only)");
-    clearNvsNamespace("iot");
+    clearNvsNamespace(iot_nvs_keys::NAMESPACE);
 }
 
 void Iot::end()
@@ -313,22 +322,9 @@ void Iot::setBattery(IotBattery& battery)
     _battery = &battery;
 }
 
-// The three tuning methods below configure the built-in WiFi adapter and have
-// no effect once setNetwork() replaced it.
-
-void Iot::setStaticIp(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
+IotWifiNetwork& Iot::wifi()
 {
-    defaultNetwork().setStaticIp(ip, gateway, subnet, dns1, dns2);
-}
-
-void Iot::setFastReconnect(bool enabled)
-{
-    defaultNetwork().setFastReconnect(enabled);
-}
-
-void Iot::setDhcpCache(bool enabled, uint32_t maxReuse)
-{
-    defaultNetwork().setDhcpCache(enabled, maxReuse);
+    return defaultNetwork();
 }
 
 bool Iot::connectWifi(const char *ssid, const char *password, unsigned long timeout_ms)
@@ -615,7 +611,7 @@ void Iot::startWatchdog(int watchdogTimeout_s)
     // remembered, so a call before begin() chooses what begin() uses
     if (watchdogTimeout_s < MIN_WATCHDOG_TIMEOUT_S)
     {
-        log_e("watchdog_s=%d is below the %d s minimum, clamping",
+        log_e("startWatchdog(%d) is below the %d s minimum, clamping",
             watchdogTimeout_s, MIN_WATCHDOG_TIMEOUT_S);
         watchdogTimeout_s = MIN_WATCHDOG_TIMEOUT_S;
     }

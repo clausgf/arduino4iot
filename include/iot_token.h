@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <string>
 
-#include <ArduinoJson.h>
-
 #include "iot_ports.h"
 
 // *****************************************************************************
@@ -43,32 +41,7 @@ struct IotProvisioningResponse
  * @return true if it was valid JSON carrying both tokenType and accessToken.
  *         A 2xx that fails this becomes IotResult::STATUS_MALFORMED_RESPONSE.
  */
-inline bool iotParseProvisioningResponse(const char* body, IotProvisioningResponse& oResponse)
-{
-    oResponse = IotProvisioningResponse{};
-    if (body == nullptr || body[0] == '\0')
-    {
-        return false;
-    }
-
-    JsonDocument doc;
-    if (deserializeJson(doc, body))
-    {
-        return false;
-    }
-    if (!doc["tokenType"].is<const char*>() || !doc["accessToken"].is<const char*>())
-    {
-        return false;
-    }
-
-    oResponse.tokenType = doc["tokenType"].as<const char*>();
-    oResponse.accessToken = doc["accessToken"].as<const char*>();
-    if (doc["expiresIn"].is<int64_t>())
-    {
-        oResponse.expiresIn_s = doc["expiresIn"].as<int64_t>();
-    }
-    return oResponse.isValid();
-}
+bool iotParseProvisioningResponse(const char* body, IotProvisioningResponse& oResponse);
 
 
 // *****************************************************************************
@@ -94,13 +67,7 @@ public:
 
     /// Load the seeded provisioning token and the persisted device token.
     /// @p store must outlive this object.
-    void begin(IotStore& store)
-    {
-        _store = &store;
-        _provisioningToken = store.getString(KEY_PROVISIONING_TOKEN, "");
-        _deviceToken = store.getString(KEY_DEVICE_TOKEN, "");
-        _deviceTokenExpiresAt = store.getInt(KEY_DEVICE_TOKEN_EXPIRY, 0);
-    }
+    void begin(IotStore& store);
 
     void end() { _store = nullptr; }
 
@@ -131,35 +98,11 @@ public:
      * arithmetic would be meaningless. Either way an actually expired token
      * surfaces as an HTTP 401, which re-provisions.
      */
-    bool needsNewToken(int64_t now, bool isTimePlausible) const
-    {
-        if (_deviceToken.empty())
-        {
-            return true;
-        }
-        if (_deviceTokenExpiresAt <= 0 || !isTimePlausible)
-        {
-            return false;
-        }
-        return now + _expiryMargin_s >= _deviceTokenExpiresAt;
-    }
+    bool needsNewToken(int64_t now, bool isTimePlausible) const;
 
     /// Store a device token and its absolute expiry (0 = unknown), persisting
     /// both. Writes nothing when unchanged.
-    void setDeviceToken(const std::string& token, int64_t expiresAt)
-    {
-        if (_deviceToken == token && _deviceTokenExpiresAt == expiresAt)
-        {
-            return;
-        }
-        _deviceToken = token;
-        _deviceTokenExpiresAt = expiresAt;
-        if (_store != nullptr)
-        {
-            _store->putString(KEY_DEVICE_TOKEN, _deviceToken);
-            _store->putInt(KEY_DEVICE_TOKEN_EXPIRY, _deviceTokenExpiresAt);
-        }
-    }
+    void setDeviceToken(const std::string& token, int64_t expiresAt);
 
     void clearDeviceToken() { setDeviceToken("", 0); }
 
@@ -171,16 +114,7 @@ public:
      * @return the absolute expiry that was stored, 0 if unknown.
      */
     int64_t applyProvisioningResponse(const IotProvisioningResponse& response,
-        int64_t now, bool isTimePlausible)
-    {
-        int64_t expiresAt = 0;
-        if (response.expiresIn_s >= 0 && isTimePlausible)
-        {
-            expiresAt = now + response.expiresIn_s;
-        }
-        setDeviceToken(response.authorizationValue(), expiresAt);
-        return expiresAt;
-    }
+        int64_t now, bool isTimePlausible);
 
 private:
     IotStore* _store = nullptr;
