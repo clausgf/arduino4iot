@@ -4,7 +4,8 @@
  * The same wakeup cycle as examples/main.cpp, plus everything that is opt-in
  * because the core never names it and the linker would otherwise drop it: an
  * SNTP clock, a battery on an ADC pin, a SoftAP setup flow for a device with no
- * seeded credentials, and the file-upload endpoint.
+ * seeded credentials, the file-upload endpoint, and application state in RTC
+ * RAM and NVS.
  *
  * examples/main.cpp is the same sketch without any of it - compare the two
  * builds to see what each costs.
@@ -14,7 +15,8 @@
 #include <iot.h>
 #include <iot_ap.h>          // pulls in DNSServer + WebServer
 #include <iot_endpoints.h>   // iotUploadFile()
-#include <iot_esp_ports.h>   // IotNtpClock, IotAdcBattery
+#include <iot_esp_ports.h>   // IotNtpClock, IotAdcBattery, IotNvsStore
+#include <iot_rtc_slot.h>    // IotRtcSlot
 
 #ifndef IOT_WIFI_SSID
 #define IOT_WIFI_SSID ""
@@ -34,6 +36,19 @@
 #ifndef IOT_SEED_GENERATION
 #define IOT_SEED_GENERATION 0
 #endif
+
+// Application state that only has to survive deep sleep: RTC RAM, validated
+// so a power-on reset or an OTA update hands out a fresh value, not garbage.
+struct AppRtcState
+{
+    uint32_t cycles;
+    bool clockReported;
+};
+static RTC_NOINIT_ATTR IotRtcSlot<AppRtcState> appRtc;
+
+// Application state that must survive a power loss: its own NVS namespace,
+// which factoryReset() leaves alone.
+static IotNvsStore appStore("myapp");
 
 void setup()
 {
@@ -88,9 +103,19 @@ void setup()
     config.updateConfig();
     iot.postSystemTelemetry();
 
-    if (!iot.isTimePlausible())
+    // a lost RTC slot means a power-on (or a new firmware layout): count it
+    appStore.begin();
+    if (!appRtc.isValid())
     {
-        iotUploadFile("clock.txt", "the clock never synchronized", "text/plain");
+        appStore.putInt("powerOns", appStore.getInt("powerOns", 0) + 1);
+    }
+    appRtc->cycles++;
+
+    // report an unsynchronized clock once per power-on, not every wakeup
+    if (!iot.isTimePlausible() && !appRtc->clockReported)
+    {
+        appRtc->clockReported =
+            (bool)iotUploadFile("clock.txt", "the clock never synchronized", "text/plain");
     }
 
     iot.deepSleep();

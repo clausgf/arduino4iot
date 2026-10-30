@@ -490,6 +490,36 @@ Which tier a value uses is decided **once, where the value is declared** — the
 is no global runtime switch flipping the storage of every value at the same
 time.
 
+### Application data
+
+The same two tiers are open to the application, without touching the
+library's own state:
+
+- **NVS:** an own `IotNvsStore` namespace (at most 15 characters). It opens the
+  handle once, suppresses writes of unchanged values and reads absent keys
+  silently — the raw `Preferences` boilerplate goes away. `factoryReset()` and
+  `clearProvisioning()` clear only the library's namespaces.
+  ```cpp
+  static IotNvsStore appStore("myapp");
+  appStore.begin();
+  appStore.putString("panel", panelId);
+  ```
+- **RTC RAM:** `IotRtcSlot<T>` (`iot_rtc_slot.h`) wraps a trivially copyable
+  struct with a magic word and a layout tag, and hands out `T{}` whenever the
+  contents did not survive — a power-on reset, or an OTA update that left the
+  previous firmware's bytes at that address. `IotRtcState` itself is not
+  extensible; its layout belongs to the library.
+  ```cpp
+  struct AppRtcState { char etag[96]; uint32_t deferredCycles; };
+  static RTC_NOINIT_ATTR IotRtcSlot<AppRtcState> appRtc;
+
+  if (!appRtc.isValid()) { /* lost: power-on or new layout */ }
+  appRtc->deferredCycles++;
+  ```
+  Bump the `Version` template argument when the meaning of the struct changes
+  without its size changing. Prefer `RTC_NOINIT_ATTR`: `RTC_DATA_ATTR` is
+  reinitialized on every reset that is not a deep-sleep wakeup.
+
 ## Firmware updates (OTA)
 
 `iotUpdateFirmware()` (`iot_endpoints.h`) does a conditional check (ETag/Last-Modified) and streams
