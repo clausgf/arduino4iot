@@ -13,23 +13,41 @@
 
 // *****************************************************************************
 
-IotApiResponse iotForward(const std::string& forwardingName, const std::string& remainingPath,
-    const IotApiOptions& options)
+static std::string forwardPath(const std::string& forwardingName, const std::string& remainingPath)
 {
     std::string apiPath = std::string(iot_paths::FORWARD) + forwardingName;
     if (!remainingPath.empty())
     {
         apiPath += (remainingPath[0] == '/') ? remainingPath : "/" + remainingPath;
     }
-    return api.get(apiPath, options);
+    return apiPath;
+}
+
+IotApiResponse IotForwardEndpoint::get(const std::string& forwardingName, const std::string& remainingPath,
+    const IotApiOptions& options) const
+{
+    return api.get(forwardPath(forwardingName, remainingPath), options);
+}
+
+IotCachedResponse IotForwardEndpoint::getCached(const std::string& forwardingName,
+    const std::string& remainingPath, const IotCacheValidators& current, const IotApiOptions& options) const
+{
+    return api.getCached(forwardPath(forwardingName, remainingPath), current, options);
 }
 
 // *****************************************************************************
 
-IotResult iotUploadFile(const std::string& filename, const std::string& content, const std::string& contentType)
+IotResult IotFileEndpoint::upload(const std::string& filename, const std::string& content,
+    const std::string& contentType) const
 {
     return api.put(std::string(iot_paths::FILE_DIR) + filename, content,
         { .headers = { { "Content-Type", contentType } } }).result;
+}
+
+IotCachedResponse IotFileEndpoint::getCached(const std::string& filename, const IotCacheValidators& current,
+    const IotApiOptions& options) const
+{
+    return api.getCached(std::string(iot_paths::FILE_DIR) + filename, current, options);
 }
 
 // *****************************************************************************
@@ -66,18 +84,18 @@ static void applyTlsToOta(const IotTlsConfig& tls)
     }
 }
 
-std::string iotFirmwareHttpEtag()
+std::string IotOtaEndpoint::etag() const
 {
     return api.store().getString(iot_nvs_keys::FIRMWARE_ETAG, "");
 }
 
-std::string iotFirmwareHttpDate()
+std::string IotOtaEndpoint::lastModified() const
 {
     return api.store().getString(iot_nvs_keys::FIRMWARE_DATE, "");
 }
 
-IotResult iotUpdateFirmware(const std::string& apiPath,
-    const std::map<std::string, std::string>& header)
+IotResult IotOtaEndpoint::update(const std::string& apiPath,
+    const std::map<std::string, std::string>& header) const
 {
     IotStoredValidators cache(api.store(), iot_nvs_keys::FIRMWARE_ETAG, iot_nvs_keys::FIRMWARE_DATE);
     const IotCacheValidators current = cache.load();

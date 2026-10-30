@@ -14,6 +14,7 @@
 #include <iot_api.h>
 #include <iot_logger.h>
 #include <iot_config.h>
+#include <iot_endpoints.h>
 #include <iot_telemetry.h>
 #include <iot_result.h>
 #include <iot_lifecycle.h>
@@ -252,39 +253,17 @@ public:
 
 
     // **********************************************************************
-    // API
+    // Server endpoints
     // **********************************************************************
 
-    /**
-     * Post telemetry data to the API. The body must be a valid JSON string.
-     *
-     * The server expects a flat JSON object with numeric values;
-     * prefer the IotTelemetry overload which guarantees this.
-     * Bodies larger than IOT_MAX_TELEMETRY_SIZE trigger a warning as the
-     * server rejects them by default (HTTP 413).
-     *
-     * Goes through api.post(), so the device token and the 401 retry apply.
-     */
-    IotResult postTelemetry(const std::string& kind, const std::string& jsonData, const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
-
-    /**
-     * Post telemetry data built with an IotTelemetry builder to the API.
-     *
-     * Example:
-     *   IotTelemetry telemetry;
-     *   telemetry.add("temperature", 22.5);
-     *   if (!iot.postTelemetry("sensors", telemetry)) { ... }
-     */
-    IotResult postTelemetry(const std::string& kind, const IotTelemetry& telemetry, const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
-
-    /**
-     * Post system telemetry (battery voltage if configured, WiFi RSSI,
-     * boot count, active duration, sleep durations, time and firmware
-     * information) to the API.
-     *
-     * Goes through api.post(), so the device token and the 401 retry apply.
-     */
-    IotResult postSystemTelemetry(const std::string& kind = "system", const std::string& apiPath = "telemetry/{project}/{device}/{kind}");
+    /// telemetry/...: iot.telemetry.post("sensors", t), iot.telemetry.postSystem()
+    [[no_unique_address]] IotTelemetryEndpoint telemetry;
+    /// file/...: iot.files.upload("dump.txt", s), iot.files.getCached(...)
+    [[no_unique_address]] IotFileEndpoint files;
+    /// forward/...: iot.forward.get("weather", "today")
+    [[no_unique_address]] IotForwardEndpoint forward;
+    /// firmware: iot.ota.update()
+    [[no_unique_address]] IotOtaEndpoint ota;
 
 
     // **********************************************************************

@@ -9,12 +9,12 @@
 #include <map>
 #include <string>
 
-#include "iot_api.h"
 #include "iot_ports.h"
 #include "iot_result.h"
 
 // *****************************************************************************
-// Conditional GET: fetch a resource only if it changed since the last fetch.
+// Conditional GET: fetch a resource only if it changed since the last fetch,
+// @see IotApi::getCached().
 //
 // The cache validators (ETag, Last-Modified) are passed in and handed back,
 // never stored here. The caller decides when the new ones count - typically
@@ -57,19 +57,6 @@ struct IotCachedResponse
 };
 
 /**
- * GET @p apiPath, conditional on @p current.
- *
- *   IotCachedResponse r = iotGetCached("forward/{project}/{device}/img/latest.png",
- *       { rtcEtag, "" }, { { "Accept", "image/png" } });
- *   if (r.result.isOk() && render(r.body)) { saveToRtc(r.validators.etag); }
- *
- * @param header extra request headers; they win over the conditional ones
- * @param via the API to send through
- */
-IotCachedResponse iotGetCached(const std::string& apiPath, const IotCacheValidators& current,
-    const std::map<std::string, std::string>& header = {}, IotApi& via = api);
-
-/**
  * @return the max-age of a Cache-Control header value in seconds, -1 if it has
  *         none, an invalid one, or no-cache / no-store.
  */
@@ -80,7 +67,7 @@ int32_t iotParseMaxAge(const std::string& cacheControl);
  * cached copy survives a power loss.
  *
  *   static IotStoredValidators imageCache(api.store(), "imgEtag", "imgDate");
- *   IotCachedResponse r = iotGetCached(path, imageCache.load());
+ *   IotCachedResponse r = api.getCached(path, imageCache.load());
  *   if (r.result.isOk() && use(r.body)) { imageCache.commit(r.validators); }
  */
 class IotStoredValidators

@@ -408,7 +408,8 @@ bool Iot::syncNtpTime()
 // API
 // *****************************************************************************
 
-IotResult Iot::postTelemetry(const std::string& kind, const std::string& jsonData, const std::string& apiPath)
+IotResult IotTelemetryEndpoint::post(const std::string& kind, const std::string& jsonData,
+    const std::string& apiPath) const
 {
     if (jsonData.length() > IOT_MAX_TELEMETRY_SIZE)
     {
@@ -427,45 +428,46 @@ IotResult Iot::postTelemetry(const std::string& kind, const std::string& jsonDat
 
 // *****************************************************************************
 
-IotResult Iot::postTelemetry(const std::string& kind, const IotTelemetry& telemetry, const std::string& apiPath)
+IotResult IotTelemetryEndpoint::post(const std::string& kind, const IotTelemetry& telemetry,
+    const std::string& apiPath) const
 {
     std::string jsonData;
     telemetry.serializeTo(jsonData);
-    return postTelemetry(kind, jsonData, apiPath);
+    return post(kind, jsonData, apiPath);
 }
 
 // *****************************************************************************
 
-IotResult Iot::postSystemTelemetry(const std::string& kind, const std::string& apiPath)
+IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::string& apiPath) const
 {
     IotTelemetry telemetry;
-    int battery_mV = getBatteryVoltage_mV();
+    int battery_mV = iot.getBatteryVoltage_mV();
     if (battery_mV >= 0)
     {
         telemetry.add("battery_V", battery_mV / 1000.0);
     }
-    telemetry.add("wifi_rssi", _network->rssi());
-    telemetry.add("wifi_connect_ms", (int32_t)getWifiConnectDuration_ms());
-    telemetry.add("boot_count", getBootCount());
-    telemetry.add("active_ms", getActiveDuration_ms());
-    telemetry.add("lastSleep_s", getLastSleepDuration_s());
-    telemetry.add("panicSleep_s", getPanicSleepDuration_s());
+    telemetry.add("wifi_rssi", iot.network().rssi());
+    telemetry.add("wifi_connect_ms", (int32_t)iot.getWifiConnectDuration_ms());
+    telemetry.add("boot_count", iot.getBootCount());
+    telemetry.add("active_ms", iot.getActiveDuration_ms());
+    telemetry.add("lastSleep_s", iot.getLastSleepDuration_s());
+    telemetry.add("panicSleep_s", iot.getPanicSleepDuration_s());
     // non-numeric fields are ignored by the nice4iot telemetry backend,
     // but kept for backends which support them
-    telemetry.add("time", getTimeIso());
-    telemetry.add("firmware_id", getFirmwareId());
-    std::string firmwareVersion = getFirmwareVersion();
+    telemetry.add("time", iot.getTimeIso());
+    telemetry.add("firmware_id", iot.getFirmwareId());
+    std::string firmwareVersion = iot.getFirmwareVersion();
     if (!firmwareVersion.empty())
     {
         telemetry.add("firmware_version", firmwareVersion);
     }
-    telemetry.add("firmware_sha256", getFirmwareSha256());
-    std::string boardId = getBoardId();
+    telemetry.add("firmware_sha256", iot.getFirmwareSha256());
+    std::string boardId = iot.getBoardId();
     if (!boardId.empty())
     {
         telemetry.add("board_id", boardId);
     }
-    return postTelemetry(kind, telemetry, apiPath);
+    return post(kind, telemetry, apiPath);
 }
 
 

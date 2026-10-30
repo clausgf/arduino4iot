@@ -27,7 +27,7 @@ static constexpr size_t IOT_MAX_TELEMETRY_SIZE = 8192;
  * Example:
  *   IotTelemetry telemetry;
  *   telemetry.add("temperature", 22.5).add("humidity", 40);
- *   iot.postTelemetry("sensors", telemetry);
+ *   iot.telemetry.post("sensors", telemetry);
  *
  * This class intentionally only depends on ArduinoJson, so it can be
  * unit-tested on the native platform.

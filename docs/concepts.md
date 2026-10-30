@@ -33,11 +33,17 @@ through the cycle:
 
 | Object           | Type        | Responsibility |
 |------------------|-------------|----------------|
-| `iot`            | `Iot`       | Lifecycle façade: drives the ports, system telemetry, deep sleep, watchdog, undervoltage supervision, panic/backoff. |
-| `api`            | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, requests, TLS trust, firmware update, file upload/forward. |
+| `iot`            | `Iot`       | Lifecycle façade: drives the ports, deep sleep, radio off, watchdog, undervoltage supervision, panic/backoff. Carries the endpoint groups `iot.telemetry`, `iot.files`, `iot.forward`, `iot.ota`. |
+| `api`            | `IotApi`    | HTTP(S) transport to the nice4iot server: provisioning, `get/post/put/head/send`, conditional `getCached`, TLS trust. |
 | `config`         | `IotConfig` | Configuration values downloaded from the server and cached in NVRAM. |
 | `logger`         | `IotLogger` | Buffered remote logging plus local serial logging. |
 | `apProvisioning` | `IotAp`     | **Opt-in.** SoftAP + captive-portal provisioning when no bootstrap credentials are seeded — see "First-time provisioning" below. |
+
+The endpoint groups are stateless members of `iot` named after the nice4iot
+endpoints (`telemetry/`, `file/`, `forward/`, the firmware file). They make the
+calls discoverable from one object; a method no application calls is not
+linked, so a group costs nothing until it is used. A plain namespace `iot::`
+was not an option — it would collide with the global object `iot`.
 
 `iot.begin()` initializes `api`/`config`/`logger`, so most programs only call
 `iot.begin()` after seeding the bootstrap configuration. `apProvisioning` is
@@ -158,10 +164,10 @@ backend expects this). `IotTelemetry` guarantees that shape:
 ```cpp
 IotTelemetry t;
 t.add("temperature", 22.5).add("humidity", 40);
-iot.postTelemetry("sensors", t);
+iot.telemetry.post("sensors", t);
 ```
 
-`iot.postSystemTelemetry()` posts a set of device-health values (uptime/sleep
+`iot.telemetry.postSystem()` posts a set of device-health values (uptime/sleep
 bookkeeping, battery voltage if configured, WiFi/connect metrics, firmware
 identification, …). Bodies are capped at 8 KiB by the server.
 
@@ -435,7 +441,7 @@ connection, or when the log request failed with a transport error or a 5xx.
 - Each line keeps the `millis()` timestamp of the cycle it was written in.
 
 ```cpp
-iot.postTelemetry("app", telemetry);
+iot.telemetry.post("app", telemetry);
 iot.radioOff();                        // flushes the log, then radio off
 display.refresh();                     // 15 s without network
 logger.info("app", "refresh done");    // kept in RTC RAM, sent next cycle
@@ -551,7 +557,7 @@ library's own state:
 
 ## Firmware updates (OTA)
 
-`iotUpdateFirmware()` (`iot_endpoints.h`) does a conditional check (ETag/Last-Modified) and streams
+`iot.ota.update()` does a conditional check (ETag/Last-Modified) and streams
 a new image only when one is available. The same TLS trust configuration used
 for API calls applies to the OTA download.
 
@@ -565,20 +571,20 @@ firmware (see `IotApi::getApiUrlForPath()`).
 
 ## Conditional GET for application resources
 
-`iotGetCached()` (`iot_cache.h`) is the conditional GET that `config.json` uses,
+`api.getCached()` is the conditional GET that `config.json` uses,
 open to any resource an application fetches — an image, a schedule, a lookup
 table:
 
 ```cpp
 static IotStoredValidators imageCache(api.store(), "imgEtag", "imgDate");
 
-IotCachedResponse r = iotGetCached("forward/{project}/{device}/img/latest.png",
-    imageCache.load(), { { "Accept", "image/png" } });
+IotCachedResponse r = iot.forward.getCached("img", "latest.png",
+    imageCache.load(), { .headers = { { "Accept", "image/png" } } });
 if (r.result.isOk() && render(r.body)) { imageCache.commit(r.validators); }
 else if (r.result.isNotModified()) { /* the shown copy is current */ }
 ```
 
-- **The caller commits the validators.** `iotGetCached()` takes the current
+- **The caller commits the validators.** `api.getCached()` takes the current
   `ETag`/`Last-Modified` and hands back the new ones; it stores nothing. Commit
   them only once the body was used: a resource that failed to apply is then
   fetched again next cycle instead of answered with 304 forever.
@@ -605,17 +611,17 @@ diagnostic instead of leaving you with an opaque transport error.
 
 ## IotResult: three outcomes, not one int
 
-The low-level `api.*` request methods return a raw `int`: negative values are ESP
-transport errors (e.g. connection refused, timeout), non-negative values are HTTP
-status codes. That single int conflates three genuinely different outcomes, which
-is why raw status codes are easy to ignore.
+An `IotHttp` transport returns a raw `int`: negative values are ESP transport
+errors (e.g. connection refused, timeout), non-negative values are HTTP status
+codes. That single int conflates three genuinely different outcomes, which is
+why raw status codes are easy to ignore; no public method returns one.
 
 `IotResult` disentangles them into **`Ok` (2xx) / `HttpError` / `TransportError`**,
 keeps the underlying `.httpStatus` / `.transportError` available, and provides an
-explicit `operator bool` so `if (!iot.postTelemetry(...))` reads correctly. The
-high-level operations whose notion of success is simply "2xx" return `IotResult`:
-`postTelemetry()`, `postSystemTelemetry()`, `iotForward()`, `updateProvisioning()`
-and `uploadFile()`.
+explicit `operator bool` so `if (!iot.telemetry.post(...))` reads correctly. The
+operations whose notion of success is simply "2xx" return `IotResult`:
+`iot.telemetry.post()`, `iot.telemetry.postSystem()`, `iot.files.upload()`,
+`api.updateProvisioning()` and `logger.flush()`.
 
 The request methods `api.send()`, `get()`, `head()`, `post()` and `put()` return
 an `IotApiResponse`: the `IotResult` plus body and the headers asked for in
@@ -632,7 +638,7 @@ Synthetic statuses (all ≥ 600 so they never collide with real codes) let the
 library report client-side conditions through the same type:
 `STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`.
 
-Cache-aware calls (`updateConfig()`, `updateFirmware()`)
+Cache-aware calls (`config.updateConfig()`, `iot.ota.update()`, `api.getCached()`)
 return `IotResult` too, but for them **HTTP 304 Not Modified is a normal
 outcome**, not a failure: "the resource is unchanged, nothing to do". Test these
 with `isNotModified()` (unchanged) and `isOkOrNotModified()` ("no error", i.e.
@@ -640,7 +646,7 @@ changed *or* unchanged) rather than the plain `operator bool`, which — followi
 the strict 2xx rule — reports 304 as not-ok:
 
 ```cpp
-IotResult r = api.updateFirmware();
+IotResult r = iot.ota.update();
 if (!r.isOkOrNotModified()) { /* real failure: unreachable, rejected, ... */ }
 else if (r.isNotModified()) { /* firmware already up to date */ }
 else                        { /* new firmware flashed */ }

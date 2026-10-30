@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "iot_cache.h"
 #include "iot_ports.h"
 #include "iot_result.h"
 #include "iot_seed.h"
@@ -278,6 +279,20 @@ public:
 
     /// PUT @p body to @p apiPath, @see send(). Content-Type defaults to JSON.
     IotApiResponse put(const std::string& apiPath, const std::string& body, const IotApiOptions& options = {});
+
+    /**
+     * GET @p apiPath, conditional on @p current (If-None-Match /
+     * If-Modified-Since). Stores nothing: commit the returned validators once
+     * the body was used, @see iot_cache.h.
+     *
+     *   IotCachedResponse r = api.getCached("forward/{project}/{device}/img/latest.png",
+     *       { rtcEtag, "" }, { .headers = { { "Accept", "image/png" } } });
+     *   if (r.result.isOk() && render(r.body)) { saveToRtc(r.validators.etag); }
+     *
+     * @param options extra headers; they win over the conditional ones
+     */
+    IotCachedResponse getCached(const std::string& apiPath, const IotCacheValidators& current,
+        const IotApiOptions& options = {});
 
     // **********************************************************************
     // P r i v a t e

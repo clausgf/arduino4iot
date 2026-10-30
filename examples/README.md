@@ -1,7 +1,7 @@
 # arduino4iot example
 
-A complete deep-sleep wakeup cycle: seed the configuration, connect WiFi, sync
-NTP, provision, update config and firmware, post telemetry, sleep. See
+A complete deep-sleep wakeup cycle: seed the configuration, connect WiFi,
+provision, update config and firmware, post telemetry, sleep. See
 [`main.cpp`](main.cpp).
 
 ## Configuration

@@ -95,10 +95,14 @@ degrades without it.
 
 ### Global singletons (declared `extern` in their headers)
 
+New user-facing calls go where a sketch looks for them: lifecycle on `iot`,
+a nice4iot endpoint into its group on `iot` (`iot.telemetry`, `iot.files`,
+`iot.forward`, `iot.ota`), plain HTTP on `api`. No new free `iot*()` functions.
+
 | Object          | Header/impl        | Responsibility |
 |-----------------|--------------------|----------------|
-| `iot`           | `iot.{h,cpp}`      | Lifecycle façade: drives the ports, system telemetry, deep sleep, watchdog, undervoltage, panic/backoff. |
-| `api`           | `iot_api.{h,cpp}`  | URL building, header merging, the 401 retry — over an `IotHttp`. Sockets and TLS are the adapter's, auth is `IotTokenManager`'s, endpoints and OTA are `iot_endpoints`'. |
+| `iot`           | `iot.{h,cpp}`      | Lifecycle façade: drives the ports, deep sleep, radio off, watchdog, undervoltage, panic/backoff. Endpoint groups `iot.telemetry/files/forward/ota` (declared in `iot_endpoints.h`). |
+| `api`           | `iot_api.{h,cpp}`  | URL building, header merging, the 401 retry, `getCached` — over an `IotHttp`. Sockets and TLS are the adapter's, auth is `IotTokenManager`'s, the endpoint groups and OTA are `iot_endpoints`'. |
 | `config`        | `iot_config.{h,cpp}` | Server config mirrored into an `IotStore` (ETag-cached). |
 | `logger`        | `iot_logger.{h,cpp}` | Buffered remote logging + serial logging. |
 | `apProvisioning`| `iot_ap.{h,cpp}`   | **Opt-in**, never referenced by the core — see below. |
@@ -133,8 +137,8 @@ registration during static init touches no constructed object.
   `STATUS_UPDATE_FAILED`). **Design rule:** every operation reports an
   `IotResult`; the request methods `api.send/get/head/post/put` return it inside an
   `IotApiResponse` (result, body, collected headers) and take an
-  `IotApiRequest`/`IotApiOptions` with named fields — no raw `int`, no out-params. For cache-aware calls (`updateConfig`, `iotUpdateFirmware`,
-  `iotGetCached`) **HTTP 304 is success** — test with `isNotModified()` /
+  `IotApiRequest`/`IotApiOptions` with named fields — no raw `int`, no out-params. For cache-aware calls (`updateConfig`, `iot.ota.update`,
+  `api.getCached`) **HTTP 304 is success** — test with `isNotModified()` /
   `isOkOrNotModified()`, not plain `operator bool` (which is strict-2xx).
 - `IotTelemetry` (`iot_telemetry.h`): builder guaranteeing the server's required
   flat-JSON-of-numbers shape.
