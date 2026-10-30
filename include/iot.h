@@ -10,8 +10,6 @@
 #include <functional>
 
 #include "Arduino.h"
-#include <HTTPClient.h>
-#include <WiFiClient.h>
 
 #include <iot_api.h>
 #include <iot_logger.h>
@@ -29,6 +27,8 @@
 #define IOT_VERSION_PATCH 1
 
 // *****************************************************************************
+
+class IotWifiNetwork;
 
 class Iot
 {
@@ -163,49 +163,16 @@ public:
     bool connectWifi(const char *ssid, const char *password, unsigned long timeout_ms = 10000);
 
     /**
-     * Configure a static IP so the connect can skip DHCP (a large part of the
-     * radio-on time each wakeup). When unset, DHCP is used as before.
+     * The built-in WiFi station, for tuning it before begin():
      *
-     * With a static IP the device no longer learns a DNS server from DHCP: pass
-     * dns1/dns2 if the API URL uses a hostname (not needed for an IP literal).
+     *   iot.wifi().setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
+     *                          IPAddress(255,255,255,0));
+     *   iot.wifi().setDhcpCache(true);
+     *
+     * Needs #include <iot_esp_ports.h>. This is always the built-in adapter, also
+     * after setNetwork() replaced it as the network in use.
      */
-    void setStaticIp(IPAddress ip, IPAddress gateway, IPAddress subnet,
-                     IPAddress dns1 = IPAddress((uint32_t)0), IPAddress dns2 = IPAddress((uint32_t)0));
-
-    /**
-     * Cache the last-good AP (BSSID + channel) in RTC RAM so the next connect
-     * after deep sleep can skip the all-channel scan. Enabled by default.
-     *
-     * Degrades gracefully: on a connect timeout the cache is discarded and a
-     * plain full-scan connect is retried, so roaming, an AP channel change or a
-     * moved device are handled transparently (at the cost of that one slow
-     * connect). Disable to always do a full scan.
-     */
-    void setFastReconnect(bool enabled);
-
-    /**
-     * Cache the DHCP lease (IP/gateway/netmask/DNS) obtained via DHCP in RTC RAM
-     * so the next fast reconnect after deep sleep can skip the DHCP DORA exchange,
-     * like a static IP but learned automatically (no per-device configuration).
-     * Disabled by default because it trades a small correctness risk for speed.
-     *
-     * The lease is only reused on the scan-free fast-reconnect path (same cached
-     * AP, i.e. same subnet) and only for @p maxReuse consecutive wakeups, after
-     * which a real DHCP bind is forced so the device renews its lease and a
-     * reassigned address is detected. On a fast-reconnect timeout the cached lease
-     * is discarded and a plain DHCP connect is retried, so a stale or reassigned
-     * address costs at most one slow connect. Has no effect when a static IP is
-     * configured via setStaticIp(). Disabling clears the cache.
-     *
-     * Note: the DHCP lease time is not visible through the Arduino WiFi API, so
-     * @p maxReuse (a wakeup count, not a duration) is the renewal bound — keep it
-     * comfortably below (lease_time / wakeup_interval).
-     *
-     * @param enabled  enable or disable DHCP lease caching
-     * @param maxReuse consecutive reuses before a real DHCP renew (0 keeps the
-     *                 current value; default 20)
-     */
-    void setDhcpCache(bool enabled, uint32_t maxReuse = 20);
+    IotWifiNetwork& wifi();
 
     /**
      * @return the duration of the last successful WiFi connect in milliseconds,
@@ -242,7 +209,7 @@ public:
      * synchronizes it, which is enough for an http:// endpoint or a device
      * whose time comes from elsewhere. For SNTP:
      *
-     *   IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime, config);
+     *   static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
      *   iot.setClock(ntpClock);
      *
      * Call before begin(); @p clock must outlive this object. Only a firmware

@@ -27,6 +27,9 @@ namespace iot_nvs_keys
 {
     /// The NVS namespace holding all of the below.
     inline constexpr const char* NAMESPACE = "iot";
+    /// The NVS namespace of the server config mirror (IotConfig), kept apart so
+    /// clearProvisioning() can leave it alone.
+    inline constexpr const char* CONFIG_NAMESPACE = "iot-cfg";
 
     inline constexpr const char* WIFI_SSID     = "wifiSsid";
     inline constexpr const char* WIFI_PASSWORD = "wifiPass";

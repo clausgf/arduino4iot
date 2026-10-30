@@ -9,29 +9,37 @@
 #include <map>
 
 #include "iot_api.h"
-#include "iot_esp_ports.h"
+#include "iot_log.h"
 
 // *****************************************************************************
 
 IotConfig config;
 
-/// The library's default configuration namespace. A function-local static, so
-/// it is constructed on first use rather than in an unspecified order relative
-/// to the global config object.
-static IotStore& defaultConfigStore()
+// *****************************************************************************
+
+IotConfigValueBase::IotConfigValueBase(IotConfig& owner, const char* key):
+    _key(key), _owner(&owner), _next(iotConfigValueListHead()), _overridden(false)
 {
-    static IotNvsStore store("iot-cfg");
-    store.begin();
-    return store;
+    iotConfigValueListHead() = this;
+}
+
+IotConfigValueBase::~IotConfigValueBase()
+{
+    for (IotConfigValueBase** link = &iotConfigValueListHead();
+         *link != nullptr; link = &(*link)->_next)
+    {
+        if (*link == this) { *link = _next; return; }
+    }
 }
 
 // *****************************************************************************
 
-void IotConfig::begin(const char* apiPath)
+void IotConfig::begin(IotStore& store, const char* apiPath)
 {
-    begin(defaultConfigStore(), apiPath);
+    _store = &store;
+    _apiPath = apiPath;
 
-    // a key that does not fit NVS would silently never be stored
+    // a key that does not fit the store would silently never be stored
     for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
     {
         if (v->owner() == this && !IotStore::isValidKey(v->key()))
@@ -40,7 +48,53 @@ void IotConfig::begin(const char* apiPath)
                 v->key(), (unsigned)IotStore::MAX_KEY_LENGTH);
         }
     }
+
+    reload();
     log_i("--- Config etag=%s date=%s", etag().c_str(), lastModified().c_str());
+}
+
+// *****************************************************************************
+
+void IotConfig::reload()
+{
+    if (_store == nullptr) { return; }
+    for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    {
+        if (v->owner() == this) { v->loadFrom(*_store); }
+    }
+}
+
+// *****************************************************************************
+
+IotConfigValueBase* IotConfig::_find(const char* key) const
+{
+    for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    {
+        if (v->owner() == this && std::string(v->key()) == key) { return v; }
+    }
+    return nullptr;
+}
+
+// *****************************************************************************
+
+int IotConfig::applyJsonBody(const char* body, int* oUnknown, int* oMismatched)
+{
+    if (_store == nullptr) { return -1; }
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) { return -1; }
+    JsonObjectConst root = doc.as<JsonObjectConst>();
+    if (root.isNull()) { return -1; }
+
+    int applied = 0, unknown = 0, mismatched = 0;
+    for (JsonPairConst kv : root)
+    {
+        IotConfigValueBase* target = _find(kv.key().c_str());
+        if (target == nullptr) { unknown++; continue; }
+        if (target->applyJson(kv.value(), *_store)) { applied++; } else { mismatched++; }
+    }
+    if (oUnknown != nullptr) { *oUnknown = unknown; }
+    if (oMismatched != nullptr) { *oMismatched = mismatched; }
+    return applied;
 }
 
 // *****************************************************************************
@@ -63,7 +117,7 @@ IotResult IotConfig::updateConfig()
 
     if (httpStatusCode < 200 || httpStatusCode >= 300)
     {
-        if (httpStatusCode == HTTP_CODE_NOT_MODIFIED)
+        if (httpStatusCode == 304)
         {
             log_i("Configuration data not modified");
         } else {
@@ -101,5 +155,5 @@ IotResult IotConfig::updateConfig()
     }
 
     log_i("Configuration data update finished (%d values)", applied);
-    return IotResult(HTTP_CODE_OK);
+    return IotResult(200);
 }

@@ -25,7 +25,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
 - **File upload:** `iotUploadFile()` pushes files to the device-specific storage on the server.
 - **Forwarding:** `iotForward()` proxies requests to upstream services configured in the project settings.
-- **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
+- **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.wifi().setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.wifi().setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.wifi().setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
 - **System management:** deep sleep cycle bookkeeping, watchdog supervision, battery monitoring with undervoltage shutdown, escalating panic/backoff strategy.
 
 ## Getting started
@@ -221,16 +221,21 @@ the linker drops every one an application does not reference.
   server's endpoint map, and both are linked only when referenced.
 - **`api.apiSetConnectionTimeout()` / `api.apiSetRequestTimeout()` are removed**
   (deprecated since 2.x); use `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.
-- **`iot.connectWifi()` keeps working** but now configures the built-in
-  `IotWifiNetwork`, as do `setStaticIp()`, `setFastReconnect()` and
-  `setDhcpCache()`. They have no effect once `iot.setNetwork()` replaced the
-  adapter. `iot.getDeviceId()` reads the MAC from the eFuse and therefore works
+- **`iot.setStaticIp()`, `iot.setFastReconnect()` and `iot.setDhcpCache()` →
+  `iot.wifi().setStaticIp()` etc.** (with `#include <iot_esp_ports.h>`). They
+  tune the built-in `IotWifiNetwork`; the facade no longer carries WiFi details
+  of a port that may be replaced via `iot.setNetwork()`. `iot.connectWifi()`
+  keeps working and also uses the built-in adapter. `iot.getDeviceId()` reads the MAC from the eFuse and therefore works
   without an established connection — it used to return an empty string when the
   connect had failed, which silently broke every API URL on that path.
 - **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **`config.begin()` takes the store.** The overload binding the default NVS
+  namespace is gone, so the configuration service names no adapter;
+  `iot.begin()` binds `config` to `iot-cfg` as before. A sketch calling
+  `config.begin()` itself passes an `IotStore`.
 - **AP provisioning is opt-in.** `iot.begin()` no longer calls
   `apProvisioning.run()` itself; register it with
   `iot.setNoCredentialsHandler([]{ apProvisioning.run(); })`. Without a handler,

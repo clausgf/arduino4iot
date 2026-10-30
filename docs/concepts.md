@@ -418,11 +418,11 @@ opt-in optimizations cut this, both with automatic fallback:
 - **Fast reconnect (on by default):** the last-good BSSID + channel are cached in
   RTC RAM; the next connect targets that AP directly (`WiFi.begin(ssid, pw,
   channel, bssid)`), skipping the scan. On a timeout or a roamed/moved AP the
-  cache is discarded and a plain full-scan connect is retried (`setFastReconnect()`).
-- **Static IP:** `iot.setStaticIp(...)` calls `WiFi.config()` before connecting,
+  cache is discarded and a plain full-scan connect is retried (`iot.wifi().setFastReconnect()`).
+- **Static IP:** `iot.wifi().setStaticIp(...)` calls `WiFi.config()` before connecting,
   skipping DHCP. Note the device then gets no DNS from DHCP — pass DNS servers if
   the API URL uses a hostname.
-- **DHCP lease cache (opt-in, `setDhcpCache()`):** a static IP without the manual
+- **DHCP lease cache (opt-in, `iot.wifi().setDhcpCache()`):** a static IP without the manual
   per-device configuration. The address DHCP hands out is cached in RTC RAM and
   re-applied via `WiFi.config()` on the next wake, skipping the DHCP DORA exchange
   (~0.3–0.5 s). It is reused only on the fast-reconnect path (same cached AP, so

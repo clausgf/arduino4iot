@@ -10,6 +10,7 @@
 
 #include <ArduinoJson.h>
 
+#include "iot_endpoints.h"
 #include "iot_ports.h"
 #include "iot_result.h"
 
@@ -57,14 +58,7 @@ class IotConfigValueBase
 public:
     /// Unlinks, so a value that does not live for the whole program leaves no
     /// dangling entry in the list.
-    virtual ~IotConfigValueBase()
-    {
-        for (IotConfigValueBase** link = &iotConfigValueListHead();
-             *link != nullptr; link = &(*link)->_next)
-        {
-            if (*link == this) { *link = _next; return; }
-        }
-    }
+    virtual ~IotConfigValueBase();
 
     const char* key() const { return _key; }
     const IotConfig* owner() const { return _owner; }
@@ -83,11 +77,7 @@ public:
     virtual bool applyJson(JsonVariantConst value, IotStore& store) = 0;
 
 protected:
-    IotConfigValueBase(IotConfig& owner, const char* key):
-        _key(key), _owner(&owner), _next(iotConfigValueListHead()), _overridden(false)
-    {
-        iotConfigValueListHead() = this;
-    }
+    IotConfigValueBase(IotConfig& owner, const char* key);
 
     const char* _key;
     IotConfig* _owner;
@@ -206,34 +196,22 @@ public:
 
     /**
      * Bind to a store and publish the mirrored values into the registered
-     * variables. Values the application already set are left alone.
+     * variables. Values the application already set are left alone. Logs an
+     * error for every registered key that does not fit IotStore::MAX_KEY_LENGTH.
+     * Iot::begin() binds the global config to the NVS namespace
+     * iot_nvs_keys::CONFIG_NAMESPACE.
      *
      * @param store persistence for this configuration, must outlive the object
      * @param apiPath server path of the JSON file, @see updateConfig()
      */
-    void begin(IotStore& store, const char* apiPath = "file/{project}/{device}/config.json")
-    {
-        _store = &store;
-        _apiPath = apiPath;
-        reload();
-    }
-
-    /// Bind to the library's default NVS namespace ("iot-cfg").
-    void begin(const char* apiPath = "file/{project}/{device}/config.json");
+    void begin(IotStore& store, const char* apiPath = iot_paths::CONFIG);
 
     void end() { _store = nullptr; }
 
     IotStore* store() const { return _store; }
 
     /// Re-read every registered value of this instance from the store.
-    void reload()
-    {
-        if (_store == nullptr) { return; }
-        for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
-        {
-            if (v->owner() == this) { v->loadFrom(*_store); }
-        }
-    }
+    void reload();
 
     /**
      * Fetch the configuration file if the server has a newer one and apply it.
@@ -255,25 +233,7 @@ public:
      *
      * @return the number of applied keys, or -1 if the body was not valid JSON
      */
-    int applyJsonBody(const char* body, int* oUnknown = nullptr, int* oMismatched = nullptr)
-    {
-        if (_store == nullptr) { return -1; }
-        JsonDocument doc;
-        if (deserializeJson(doc, body)) { return -1; }
-        JsonObjectConst root = doc.as<JsonObjectConst>();
-        if (root.isNull()) { return -1; }
-
-        int applied = 0, unknown = 0, mismatched = 0;
-        for (JsonPairConst kv : root)
-        {
-            IotConfigValueBase* target = _find(kv.key().c_str());
-            if (target == nullptr) { unknown++; continue; }
-            if (target->applyJson(kv.value(), *_store)) { applied++; } else { mismatched++; }
-        }
-        if (oUnknown != nullptr) { *oUnknown = unknown; }
-        if (oMismatched != nullptr) { *oMismatched = mismatched; }
-        return applied;
-    }
+    int applyJsonBody(const char* body, int* oUnknown = nullptr, int* oMismatched = nullptr);
 
     /// @return the ETag of the mirrored configuration, for diagnostics.
     std::string etag() const { return _store ? _store->getString(KEY_ETAG, "") : std::string(); }
@@ -306,14 +266,7 @@ private:
     IotStore* _store = nullptr;
     const char* _apiPath = nullptr;
 
-    IotConfigValueBase* _find(const char* key) const
-    {
-        for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
-        {
-            if (v->owner() == this && std::string(v->key()) == key) { return v; }
-        }
-        return nullptr;
-    }
+    IotConfigValueBase* _find(const char* key) const;
 };
 
 extern IotConfig config;
