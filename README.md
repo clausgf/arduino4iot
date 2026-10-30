@@ -20,7 +20,8 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 
 - **Provisioning:** obtain a device API token using a provisioning token; the token expiry reported by the server is stored, and the token is renewed proactively before it expires. On HTTP 401, the library re-provisions and retries the request automatically.
 - **Telemetry:** post measurements built with the `IotTelemetry` builder, which guarantees the flat JSON format expected by the server.
-- **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit.
+- **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit. Lines that cannot be sent — offline, or after `iot.radioOff()` — are kept in RTC RAM and sent with a later cycle.
+- **Radio off:** `iot.radioOff()` flushes the log, closes the connection and powers the radio down for a long stretch without network, such as an e-paper refresh.
 - **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
 - **Conditional GET:** `iotGetCached()` fetches an application resource only if it changed, hands back the validators for the caller to commit once the resource was used, and reports the `Cache-Control` max-age.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
@@ -234,6 +235,12 @@ the linker drops every one an application does not reference.
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **New: `iot.radioOff()`** and offline logging in RTC RAM (`IOT_RTC_LOG_SIZE`,
+  default 1536 bytes). `IotNetwork::disconnect()` now powers the interface
+  down; `IotWifiNetwork` sets `WIFI_OFF`. `logger.flush()` and
+  `logger.postLog()` return `IotResult` instead of an `int`; offline, `flush()`
+  keeps the buffer instead of dropping it. See
+  [Offline logging](docs/concepts.md#offline-radio-off-logs-in-rtc-ram).
 - **New: `IotRtcSlot<T>`** (`iot_rtc_slot.h`) for application state in RTC RAM,
   validated against power-on garbage and layout changes, and a documented
   pattern for application NVS through an own `IotNvsStore` namespace. See

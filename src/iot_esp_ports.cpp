@@ -712,6 +712,7 @@ bool IotWifiNetwork::connect(uint32_t timeout_ms)
 void IotWifiNetwork::disconnect()
 {
     WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);  // the radio, not just the association; connect() turns it back on
 }
 
 bool IotWifiNetwork::isConnected() const

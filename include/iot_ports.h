@@ -249,6 +249,8 @@ public:
      */
     virtual bool connect(uint32_t timeout_ms) = 0;
 
+    /// Drop connectivity and power the interface down (radio off); a later
+    /// connect() brings it back.
     virtual void disconnect() = 0;
     virtual bool isConnected() const = 0;
 

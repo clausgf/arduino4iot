@@ -17,7 +17,8 @@ pio test -e native                 # run all native (host) unit tests
 pio test -e native -f test_ports    # run one suite: test_result | test_telemetry |
                                     # test_text | test_ap_text | test_ports |
                                     # test_lifecycle | test_token | test_config |
-                                    # test_api | test_cache | test_rtc_slot
+                                    # test_api | test_cache | test_rtc_slot |
+                                    # test_rtc_log
 ```
 
 - **ESP32 builds are never done from this repo directly.** There is no ESP32 env in
@@ -48,7 +49,7 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Layer | Files | Arduino? |
 |---|---|---|
 | Ports (interfaces + contracts) | `iot_ports.h` | no |
-| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_endpoints.h` `iot_logger.h` | no |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_log.h` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_endpoints.h` `iot_logger.h` | no |
 | ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
 | Facade | `iot.{h,cpp}` | yes |
 
@@ -75,7 +76,7 @@ excluded there. Use `iot_log.h` rather than Arduino's logging macros.
    in `include/`, so firmware cannot reach them.
 5. `include/` is the public interface. A header that no public header includes
    and no sketch uses belongs in `src/` (`iot_text.h`, `iot_ap_text.h`,
-   `iot_ota_internal.h`, `iot_log.h`); the native build has `-I src` so tests
+   `iot_ota_internal.h`, `iot_log.h`, `iot_rtc_log.h`); the native build has `-I src` so tests
    still reach them.
 
 ### Ports and their adapters
