@@ -26,18 +26,6 @@ static std::string trim(const std::string& s)
     return s.substr(begin, end - begin + 1);
 }
 
-/// Header names are case-insensitive, and an adapter may hand them back as
-/// requested or as the server spelled them.
-static const std::string* findHeader(const std::map<std::string, std::string>& headers, const char* name)
-{
-    const std::string wanted = lowercase(name);
-    for (auto const& kv : headers)
-    {
-        if (lowercase(kv.first) == wanted) { return &kv.second; }
-    }
-    return nullptr;
-}
-
 // *****************************************************************************
 
 int32_t iotParseMaxAge(const std::string& cacheControl)
@@ -84,36 +72,30 @@ IotCachedResponse iotGetCached(const std::string& apiPath, const IotCacheValidat
     if (!current.lastModified.empty()) { request["If-Modified-Since"] = current.lastModified; }
     for (auto const& kv : header) { request[kv.first] = kv.second; }
 
+    IotApiResponse response = via.get(apiPath,
+        { .headers = request, .collectHeaders = { "ETag", "Last-Modified", "Cache-Control" } });
+
     IotCachedResponse out;
-    std::map<std::string, std::string> responseHeader;
-    out.result = via.apiRequest(out.body, responseHeader, "GET", apiPath, "", request,
-        { "ETag", "Last-Modified", "Cache-Control" });
-
-    const std::string* etag = findHeader(responseHeader, "ETag");
-    const std::string* lastModified = findHeader(responseHeader, "Last-Modified");
-    const std::string* cacheControl = findHeader(responseHeader, "Cache-Control");
-
+    out.result = response.result;
     if (out.result.isNotModified())
     {
         // a 304 may resend the validators; whatever it leaves out stays as is
         out.validators = current;
-        if (etag != nullptr) { out.validators.etag = *etag; }
-        if (lastModified != nullptr) { out.validators.lastModified = *lastModified; }
-        out.body.clear();
+        if (response.hasHeader("ETag")) { out.validators.etag = response.header("ETag"); }
+        if (response.hasHeader("Last-Modified")) { out.validators.lastModified = response.header("Last-Modified"); }
     } else if (out.result.isOk())
     {
         // a new copy: validators the server does not send describe nothing
-        if (etag != nullptr) { out.validators.etag = *etag; }
-        if (lastModified != nullptr) { out.validators.lastModified = *lastModified; }
+        out.body = std::move(response.body);
+        out.validators = { response.header("ETag"), response.header("Last-Modified") };
     } else {
         log_w("Conditional GET %s failed status=%d", apiPath.c_str(),
             out.result.isTransportError() ? out.result.transportError : out.result.httpStatus);
         out.validators = current;
-        out.body.clear();
         return out;
     }
 
-    if (cacheControl != nullptr) { out.maxAge_s = iotParseMaxAge(*cacheControl); }
+    if (response.hasHeader("Cache-Control")) { out.maxAge_s = iotParseMaxAge(response.header("Cache-Control")); }
     return out;
 }
 

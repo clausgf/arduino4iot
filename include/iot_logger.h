@@ -89,7 +89,7 @@ public:
      * Post a log message to the API. The body consist of ESP32 formatted
      * log lines.
      *
-     * This method is similar to @see apiGet.
+     * Goes through api.post(), so the device token and the 401 retry apply.
      */
     int postLog(const char * body, const char * apiPath = "log/{project}/{device}");
 

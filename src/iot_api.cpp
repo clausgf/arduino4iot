@@ -5,6 +5,7 @@
 
 #include "iot_api.h"
 
+#include <cctype>
 #include <ctime>
 
 #include <ArduinoJson.h>
@@ -159,19 +160,17 @@ IotResult IotApi::_requestDeviceToken(const std::string& apiPath)
 
     // unauthenticated single-shot: /provision authenticates with the
     // provisioning token in the body
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    int httpStatusCode = _performRequest(response, responseHeader, "POST", apiPath, request,
+    IotApiResponse response = _perform("POST", apiPath, request,
         _requestHeaders({}, /*authenticated=*/false), {});
 
-    if (httpStatusCode < 200 || httpStatusCode >= 300)
+    if (!response.result.isOk())
     {
-        log_i("updateProvisioning: status=%d", httpStatusCode);
-        return IotResult(httpStatusCode);
+        log_i("updateProvisioning: status=%d", response.result.httpStatus);
+        return response.result;
     }
 
     IotProvisioningResponse parsed;
-    if (!iotParseProvisioningResponse(response.c_str(), parsed))
+    if (!iotParseProvisioningResponse(response.body.c_str(), parsed))
     {
         // 2xx, but nothing usable in the body
         log_i("updateProvisioning: malformed response body");
@@ -187,7 +186,7 @@ IotResult IotApi::_requestDeviceToken(const std::string& apiPath)
     } else {
         log_i("updateProvisioning: new device token for api access, expiry unknown");
     }
-    return IotResult(httpStatusCode);
+    return response.result;
 }
 
 
@@ -228,31 +227,32 @@ std::map<std::string, std::string> IotApi::_requestHeaders(const std::map<std::s
 
 // *****************************************************************************
 
-int IotApi::_performRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
-    const char * requestType, const std::string& apiPath, const std::string& requestBody,
-    const std::map<std::string, std::string>& requestHeader,
-    const std::vector<std::string>& collectResponseHeaderKeys)
+IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, const std::string& body,
+    const std::map<std::string, std::string>& headers, const std::vector<std::string>& collectHeaders)
 {
+    IotApiResponse out;
     if (_http == nullptr)
     {
         log_e("IotApi not initialized - call begin() first");
-        return -1;
+        out.result = IotResult(-1);
+        return out;
     }
 
     IotHttpRequest request;
-    request.method = requestType;
+    request.method = method;
     request.url = getApiUrlForPath(apiPath);
-    request.body = requestBody;
-    request.headers = requestHeader;   // already the fully merged set
-    request.collectResponseHeaders = collectResponseHeaderKeys;
+    request.body = body;
+    request.headers = headers;
+    request.collectResponseHeaders = collectHeaders;
 
-    log_i("HTTP %s url=%s", requestType, request.url.c_str());
+    log_i("HTTP %s url=%s", method, request.url.c_str());
     _warnIfTlsTrustMissing();
 
     IotHttpResponse response;
     const int httpStatusCode = _http->send(request, response);
-    oResponse = std::move(response.body);
-    oResponseHeader = std::move(response.headers);
+    out.result = IotResult(httpStatusCode);
+    out.body = std::move(response.body);
+    out.headers = std::move(response.headers);
 
     if (httpStatusCode < 0)
     {
@@ -262,95 +262,91 @@ int IotApi::_performRequest(std::string& oResponse, std::map<std::string, std::s
             ? " (no TLS server trust seeded: set tlsMode via iot.seedCredentials())"
             : "";
         log_e("HTTP %s url=%s -> status=%d error=%s%s",
-            requestType, request.url.c_str(), httpStatusCode,
+            method, request.url.c_str(), httpStatusCode,
             _http->errorToString(httpStatusCode).c_str(), tlsHint);
     } else if (httpStatusCode == 401) {
         log_e("HTTP %s url=%s -> status=401 UNAUTHORIZED - device token invalid or expired",
-            requestType, request.url.c_str());
+            method, request.url.c_str());
     } else if (httpStatusCode == 403) {
         // 403 is not an auth-token problem (nice4iot returns 401 for those on the
         // device endpoints) - re-provisioning would not help, so keep the token
         log_e("HTTP %s url=%s -> status=403 FORBIDDEN - access refused by the server",
-            requestType, request.url.c_str());
+            method, request.url.c_str());
     } else if (httpStatusCode < 200 || httpStatusCode >= 400) {
         log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s",
-            requestType, request.url.c_str(), requestBody.c_str(), httpStatusCode, oResponse.c_str());
+            method, request.url.c_str(), body.c_str(), httpStatusCode, out.body.c_str());
     } else {
-        log_i("HTTP %s url=%s -> status=%d", requestType, request.url.c_str(), httpStatusCode);
+        log_i("HTTP %s url=%s -> status=%d", method, request.url.c_str(), httpStatusCode);
     }
-    return httpStatusCode;
+    return out;
 }
 
 // *****************************************************************************
 
-// *****************************************************************************
+IotApiResponse IotApi::send(const IotApiRequest& request)
+{
+    return _send(request.method, request.path, request.body, request.headers, request.collectHeaders);
+}
 
-int IotApi::apiRequest(std::string& oResponse, std::map<std::string, std::string>& oResponseHeader,
-    const char * requestType, const std::string& apiPath, const std::string& requestBody,
-    const std::map<std::string, std::string>& requestHeader,
-    const std::vector<std::string>& collectResponseHeaderKeys)
+IotApiResponse IotApi::_send(const char* method, const std::string& apiPath, const std::string& body,
+    const std::map<std::string, std::string>& headers, const std::vector<std::string>& collectHeaders)
 {
     // the authentication policy on top of the transport: attach the device
     // token, and on a rejection get a new one and try once more
-    int httpStatusCode = _performRequest(oResponse, oResponseHeader,
-        requestType, apiPath, requestBody,
-        _requestHeaders(requestHeader, /*authenticated=*/true), collectResponseHeaderKeys);
+    IotApiResponse response = _perform(method, apiPath, body,
+        _requestHeaders(headers, /*authenticated=*/true), collectHeaders);
 
-    if (httpStatusCode == 401 && _tokens.hasProvisioningToken())
+    if (response.result.httpStatus == 401 && _tokens.hasProvisioningToken())
     {
         _tokens.clearDeviceToken();
         if (_requestDeviceToken("provision").isOk())
         {
-            log_i("HTTP %s url=%s retrying after re-provisioning", requestType, apiPath.c_str());
-            oResponse = "";
-            oResponseHeader.clear();
+            log_i("HTTP %s url=%s retrying after re-provisioning", method, apiPath.c_str());
             // rebuild the headers: they now carry the freshly issued token
-            httpStatusCode = _performRequest(oResponse, oResponseHeader,
-                requestType, apiPath, requestBody,
-                _requestHeaders(requestHeader, /*authenticated=*/true), collectResponseHeaderKeys);
+            response = _perform(method, apiPath, body,
+                _requestHeaders(headers, /*authenticated=*/true), collectHeaders);
         }
     }
-    return httpStatusCode;
+    return response;
+}
+
+IotApiResponse IotApi::get(const std::string& apiPath, const IotApiOptions& options)
+{
+    return _send("GET", apiPath, "", options.headers, options.collectHeaders);
+}
+
+IotApiResponse IotApi::head(const std::string& apiPath, const IotApiOptions& options)
+{
+    return _send("HEAD", apiPath, "", options.headers, options.collectHeaders);
+}
+
+IotApiResponse IotApi::post(const std::string& apiPath, const std::string& body, const IotApiOptions& options)
+{
+    return _send("POST", apiPath, body, options.headers, options.collectHeaders);
+}
+
+IotApiResponse IotApi::put(const std::string& apiPath, const std::string& body, const IotApiOptions& options)
+{
+    return _send("PUT", apiPath, body, options.headers, options.collectHeaders);
 }
 
 // *****************************************************************************
 
-int IotApi::apiGet(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
+static std::string lowercase(const char* s)
 {
-    std::map<std::string, std::string> responseHeader;
-    return apiRequest(response, responseHeader, "GET", apiPath, body, header);
+    std::string out(s);
+    for (char& c : out) { c = (char)tolower((unsigned char)c); }
+    return out;
 }
 
-int IotApi::apiGet(std::string& response, std::map<std::string, std::string>& oResponseHeader, const std::string& apiPath,
-    const std::vector<std::string>& collectResponseHeaderKeys, const std::string& body, const std::map<std::string, std::string>& header)
+const std::string* IotApiResponse::_find(const char* name) const
 {
-    return apiRequest(response, oResponseHeader, "GET", apiPath, body, header, collectResponseHeaderKeys);
+    // header names are case-insensitive, and an adapter may hand them back as
+    // requested or as the server spelled them
+    const std::string wanted = lowercase(name);
+    for (auto const& kv : headers)
+    {
+        if (lowercase(kv.first.c_str()) == wanted) { return &kv.second; }
+    }
+    return nullptr;
 }
-
-// *****************************************************************************
-
-int IotApi::apiHead(const std::string& apiPath, const std::map<std::string, std::string>& header)
-{
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    return apiRequest(response, responseHeader, "HEAD", apiPath, "", header);
-}
-
-// *****************************************************************************
-
-int IotApi::apiPost(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
-{
-    std::map<std::string, std::string> responseHeader;
-    return apiRequest(response, responseHeader, "POST", apiPath, body, header);
-}
-
-// *****************************************************************************
-
-int IotApi::apiPut(std::string& response, const std::string& apiPath, const std::string& body, const std::map<std::string, std::string>& header)
-{
-    std::map<std::string, std::string> responseHeader;
-    return apiRequest(response, responseHeader, "PUT", apiPath, body, header);
-}
-
-// *****************************************************************************
-

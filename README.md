@@ -246,6 +246,12 @@ the linker drops every one an application does not reference.
   a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
   ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
   See [`examples/ap_provisioning/`](examples/ap_provisioning/).
+- **`api.apiGet/apiPost/apiPut/apiHead/apiRequest()` → `api.get/post/put/head/send()`.**
+  They return an `IotApiResponse` (`.result`, `.body`, `.header(name)`) instead
+  of a raw `int` with out-parameters, and take the optional parts as named
+  fields: `api.apiGet(body, headers, path, { "ETag" })` becomes
+  `IotApiResponse r = api.get(path, { .collectHeaders = { "ETag" } });`. GET no
+  longer takes a body. `iotForward()` returns an `IotApiResponse` the same way.
 - **`deepSleep()`, `restart()` and `shutdown()` lose their `bool panic`
   parameter.** They end a cycle cleanly and clear the escalating backoff; a
   failure exit goes through `iot.panic()`. `iot.deepSleep(s, false)` becomes

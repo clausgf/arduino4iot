@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 
+#include "iot_api.h"
 #include "iot_result.h"
 
 // *****************************************************************************
@@ -37,14 +38,12 @@ namespace iot_paths
  * The server proxies it to the upstream URL configured for @p forwardingName in
  * the project settings and returns the upstream response.
  *
- * @param oResponse the upstream response body
  * @param forwardingName name of the forwarding entry in the project config
  * @param remainingPath path suffix appended to the configured upstream URL
- * @param body an optional request body passed to the upstream service
+ * @return the upstream response, its headers as requested in @p options
  */
-IotResult iotForward(std::string& oResponse, const std::string& forwardingName,
-    const std::string& remainingPath = "", const std::string& body = "",
-    const std::map<std::string, std::string>& headers = {});
+IotApiResponse iotForward(const std::string& forwardingName,
+    const std::string& remainingPath = "", const IotApiOptions& options = {});
 
 /**
  * Upload a file to the device-specific file storage

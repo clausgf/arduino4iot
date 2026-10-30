@@ -137,11 +137,11 @@ Authentication is deliberately **not** part of the transport:
   **implausible clock** before the NTP sync, where the arithmetic would be
   meaningless. Both surface as a 401 and re-provision, which is cheaper than
   re-provisioning on every wakeup.
-- `IotApi::_performRequest()` builds one `IotHttpRequest` and hands it to the
+- `IotApi::_perform()` builds one `IotHttpRequest` and hands it to the
   `IotHttp` port. It has no notion of tokens, and no notion of sockets either:
   `IotEspHttp` owns the `HTTPClient`, the keep-alive connection and the TLS
   trust, which is what lets the whole transport be exercised on the host.
-- `IotApi::apiRequest()` is the policy on top: attach the token, and on 401 get
+- `IotApi::send()` is the policy on top: attach the token, and on 401 get
   a new one and retry once. Because the retry cannot re-enter the request path,
   nothing has to guard against it.
 
@@ -558,8 +558,17 @@ high-level operations whose notion of success is simply "2xx" return `IotResult`
 `postTelemetry()`, `postSystemTelemetry()`, `iotForward()`, `updateProvisioning()`
 and `uploadFile()`.
 
-Because `IotResult` is implicitly constructible from an `int`, any low-level call
-can be viewed as a result without a new API — `IotResult r = api.apiGet(...)`.
+The request methods `api.send()`, `get()`, `head()`, `post()` and `put()` return
+an `IotApiResponse`: the `IotResult` plus body and the headers asked for in
+`collectHeaders`, looked up case-insensitively with `header()`. Requests name
+their fields with designated initializers instead of positional parameters:
+
+```cpp
+IotApiResponse r = api.get("file/{project}/{device}/data.json",
+    { .headers = { { "Accept", "application/json" } }, .collectHeaders = { "ETag" } });
+if (r.result) { use(r.body, r.header("ETag")); }
+```
+
 Synthetic statuses (all ≥ 600 so they never collide with real codes) let the
 library report client-side conditions through the same type:
 `STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`.

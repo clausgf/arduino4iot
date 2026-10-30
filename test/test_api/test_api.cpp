@@ -85,8 +85,7 @@ void test_a_request_carries_the_device_token()
 {
     Fixture f;
     f.begin();
-    std::string response;
-    f.api.apiGet(response, "file/x");
+    f.api.get("file/x");
 
     TEST_ASSERT_EQUAL_size_t(1, f.http.requestCount());
     TEST_ASSERT_EQUAL_STRING("bearer old", f.http.header(0, "Authorization").c_str());
@@ -100,8 +99,7 @@ void test_header_precedence_request_beats_default_beats_base()
     f.begin();
     f.api.setApiHeader({ { "Host", "proxy.example.org" }, { "Accept", "text/plain" } });
 
-    std::string response;
-    f.api.apiGet(response, "file/x", "", { { "Accept", "application/octet-stream" } });
+    f.api.get("file/x", { .headers = { { "Accept", "application/octet-stream" } } });
 
     TEST_ASSERT_EQUAL_STRING("proxy.example.org", f.http.header(0, "Host").c_str());
     // the per-request header wins over setApiHeader(), which wins over the base
@@ -112,8 +110,7 @@ void test_an_empty_header_value_suppresses_the_library_default()
 {
     Fixture f;
     f.begin();
-    std::string response;
-    f.api.apiGet(response, "file/x", "", { { "Authorization", "" } });
+    f.api.get("file/x", { .headers = { { "Authorization", "" } } });
 
     // the transport skips empty values, so nothing is sent for it
     TEST_ASSERT_EQUAL_STRING("", f.http.header(0, "Authorization").c_str());
@@ -132,11 +129,10 @@ void test_a_401_re_provisions_and_retries_once()
     f.http.reply(200, provisionBody("fresh"));            // /provision
     f.http.reply(200, "payload");                         // the retry
 
-    std::string response;
-    int status = f.api.apiGet(response, "file/x");
+    IotApiResponse response = f.api.get("file/x");
 
-    TEST_ASSERT_EQUAL_INT(200, status);
-    TEST_ASSERT_EQUAL_STRING("payload", response.c_str());
+    TEST_ASSERT_EQUAL_INT(200, response.result.httpStatus);
+    TEST_ASSERT_EQUAL_STRING("payload", response.body.c_str());
     TEST_ASSERT_EQUAL_size_t(3, f.http.requestCount());
 
     // the retry carries the freshly issued token, not the rejected one
@@ -153,8 +149,7 @@ void test_the_provisioning_request_is_unauthenticated()
     f.http.reply(200, provisionBody("fresh"));
     f.http.reply(200);
 
-    std::string response;
-    f.api.apiGet(response, "file/x");
+    f.api.get("file/x");
 
     // /provision authenticates with the provisioning token in the body
     TEST_ASSERT_EQUAL_STRING("", f.http.header(1, "Authorization").c_str());
@@ -171,10 +166,7 @@ void test_a_second_401_is_not_retried_again()
     f.http.reply(401);
     f.http.reply(200, provisionBody("fresh"));
 
-    std::string response;
-    int status = f.api.apiGet(response, "file/x");
-
-    TEST_ASSERT_EQUAL_INT(401, status);
+    TEST_ASSERT_EQUAL_INT(401, f.api.get("file/x").result.httpStatus);
     TEST_ASSERT_EQUAL_size_t(3, f.http.requestCount());
 }
 
@@ -185,8 +177,7 @@ void test_a_401_without_a_provisioning_token_is_passed_through()
     f.begin();
     f.http.reply(401);
 
-    std::string response;
-    TEST_ASSERT_EQUAL_INT(401, f.api.apiGet(response, "file/x"));
+    TEST_ASSERT_EQUAL_INT(401, f.api.get("file/x").result.httpStatus);
     TEST_ASSERT_EQUAL_size_t(1, f.http.requestCount());   // no provisioning attempt
 }
 
@@ -197,8 +188,7 @@ void test_a_403_keeps_the_token_and_does_not_retry()
     f.begin();
     f.http.reply(403);
 
-    std::string response;
-    TEST_ASSERT_EQUAL_INT(403, f.api.apiGet(response, "file/x"));
+    TEST_ASSERT_EQUAL_INT(403, f.api.get("file/x").result.httpStatus);
     TEST_ASSERT_EQUAL_size_t(1, f.http.requestCount());
     TEST_ASSERT_EQUAL_STRING("bearer old", f.store.getString(IotTokenManager::KEY_DEVICE_TOKEN).c_str());
 }
@@ -209,8 +199,7 @@ void test_a_transport_error_is_passed_through()
     f.begin();
     f.http.reply(-11);
 
-    std::string response;
-    IotResult result = f.api.apiGet(response, "file/x");
+    IotResult result = f.api.get("file/x").result;
     TEST_ASSERT_TRUE(result.isTransportError());
     TEST_ASSERT_EQUAL_INT(-11, result.transportError);
 }
@@ -277,11 +266,11 @@ void test_post_sends_the_body_and_returns_the_response()
     f.begin();
     f.http.reply(201, "created");
 
-    std::string response;
-    int status = f.api.apiPost(response, "telemetry/{project}/{device}/system", "{\"x\":1}");
+    IotApiResponse response = f.api.post("telemetry/{project}/{device}/system", "{\"x\":1}");
 
-    TEST_ASSERT_EQUAL_INT(201, status);
-    TEST_ASSERT_EQUAL_STRING("created", response.c_str());
+    TEST_ASSERT_TRUE(response.result.isOk());
+    TEST_ASSERT_EQUAL_INT(201, response.result.httpStatus);
+    TEST_ASSERT_EQUAL_STRING("created", response.body.c_str());
     TEST_ASSERT_EQUAL_STRING("POST", f.http.lastRequest().method);
     TEST_ASSERT_EQUAL_STRING("{\"x\":1}", f.http.lastRequest().body.c_str());
 }
@@ -292,12 +281,51 @@ void test_requested_response_headers_are_collected()
     f.begin();
     f.http.reply(200, "{}", { { "ETag", "\"abc\"" } });
 
-    std::string response;
-    std::map<std::string, std::string> responseHeader;
-    f.api.apiGet(response, responseHeader, "file/config.json", { "ETag", "Last-Modified" });
+    IotApiResponse response = f.api.get("file/config.json", { .collectHeaders = { "ETag", "Last-Modified" } });
 
-    TEST_ASSERT_EQUAL_STRING("\"abc\"", responseHeader["ETag"].c_str());
+    TEST_ASSERT_EQUAL_STRING("\"abc\"", response.header("ETag").c_str());
     TEST_ASSERT_EQUAL_size_t(2, f.http.lastRequest().collectResponseHeaders.size());
+}
+
+void test_header_lookup_is_case_insensitive()
+{
+    Fixture f;
+    f.begin();
+    f.http.reply(200, "{}", { { "etag", "\"abc\"" } });
+
+    IotApiResponse response = f.api.get("file/config.json", { .collectHeaders = { "ETag" } });
+
+    TEST_ASSERT_TRUE(response.hasHeader("ETag"));
+    TEST_ASSERT_EQUAL_STRING("\"abc\"", response.header("ETAG").c_str());
+    TEST_ASSERT_FALSE(response.hasHeader("Last-Modified"));
+    TEST_ASSERT_EQUAL_STRING("", response.header("Last-Modified").c_str());
+}
+
+void test_send_takes_any_method_and_head_has_no_body()
+{
+    Fixture f;
+    f.begin();
+    f.http.reply(204);
+    f.http.reply(200);
+
+    IotResult patched = f.api.send({ .method = "PATCH", .path = "x/{device}", .body = "{}" }).result;
+    TEST_ASSERT_TRUE(patched.isOk());
+    TEST_ASSERT_EQUAL_STRING("PATCH", f.http.request(0).method);
+    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/x/e32_aabbccddeeff", f.http.request(0).url.c_str());
+
+    f.api.head("file/x");
+    TEST_ASSERT_EQUAL_STRING("HEAD", f.http.request(1).method);
+    TEST_ASSERT_EQUAL_STRING("", f.http.request(1).body.c_str());
+}
+
+void test_put_sends_the_body()
+{
+    Fixture f;
+    f.begin();
+    f.api.put("file/{project}/{device}/a.txt", "hello", { .headers = { { "Content-Type", "text/plain" } } });
+    TEST_ASSERT_EQUAL_STRING("PUT", f.http.lastRequest().method);
+    TEST_ASSERT_EQUAL_STRING("hello", f.http.lastRequest().body.c_str());
+    TEST_ASSERT_EQUAL_STRING("text/plain", f.http.header(0, "Content-Type").c_str());
 }
 
 void test_closing_the_connection_reaches_the_transport()
@@ -336,6 +364,9 @@ int main(int argc, char **argv)
 
     RUN_TEST(test_post_sends_the_body_and_returns_the_response);
     RUN_TEST(test_requested_response_headers_are_collected);
+    RUN_TEST(test_header_lookup_is_case_insensitive);
+    RUN_TEST(test_send_takes_any_method_and_head_has_no_body);
+    RUN_TEST(test_put_sends_the_body);
     RUN_TEST(test_closing_the_connection_reaches_the_transport);
 
     return UNITY_END();
