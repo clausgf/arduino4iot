@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <climits>
 #include <cstdint>
 #include <string>
 
@@ -51,11 +52,46 @@ inline IotConfigValueBase*& iotConfigValueListHead()
 }
 
 /**
+ * Optional description of a configuration value: what the generated
+ * config.schema.json tells the server's form (title, description, limits, the
+ * allowed strings), and what the library enforces on values from config.json
+ * and NVS.
+ *
+ *   IotConfigValue<int32_t> minSleep(config, 300, "min_sleep_s",
+ *       { .title = "Min sleep", .min = 60, .max = 86400 });
+ *   IotConfigValue<std::string> rotation(config, "0deg", "rotation",
+ *       { .enumValues = "0deg|90deg|180deg|270deg" });
+ *
+ * An int outside [min, max] is clamped (and logged); a string not among
+ * enumValues is rejected like a type mismatch and the previous value stays.
+ * Values the application set() are not checked.
+ */
+struct IotConfigMeta
+{
+    const char* title = nullptr;
+    const char* description = nullptr;
+    /// Inclusive limits of an int value.
+    int32_t min = INT32_MIN;
+    int32_t max = INT32_MAX;
+    /// The allowed values of a string, separated by '|'; nullptr allows any.
+    const char* enumValues = nullptr;
+
+    bool hasMin() const { return min != INT32_MIN; }
+    bool hasMax() const { return max != INT32_MAX; }
+    /// @return true if @p value is allowed by enumValues.
+    bool allows(const std::string& value) const;
+    /// @return @p value limited to [min, max].
+    int32_t clamp(int32_t value) const { return value < min ? min : (value > max ? max : value); }
+};
+
+/**
  * A registered configuration value, independent of its type.
  */
 class IotConfigValueBase
 {
 public:
+    enum class Kind : uint8_t { Int, Bool, String };
+
     /// Unlinks, so a value that does not live for the whole program leaves no
     /// dangling entry in the list.
     virtual ~IotConfigValueBase();
@@ -63,6 +99,8 @@ public:
     const char* key() const { return _key; }
     const IotConfig* owner() const { return _owner; }
     IotConfigValueBase* next() const { return _next; }
+    Kind kind() const { return _kind; }
+    const IotConfigMeta& meta() const { return _meta; }
 
     /// @return true if the application set this value explicitly, which makes
     /// it immune to the NVS mirror and to config.json for this cycle.
@@ -73,20 +111,28 @@ public:
     virtual void loadFrom(const IotStore& store) = 0;
 
     /// Mirror a config.json member into @p store and publish it unless
-    /// overridden. @return false if the JSON type does not match.
+    /// overridden. @return false if the JSON type does not match or the value
+    /// is not allowed, @see IotConfigMeta.
     virtual bool applyJson(JsonVariantConst value, IotStore& store) = 0;
 
 protected:
-    IotConfigValueBase(IotConfig& owner, const char* key);
+    IotConfigValueBase(IotConfig& owner, const char* key, Kind kind, const IotConfigMeta& meta);
 
     const char* _key;
     IotConfig* _owner;
     IotConfigValueBase* _next;
+    IotConfigMeta _meta;
+    Kind _kind;
     bool _overridden;
 };
 
 
 // *****************************************************************************
+
+template <typename T> struct IotConfigKind;
+template <> struct IotConfigKind<int32_t>     { static constexpr auto value = IotConfigValueBase::Kind::Int; };
+template <> struct IotConfigKind<bool>        { static constexpr auto value = IotConfigValueBase::Kind::Bool; };
+template <> struct IotConfigKind<std::string> { static constexpr auto value = IotConfigValueBase::Kind::String; };
 
 /**
  * Binds a C++ variable to a configuration key.
@@ -98,14 +144,18 @@ template <typename T>
 class IotConfigValue : public IotConfigValueBase
 {
 public:
-    IotConfigValue(IotConfig& config, T defaultValue, const char* key):
-        IotConfigValueBase(config, key), _value(std::move(defaultValue))
+    IotConfigValue(IotConfig& config, T defaultValue, const char* key, const IotConfigMeta& meta = {}):
+        IotConfigValueBase(config, key, IotConfigKind<T>::value, meta),
+        _value(defaultValue), _default(std::move(defaultValue))
     {
     }
 
     /// @return the current value. A reference, so .c_str() on a string value
     /// stays valid until the value is reassigned.
     const T& get() const { return _value; }
+
+    /// @return the compile-time default, as published in the schema.
+    const T& defaultValue() const { return _default; }
 
     /// Set explicitly; wins over the NVS mirror and config.json for this cycle.
     void set(const T& value) { _value = value; _overridden = true; }
@@ -118,59 +168,15 @@ public:
 
 private:
     T _value;
+    T _default;
 };
 
-// --- int32_t ---
-
-template <>
-inline void IotConfigValue<int32_t>::loadFrom(const IotStore& store)
-{
-    if (!_overridden) { _value = (int32_t)store.getInt(_key, _value); }
-}
-
-template <>
-inline bool IotConfigValue<int32_t>::applyJson(JsonVariantConst value, IotStore& store)
-{
-    if (!value.is<int32_t>() || value.is<bool>()) { return false; }
-    store.putInt(_key, value.as<int32_t>());
-    if (!_overridden) { _value = value.as<int32_t>(); }
-    return true;
-}
-
-// --- bool ---
-
-template <>
-inline void IotConfigValue<bool>::loadFrom(const IotStore& store)
-{
-    if (!_overridden) { _value = store.getBool(_key, _value); }
-}
-
-template <>
-inline bool IotConfigValue<bool>::applyJson(JsonVariantConst value, IotStore& store)
-{
-    if (!value.is<bool>()) { return false; }
-    store.putBool(_key, value.as<bool>());
-    if (!_overridden) { _value = value.as<bool>(); }
-    return true;
-}
-
-// --- std::string ---
-
-template <>
-inline void IotConfigValue<std::string>::loadFrom(const IotStore& store)
-{
-    if (!_overridden) { _value = store.getString(_key, _value); }
-}
-
-template <>
-inline bool IotConfigValue<std::string>::applyJson(JsonVariantConst value, IotStore& store)
-{
-    if (!value.is<const char*>()) { return false; }
-    std::string text = value.as<const char*>();
-    store.putString(_key, text);
-    if (!_overridden) { _value = std::move(text); }
-    return true;
-}
+template <> void IotConfigValue<int32_t>::loadFrom(const IotStore& store);
+template <> bool IotConfigValue<int32_t>::applyJson(JsonVariantConst value, IotStore& store);
+template <> void IotConfigValue<bool>::loadFrom(const IotStore& store);
+template <> bool IotConfigValue<bool>::applyJson(JsonVariantConst value, IotStore& store);
+template <> void IotConfigValue<std::string>::loadFrom(const IotStore& store);
+template <> bool IotConfigValue<std::string>::applyJson(JsonVariantConst value, IotStore& store);
 
 
 // *****************************************************************************
@@ -261,6 +267,31 @@ public:
 
     /// @return the value registered under @p key for this instance, or nullptr.
     IotConfigValueBase* find(const char* key) const { return _find(key); }
+
+    // --- schema ---
+
+    /// NVS key of the hash of the last published schema.
+    static constexpr const char* KEY_SCHEMA_HASH = "iotCfgSchema";
+
+    /**
+     * @return a JSON Schema describing every registered value of this
+     *         instance: type, default, and the IotConfigMeta (title,
+     *         description, minimum/maximum, enum). The flat subset nice4iot
+     *         turns into a form for config.json.
+     */
+    std::string schemaJson() const;
+
+    /**
+     * Upload schemaJson() as file/{project}/{device}/@p filename, unless the
+     * same schema was published before (a hash of it is kept in the store).
+     * Call after updateConfig(); a new firmware with changed values publishes
+     * once. nice4iot shows a device-uploaded schema only once an operator
+     * approved it - per device, since each device uploads its own.
+     *
+     * @return Ok if uploaded, isNotModified() (304) if unchanged, otherwise
+     *         the failed upload
+     */
+    IotResult publishSchema(const char* filename = "config.schema.json");
 
 private:
     IotStore* _store = nullptr;

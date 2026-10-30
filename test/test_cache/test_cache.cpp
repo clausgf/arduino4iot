@@ -4,7 +4,7 @@
  * The decisions of iotGetCached() against IotFakeHttp: which validators a
  * request carries, which ones come back for the caller to commit, and how a
  * Cache-Control header becomes a max-age. Also IotConfig::updateConfig(), which
- * is built on it.
+ * is built on it, and IotConfig::publishSchema() - both over the global api.
  */
 
 #include <unity.h>
@@ -303,6 +303,34 @@ void test_update_config_with_a_malformed_body_keeps_the_old_validators()
 }
 
 
+void test_publish_schema_uploads_once_per_schema()
+{
+    ConfigFixture f;
+    f.http.reply(201);
+    IotResult r = f.cfg.publishSchema();
+    TEST_ASSERT_TRUE(r.isOk());
+    TEST_ASSERT_EQUAL_STRING("PUT", f.http.lastRequest().method);
+    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/file/myproject/e32_aabbccddeeff/config.schema.json",
+        f.http.lastRequest().url.c_str());
+    TEST_ASSERT_EQUAL_STRING("application/schema+json", f.http.header(0, "Content-Type").c_str());
+    TEST_ASSERT_TRUE(f.http.lastRequest().body.find("\"sleep_s\"") != std::string::npos);
+
+    // the same schema again: nothing sent
+    r = f.cfg.publishSchema();
+    TEST_ASSERT_TRUE(r.isNotModified());
+    TEST_ASSERT_EQUAL_UINT(1, f.http.requestCount());
+}
+
+void test_a_failed_publish_is_retried_next_time()
+{
+    ConfigFixture f;
+    f.http.reply(-1);
+    TEST_ASSERT_TRUE(f.cfg.publishSchema().isTransportError());
+    f.http.reply(201);
+    TEST_ASSERT_TRUE(f.cfg.publishSchema().isOk());
+    TEST_ASSERT_EQUAL_UINT(2, f.http.requestCount());
+}
+
 // *****************************************************************************
 
 int main(int argc, char **argv)
@@ -332,6 +360,8 @@ int main(int argc, char **argv)
 
     RUN_TEST(test_update_config_applies_and_commits_the_validators);
     RUN_TEST(test_update_config_with_a_malformed_body_keeps_the_old_validators);
+    RUN_TEST(test_publish_schema_uploads_once_per_schema);
+    RUN_TEST(test_a_failed_publish_is_retried_next_time);
 
     return UNITY_END();
 }

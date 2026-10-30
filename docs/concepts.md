@@ -406,6 +406,39 @@ An unknown key or a type mismatch in `config.json` is counted and skipped, so
 one bad entry cannot discard the rest of the file; `updateConfig()` logs the
 tally.
 
+### Metadata, limits and the schema
+
+A value can carry an `IotConfigMeta`. It is declared once, next to the value,
+and replaces three hand-maintained copies — a defaults struct, a comment block
+listing the keys, and a JSON Schema written by hand:
+
+```cpp
+static IotConfigValue<int32_t> minSleep(config, 300, "min_sleep_s",
+    { .title = "Min sleep (s)", .description = "Lower clamp", .min = 60, .max = 86400 });
+static IotConfigValue<std::string> rotation(config, "0deg", "rotation",
+    { .enumValues = "0deg|90deg|180deg|270deg" });
+```
+
+- **Enforced** on values from `config.json` and from NVS: an int outside
+  `[min, max]` is clamped and logged, a string not in `enumValues` is rejected
+  like a type mismatch and the previous value stays. A value the application
+  `set()`s is not checked — it owns it. The library's own values carry limits
+  too (`sleep_s` ≥ 1, `log_level` 0–5, `panic_factor` 1–16, …).
+- **Published:** `config.schemaJson()` builds a flat JSON Schema (type,
+  compile-time default, title, description, minimum/maximum, enum) — the subset
+  nice4iot turns into a typed form for `config.json`. `config.publishSchema()`
+  uploads it as `file/{project}/{device}/config.schema.json`, but only when it
+  changed: a hash of the last published schema is kept in NVS
+  (`iotCfgSchema`), so a firmware that adds or changes a value publishes once,
+  and every other wakeup costs no request.
+- **Opt-in:** only a firmware that calls `publishSchema()` (or `schemaJson()`)
+  links the schema code.
+- **Approval:** nice4iot ignores a device-uploaded schema until an operator
+  approves its content hash, per file. Each device uploads into its own
+  directory, so a fleet means one approval per device and schema version — or
+  an operator places one approved `config.schema.json` in the project
+  directory, which every device without its own falls back to.
+
 ## Logging
 
 `logger` writes to the serial console and, unless disabled, **buffers** log
