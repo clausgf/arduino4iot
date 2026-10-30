@@ -22,7 +22,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Telemetry:** post measurements built with the `IotTelemetry` builder, which guarantees the flat JSON format expected by the server.
 - **Remote logging:** log messages are buffered in RAM and sent to the server in a single request at the end of the wakeup cycle (configurable via `logger.setBuffered()`, forced via `logger.flush()`); large bodies are split to respect the server's size limit. Lines that cannot be sent — offline, or after `iot.radioOff()` — are kept in RTC RAM and sent with a later cycle.
 - **Radio off:** `iot.radioOff()` flushes the log, closes the connection and powers the radio down for a long stretch without network, such as an e-paper refresh.
-- **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM.
+- **Configuration:** download per-device or project-wide configuration files with ETag caching; values are persisted in NVRAM. Values declare title, description, limits and allowed strings once; the library enforces them and publishes a matching `config.schema.json` for the server's form.
 - **Conditional GET:** `api.getCached()` fetches an application resource only if it changed, hands back the validators for the caller to commit once the resource was used, and reports the `Cache-Control` max-age.
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
 - **File upload:** `iot.files.upload()` pushes files to the device-specific storage on the server.
@@ -261,6 +261,14 @@ the linker drops every one an application does not reference.
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **New: `IotConfigMeta`** on `IotConfigValue` (title, description, min/max,
+  `enumValues`), enforced on values from `config.json` and NVS, and
+  `config.publishSchema()`, which uploads a generated `config.schema.json`
+  once per changed schema. The library's own values are now limited:
+  `log_level` 0–5, `sleep_s` 1 s – 7 d, `battery_min_mv` −1–10000,
+  `panic_init_s`/`panic_max_s` 1 s – 7 d, `panic_factor` 1–16; a
+  `config.json` outside these is clamped. See
+  [Metadata, limits and the schema](docs/concepts.md#metadata-limits-and-the-schema).
 - **New: `iot.radioOff()`** and offline logging in RTC RAM (`IOT_RTC_LOG_SIZE`,
   default 1536 bytes). `IotNetwork::disconnect()` now powers the interface
   down; `IotWifiNetwork` sets `WIFI_OFF`. `logger.flush()` and

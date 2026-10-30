@@ -89,13 +89,27 @@ static void defaultPanicHandler()
 Iot::Iot() :
     _lifecycle(defaultPower(), iotRtcState()),
 
-    _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level"),
-    _sleepDuration_s(config, 5 * 60, "sleep_s"),
+    _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level",
+        { .title = "Log level",
+          .description = "Remote log threshold: 0 error, 1 warning, 2 info, 3 debug, 4 verbose, 5 all",
+          .min = 0, .max = 5 }),
+    _sleepDuration_s(config, 5 * 60, "sleep_s",
+        { .title = "Sleep duration (s)", .description = "Deep sleep between wakeups",
+          .min = MIN_SLEEP_DURATION_S, .max = 7 * 24 * 60 * 60 }),
 
-    _batteryMin_mV(config, -1, "battery_min_mv"),
-    _panicSleepDurationInit_s(config, 60, "panic_init_s"),
-    _panicSleepDurationFactor(config, 2, "panic_factor"),
-    _panicSleepDurationMax_s(config, 24 * 60 * 60, "panic_max_s")
+    _batteryMin_mV(config, -1, "battery_min_mv",
+        { .title = "Battery minimum (mV)",
+          .description = "Shut down below this supply voltage; -1 disables the check",
+          .min = -1, .max = 10000 }),
+    _panicSleepDurationInit_s(config, 60, "panic_init_s",
+        { .title = "Backoff initial (s)", .description = "First sleep after a failed cycle",
+          .min = 1, .max = 7 * 24 * 60 * 60 }),
+    _panicSleepDurationFactor(config, 2, "panic_factor",
+        { .title = "Backoff factor", .description = "Multiplier per further failed cycle",
+          .min = 1, .max = 16 }),
+    _panicSleepDurationMax_s(config, 24 * 60 * 60, "panic_max_s",
+        { .title = "Backoff maximum (s)", .description = "Upper bound of the backoff sleep",
+          .min = 1, .max = 7 * 24 * 60 * 60 })
 {
     // initialize variables
     _deviceId = "";

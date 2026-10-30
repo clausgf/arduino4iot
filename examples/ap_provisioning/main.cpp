@@ -36,6 +36,13 @@
 #define IOT_SEED_GENERATION 0
 #endif
 
+// An application value in config.json. The metadata describes it in the
+// published config.schema.json (a typed form on the server) and is enforced:
+// a value outside the range from config.json or NVS is clamped.
+static IotConfigValue<int32_t> sampleInterval(config, 60, "sample_s",
+    { .title = "Sample interval (s)", .description = "Seconds between measurements",
+      .min = 10, .max = 3600 });
+
 // Application state that only has to survive deep sleep: RTC RAM, validated
 // so a power-on reset or an OTA update hands out a fresh value, not garbage.
 struct AppRtcState
@@ -100,6 +107,7 @@ void setup()
     }
 
     config.updateConfig();
+    config.publishSchema();   // once per changed schema, e.g. after an update
     iot.telemetry.postSystem();
 
     // a lost RTC slot means a power-on (or a new firmware layout): count it

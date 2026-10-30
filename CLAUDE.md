@@ -126,7 +126,12 @@ must fit `IotStore::MAX_KEY_LENGTH` (15). Precedence, weakest first:
 explicit `set()` is not overwritten by `begin()` or `updateConfig()`, while the
 server value is still mirrored for the next boot. `IotConfigValue`s register
 themselves through an intrusive list with a constant-initialized head, so
-registration during static init touches no constructed object.
+registration during static init touches no constructed object. An optional
+`IotConfigMeta` (title, description, min/max, `enumValues` as `"a|b|c"`) is
+enforced on values from `config.json` and NVS (clamp / reject) but not on
+`set()`, and feeds `config.schemaJson()`/`publishSchema()`. Keep schema code
+out of virtual functions: it must stay unlinked unless `publishSchema()` is
+called.
 
 ### Two value types (Arduino-free, unit-tested on host — see `test/`)
 

@@ -252,6 +252,121 @@ void test_an_unbound_config_returns_defaults_instead_of_crashing()
 
 
 // *****************************************************************************
+// IotConfigMeta: limits, allowed values, schema
+// *****************************************************************************
+
+/// Values with metadata, in a config of their own.
+struct MetaFixture
+{
+    IotFakeStore store;
+    IotConfig config;
+    IotConfigValue<int32_t> minSleep{ config, 300, "min_sleep_s",
+        { .title = "Min sleep", .description = "Lower clamp", .min = 60, .max = 86400 } };
+    IotConfigValue<std::string> rotation{ config, "0deg", "rotation",
+        { .enumValues = "0deg|90deg|180deg|270deg" } };
+    IotConfigValue<bool> verbose{ config, false, "verbose" };
+
+    void begin() { config.begin(store); }
+};
+
+void test_an_int_from_config_json_is_clamped_and_mirrored_clamped()
+{
+    MetaFixture f;
+    f.begin();
+    f.config.applyJsonBody("{\"min_sleep_s\":5}");
+    TEST_ASSERT_EQUAL_INT32(60, f.minSleep.get());
+    TEST_ASSERT_EQUAL_INT64(60, f.store.getInt("min_sleep_s"));
+    f.config.applyJsonBody("{\"min_sleep_s\":999999}");
+    TEST_ASSERT_EQUAL_INT32(86400, f.minSleep.get());
+}
+
+void test_an_int_from_nvs_is_clamped()
+{
+    MetaFixture f;
+    f.store.putInt("min_sleep_s", 1);   // written by a firmware without the limit
+    f.begin();
+    TEST_ASSERT_EQUAL_INT32(60, f.minSleep.get());
+}
+
+void test_a_string_outside_the_enum_is_rejected()
+{
+    MetaFixture f;
+    f.begin();
+    int unknown = 0, mismatched = 0;
+    int applied = f.config.applyJsonBody("{\"rotation\":\"45deg\"}", &unknown, &mismatched);
+    TEST_ASSERT_EQUAL_INT(0, applied);
+    TEST_ASSERT_EQUAL_INT(1, mismatched);
+    TEST_ASSERT_EQUAL_STRING("0deg", f.rotation.get().c_str());
+    TEST_ASSERT_FALSE(f.store.has("rotation"));
+
+    TEST_ASSERT_EQUAL_INT(1, f.config.applyJsonBody("{\"rotation\":\"270deg\"}"));
+    TEST_ASSERT_EQUAL_STRING("270deg", f.rotation.get().c_str());
+}
+
+void test_a_string_from_nvs_outside_the_enum_keeps_the_default()
+{
+    MetaFixture f;
+    f.store.putString("rotation", "sideways");
+    f.begin();
+    TEST_ASSERT_EQUAL_STRING("0deg", f.rotation.get().c_str());
+}
+
+void test_an_explicit_set_is_not_checked()
+{
+    MetaFixture f;
+    f.begin();
+    f.minSleep = 5;
+    TEST_ASSERT_EQUAL_INT32(5, f.minSleep.get());
+}
+
+void test_the_schema_describes_every_value_in_declaration_order()
+{
+    MetaFixture f;
+    f.begin();
+    std::string schema = f.config.schemaJson();
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, schema));
+    TEST_ASSERT_EQUAL_STRING("object", doc["type"]);
+    JsonObjectConst props = doc["properties"].as<JsonObjectConst>();
+    TEST_ASSERT_EQUAL_size_t(3, props.size());
+
+    JsonObjectConst minSleep = props["min_sleep_s"];
+    TEST_ASSERT_EQUAL_STRING("integer", minSleep["type"]);
+    TEST_ASSERT_EQUAL_STRING("Min sleep", minSleep["title"]);
+    TEST_ASSERT_EQUAL_STRING("Lower clamp", minSleep["description"]);
+    TEST_ASSERT_EQUAL_INT(300, minSleep["default"].as<int>());
+    TEST_ASSERT_EQUAL_INT(60, minSleep["minimum"].as<int>());
+    TEST_ASSERT_EQUAL_INT(86400, minSleep["maximum"].as<int>());
+
+    JsonObjectConst rotation = props["rotation"];
+    TEST_ASSERT_EQUAL_STRING("string", rotation["type"]);
+    TEST_ASSERT_EQUAL_STRING("0deg", rotation["default"]);
+    TEST_ASSERT_EQUAL_size_t(4, rotation["enum"].size());
+    TEST_ASSERT_EQUAL_STRING("270deg", rotation["enum"][3]);
+    TEST_ASSERT_TRUE(rotation["minimum"].isNull());
+
+    JsonObjectConst verbose = props["verbose"];
+    TEST_ASSERT_EQUAL_STRING("boolean", verbose["type"]);
+    TEST_ASSERT_TRUE(verbose["title"].isNull());
+
+    // declaration order, not the list's reverse registration order
+    auto it = props.begin();
+    TEST_ASSERT_EQUAL_STRING("min_sleep_s", it->key().c_str());
+}
+
+void test_the_schema_uses_the_compile_time_default_not_the_current_value()
+{
+    MetaFixture f;
+    f.begin();
+    f.config.applyJsonBody("{\"min_sleep_s\":900}");
+    JsonDocument doc;
+    deserializeJson(doc, f.config.schemaJson());
+    TEST_ASSERT_EQUAL_INT(300, doc["properties"]["min_sleep_s"]["default"].as<int>());
+}
+
+
+// *****************************************************************************
 
 int main(int argc, char **argv)
 {
@@ -275,6 +390,14 @@ int main(int argc, char **argv)
     RUN_TEST(test_values_are_bound_to_their_own_config_instance);
     RUN_TEST(test_free_form_access_uses_the_same_key_space);
     RUN_TEST(test_an_unbound_config_returns_defaults_instead_of_crashing);
+
+    RUN_TEST(test_an_int_from_config_json_is_clamped_and_mirrored_clamped);
+    RUN_TEST(test_an_int_from_nvs_is_clamped);
+    RUN_TEST(test_a_string_outside_the_enum_is_rejected);
+    RUN_TEST(test_a_string_from_nvs_outside_the_enum_keeps_the_default);
+    RUN_TEST(test_an_explicit_set_is_not_checked);
+    RUN_TEST(test_the_schema_describes_every_value_in_declaration_order);
+    RUN_TEST(test_the_schema_uses_the_compile_time_default_not_the_current_value);
 
     return UNITY_END();
 }
