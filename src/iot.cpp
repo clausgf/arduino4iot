@@ -248,9 +248,9 @@ bool Iot::begin(unsigned long timeout_ms)
     syncNtpTime();
     if (!isTimePlausible())
     {
-        log_w("begin: the clock is not plausible. An https:// endpoint verifies "
-              "certificate validity against it and will fail; attach an "
-              "IotNtpClock via iot.setClock().");
+        log_w("begin: the clock is not plausible - device tokens are renewed only "
+              "on a 401 and timestamps are meaningless; attach an IotNtpClock via "
+              "iot.setClock() if the application needs the time.");
     }
     return connected;
 }

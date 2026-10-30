@@ -50,9 +50,10 @@ void setup()
         .seedGeneration    = IOT_SEED_GENERATION,
     });
 
-    // The default clock reads the system time and never synchronizes it. An
-    // https:// endpoint verifies certificate validity against the clock and
-    // needs a real one (~7 KB of flash, linked only when referenced):
+    // The default clock reads the system time and never synchronizes it. That
+    // is fine for http:// and https:// alike; attach a real one when the
+    // application needs the time, or to renew device tokens before they expire
+    // (~7 KB of flash, linked only when referenced):
     //   static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
     //   iot.setClock(ntpClock);
 

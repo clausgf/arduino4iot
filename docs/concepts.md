@@ -74,10 +74,15 @@ There are three implementations of `IotClock`:
   `setResyncInterval_s()`).
 - **`IotFakeClock`** for host tests.
 
-**An `https://` endpoint needs `IotNtpClock`**: TLS checks certificate validity
-against the clock. `begin()` logs a warning when the clock is implausible, but
-its return value reflects the *network* only — a device on `http://` is
-perfectly healthy without a synchronized clock.
+**`https://` does not need a synchronized clock.** arduino-esp32 builds mbedTLS
+without `MBEDTLS_HAVE_TIME_DATE`, so the handshake verifies the certificate
+chain but not its validity dates. Only a custom sdkconfig that enables the date
+check makes TLS depend on the clock. What does need it: renewing the device
+token *before* it expires (without it, the token is replaced on the first 401),
+meaningful timestamps, and any time logic of the application. `begin()` logs a
+warning when the clock is implausible, but its return value reflects the
+*network* only. A TLS transport error almost always means missing server trust,
+for which the library logs a dedicated hint.
 
 ```cpp
 static IotNtpClock ntpClock(iotRtcState().ntpLastSyncTime);
@@ -440,12 +445,12 @@ credentials to NVS on every connect (flash wear). The measured connect duration
 is available via `iot.getWifiConnectDuration_ms()` and posted as the
 `wifi_connect_ms` system-telemetry metric, so the saving is verifiable per device.
 
-The other big time sink is the NTP sync. The system clock has to be correct
-*before* the first HTTPS request (TLS certificate validity is checked against it),
-so the sync cannot be hidden behind other work. Instead `syncNtpTime()` sends a
+The other big time sink is the NTP sync, for an application that attaches an
+`IotNtpClock`. The clock should be correct before the first API request, so the
+token expiry check can use it; the sync is therefore not hidden behind other
+work. Instead `syncNtpTime()` sends a
 single manual SNTP request and sets the clock directly, bypassing the lwIP SNTP
-daemon's randomized 0–5 s startup delay; it falls back to the daemon if the
-one-shot query fails. Within the resync interval the sync is skipped entirely,
+daemon's randomized 0–5 s startup delay. Within the resync interval the sync is skipped entirely,
 relying on the RTC clock that survives deep sleep. Pointing the first server at
 an IP or the local router additionally removes DNS from the path.
 
