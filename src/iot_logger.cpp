@@ -7,12 +7,42 @@
 
 #include "iot_api.h"
 #include "iot_logger.h"
+#include "iot_rtc_log.h"
+#include "iot_rtc_slot.h"
 #include "iot_telemetry.h"
 #include "iot_text.h"
 
 // *****************************************************************************
 
 IotLogger logger;
+
+#if IOT_RTC_LOG_SIZE > 0
+/// What could not be sent, kept across deep sleep and software resets for the
+/// next cycle that has connectivity.
+static RTC_NOINIT_ATTR IotRtcSlot<IotRtcLogBuffer<IOT_RTC_LOG_SIZE>> rtcLog;
+#endif
+
+/// Keep @p lines for a later cycle; @return false if there is no RTC buffer.
+static bool keepOffline(const std::string& lines)
+{
+#if IOT_RTC_LOG_SIZE > 0
+    rtcLog->append(lines);
+    return true;
+#else
+    (void)lines;
+    return false;
+#endif
+}
+
+/// @return the lines kept by earlier cycles, emptying the RTC buffer.
+static std::string takeOffline()
+{
+#if IOT_RTC_LOG_SIZE > 0
+    return rtcLog->isEmpty() ? std::string() : rtcLog->take();
+#else
+    return std::string();
+#endif
+}
 
 
 // *****************************************************************************
@@ -67,21 +97,19 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
         log_v("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);
         if (_buffered)
         {
-            // flush before the buffer would exceed the server's size limit
+            // flush before the buffer would exceed the server's size limit;
+            // offline, flush() moves it to RTC RAM, so memory stays bounded
             size_t lineLen = strlen(logBuf) + 1; // + newline
             if (_logBuffer.length() + lineLen > IOT_MAX_TELEMETRY_SIZE)
             {
-                if (flush() <= 0)
-                {
-                    // sending failed (e.g. no WiFi): drop the buffer to bound
-                    // memory usage - remote logs are best-effort
-                    _logBuffer = "";
-                }
+                flush();
             }
             _logBuffer += logBuf;
             _logBuffer += '\n';
-        } else if (_network == nullptr || _network->isConnected()) {
+        } else if (_isOnline()) {
             postLog(logBuf);
+        } else {
+            keepOffline(std::string(logBuf) + '\n');
         }
     }
 }
@@ -143,43 +171,62 @@ void IotLogger::setBuffered(bool enabled)
     _buffered = enabled;
 }
 
-int IotLogger::flush()
+bool IotLogger::_isOnline() const
 {
-    if (_logBuffer.empty())
+    return _network == nullptr || _network->isConnected();
+}
+
+IotResult IotLogger::flush()
+{
+    if (!_isOnline())
     {
-        return 0;
+        if (!_logBuffer.empty())
+        {
+            log_i("IotLogger::flush: offline, keeping %u log bytes in RTC RAM",
+                (unsigned)_logBuffer.length());
+            keepOffline(_logBuffer);
+            _logBuffer.clear();
+        }
+        return IotResult();  // transport error: nothing could be sent
     }
-    if (_network != nullptr && !_network->isConnected())
+
+    // what earlier cycles could not send goes first, in order
+    std::string body = takeOffline();
+    body += _logBuffer;
+    _logBuffer.clear();
+    if (body.empty())
     {
-        log_w("IotLogger::flush: no connectivity, keeping %u buffered log bytes",
-            _logBuffer.length());
-        return 0;
+        return IotResult(200);
     }
-    int httpStatusCode = postLog(_logBuffer.c_str());
-    _logBuffer = "";
-    return httpStatusCode;
+
+    IotResult result = postLog(body.c_str());
+    if (result.isTransportError() || result.httpStatus >= 500)
+    {
+        // worth another try next cycle; a 4xx would only fail again
+        keepOffline(body);
+    }
+    return result;
 }
 
 // *****************************************************************************
 
-int IotLogger::postLog(const char * body, const char * apiPath)
+IotResult IotLogger::postLog(const char * body, const char * apiPath)
 {
     // the server rejects bodies larger than its max_log_size (default 8 KiB)
     // with HTTP 413, so split large bodies into chunks at line boundaries
     size_t bodyLen = strlen(body);
-    int httpStatusCode = 0;
+    IotResult result(200);
 
     size_t offset = 0;
     do
     {
         size_t chunkLen = iot_text::nextLogChunkLength(body, bodyLen, offset, IOT_MAX_TELEMETRY_SIZE);
         std::string chunk(body + offset, chunkLen);
-        IotResult result = api.post(apiPath, chunk, { .headers = { { "Content-Type", "text/plain" } } }).result;
-        httpStatusCode = result.isTransportError() ? result.transportError : result.httpStatus;
+        result = api.post(apiPath, chunk, { .headers = { { "Content-Type", "text/plain" } } }).result;
         offset += chunkLen;
-    } while (offset < bodyLen);
+    } while (offset < bodyLen && result.isOk());
 
-    return httpStatusCode;
+    return result;
 }
 
 // *****************************************************************************

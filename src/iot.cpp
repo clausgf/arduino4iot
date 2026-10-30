@@ -124,8 +124,8 @@ void Iot::_registerExitHooks()
     _exitHooksRegistered = true;
 
     // runs before every deep sleep, restart, shutdown and backoff sleep.
-    // logger.flush() is a no-op without connectivity, so this is safe on the
-    // early failure paths too.
+    // offline, logger.flush() keeps the log in RTC RAM for a later cycle, so
+    // this is safe on the early failure paths and after radioOff() too.
     _lifecycle.addExitHook([] {
         logger.flush();
         api.closeConnection();
@@ -336,6 +336,14 @@ bool Iot::connectWifi(const char *ssid, const char *password, unsigned long time
 unsigned long Iot::getWifiConnectDuration_ms()
 {
     return _network->lastConnectDuration_ms();
+}
+
+void Iot::radioOff()
+{
+    logger.flush();
+    api.closeConnection();
+    _network->disconnect();
+    log_i("radioOff: network disconnected for the rest of the cycle");
 }
 
 // *****************************************************************************

@@ -118,6 +118,12 @@ void setup()
             (bool)iotUploadFile("clock.txt", "the clock never synchronized", "text/plain");
     }
 
+    // The network part is done: radio off for the rest of the cycle, e.g.
+    // before a long display refresh. What is logged from here on is kept in
+    // RTC RAM and sent with the next cycle.
+    iot.radioOff();
+    logger.info("app", "cycle %u done offline", (unsigned)appRtc->cycles);
+
     iot.deepSleep();
 }
 

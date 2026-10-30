@@ -410,8 +410,37 @@ re-entrancy hazard (logging from inside an API request).
 - `logger.setBuffered(false)` sends each line immediately.
 - `logger.flush()` forces the buffer out; it is called automatically at all
   cycle exit points (`deepSleep`/`restart`/`shutdown`/`end`) and from `panic()`.
-- If the buffer would exceed the server's size limit it is flushed early; if
-  there is no connectivity the buffer is kept for the next successful flush.
+- If the buffer would exceed the server's size limit it is flushed early.
+
+### Offline: radio off, logs in RTC RAM
+
+A cycle often has a long stretch that needs no network — an e-paper refresh,
+a measurement. `iot.radioOff()` ends the network part early: it flushes the
+log, closes the API connection and disconnects the adapter, which for WiFi
+also powers the radio down (`WIFI_OFF`).
+
+What is logged afterwards cannot go out this cycle. Instead of dropping it,
+`flush()` — including the automatic one before deep sleep — moves the buffer
+into RTC RAM, and the first flush of a later cycle that has connectivity sends
+it ahead of its own lines. The same happens when a cycle never got a
+connection, or when the log request failed with a transport error or a 5xx.
+
+- The RTC buffer holds `IOT_RTC_LOG_SIZE` bytes (default 1536, `0` disables
+  it). When full, the oldest whole lines are dropped first and a note with
+  their count leads the next upload — the most recent lines, usually the ones
+  explaining a failure, are kept.
+- It lives in an `IotRtcSlot`, so it survives deep sleep and the
+  software/watchdog resets of a crash loop, and is discarded after a power-on
+  reset or a firmware with a different layout.
+- Each line keeps the `millis()` timestamp of the cycle it was written in.
+
+```cpp
+iot.postTelemetry("app", telemetry);
+iot.radioOff();                        // flushes the log, then radio off
+display.refresh();                     // 15 s without network
+logger.info("app", "refresh done");    // kept in RTC RAM, sent next cycle
+iot.deepSleep();
+```
 
 ## Fast WiFi reconnect
 

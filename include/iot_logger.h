@@ -10,6 +10,13 @@
 #include <string>
 
 #include "iot_ports.h"
+#include "iot_result.h"
+
+/// Bytes of RTC RAM that keep log lines across deep sleep while the device is
+/// offline, @see IotLogger::flush(). 0 disables it.
+#ifndef IOT_RTC_LOG_SIZE
+#define IOT_RTC_LOG_SIZE 1536
+#endif
 
 // *****************************************************************************
 
@@ -77,13 +84,19 @@ public:
     /**
      * Post the buffered log messages to the server and clear the buffer.
      *
-     * Call this at the end of a wakeup cycle (or rely on the automatic flush
-     * before deep sleep/restart/shutdown). Does nothing if the buffer is empty
-     * or buffering is disabled. Requires an active WiFi connection.
+     * Call this at the end of a wakeup cycle, or rely on the automatic flush
+     * before deep sleep/restart/shutdown.
      *
-     * @return the HTTP status code of the log request, 0 if nothing was sent
+     * Offline - after iot.radioOff(), or when the connect failed - the buffer
+     * moves to RTC RAM (IOT_RTC_LOG_SIZE bytes, oldest lines dropped first)
+     * and goes out first with the next flush that has connectivity, in a later
+     * cycle. A send that fails with a transport error or 5xx is kept the same
+     * way. In unbuffered mode, a line logged offline is kept there too.
+     *
+     * @return Ok if everything was sent or there was nothing to send, a
+     *         transport error when offline, otherwise the failed request
      */
-    int flush();
+    IotResult flush();
 
     /**
      * Post a log message to the API. The body consist of ESP32 formatted
@@ -91,7 +104,7 @@ public:
      *
      * Goes through api.post(), so the device token and the 401 retry apply.
      */
-    int postLog(const char * body, const char * apiPath = "log/{project}/{device}");
+    IotResult postLog(const char * body, const char * apiPath = "log/{project}/{device}");
 
 
     // **********************************************************************
@@ -103,6 +116,9 @@ private:
     bool _buffered;
     std::string _logBuffer;
     IotNetwork* _network = nullptr;
+
+    /// Without a network adapter flush() tries and lets the request fail.
+    bool _isOnline() const;
 };
 
 extern IotLogger logger;

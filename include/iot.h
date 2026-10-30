@@ -182,6 +182,18 @@ public:
     unsigned long getWifiConnectDuration_ms();
 
     /**
+     * Switch the radio off for the rest of the cycle, e.g. before a long
+     * display refresh that needs no network: flushes the log, closes the API
+     * connection and disconnects the network adapter.
+     *
+     * Log lines written afterwards cannot be sent this cycle. They are kept in
+     * RTC RAM and go out with the first flush of a later cycle that has
+     * connectivity, @see IotLogger::flush(). iot.begin() in the next cycle
+     * connects again.
+     */
+    void radioOff();
+
+    /**
      * Return a unique device ID derived from the hardware address, e.g.
      * "e32_123456780abc". The underscore separator keeps the ID a valid
      * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$). Available without an
