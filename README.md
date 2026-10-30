@@ -28,6 +28,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **Forwarding:** `iotForward()` proxies requests to upstream services configured in the project settings.
 - **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.wifi().setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.wifi().setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.wifi().setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
 - **System management:** deep sleep cycle bookkeeping, watchdog supervision, battery monitoring with undervoltage shutdown, escalating panic/backoff strategy.
+- **Application state:** `IotRtcSlot<T>` keeps a struct in RTC RAM across deep sleep and resets it when it did not survive; an own `IotNvsStore` namespace holds what must survive a power loss.
 
 ## Getting started
 
@@ -233,6 +234,10 @@ the linker drops every one an application does not reference.
   (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
   → `etag()/lastModified()`. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
+- **New: `IotRtcSlot<T>`** (`iot_rtc_slot.h`) for application state in RTC RAM,
+  validated against power-on garbage and layout changes, and a documented
+  pattern for application NVS through an own `IotNvsStore` namespace. See
+  [Application data](docs/concepts.md#application-data).
 - **New: `iotGetCached()`** (`iot_cache.h`), a conditional GET for an
   application's own resources, with `IotStoredValidators` to keep the
   validators in an `IotStore`. `config.updateConfig()` is built on it.
