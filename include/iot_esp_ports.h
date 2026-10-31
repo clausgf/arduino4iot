@@ -243,9 +243,11 @@ public:
     std::string localIp() const override;
     int rssi() const override;
     uint32_t lastConnectDuration_ms() const override { return _connectDuration_ms; }
+    std::string lastError() const override { return _lastError; }
 
 private:
     IotRtcState& _rtc;
+    std::string _lastError;
     String _ssid;
     String _password;
     String _hostname;

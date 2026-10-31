@@ -335,14 +335,17 @@ public:
     /**
      * Log an error message and employ the panic strategy defined by the
      * panic handler.
-     * The default panic handler is escalatingSleepPanicHandler().
+     * The default panic handler is escalatingSleepPanicHandler(). The message
+     * reaches the server with the exit flush, or with a later cycle when
+     * offline.
      */
     void panic(const char* format...);
 
     /**
-     * Log an error message without using the remote api and restart 
-     * the system, see panic(). This function is safe to be used
-     * in the panic handler or during system initialization.
+     * Log an error message without using the remote api and employ the panic
+     * strategy, see panic(). The message goes to the serial log and straight
+     * into the RTC log, so a later cycle sends it. Safe in the panic handler
+     * and during system initialization.
      */
     void panicEarly(const char* format...);
 

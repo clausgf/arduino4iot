@@ -473,6 +473,15 @@ connection, or when the log request failed with a transport error or a 5xx.
   reset or a firmware with a different layout.
 - Each line keeps the `millis()` timestamp of the cycle it was written in.
 
+The library logs its own failures through the same path, so the reason a
+device went quiet reaches the server once it is back: a failed network connect
+with the adapter's reason (`IotNetwork::lastError()`, e.g. `ssid not found
+(status 1) … after 10012 ms`), a panic at startup after an abnormal reset
+(`panicEarly()` writes straight into RTC RAM), the backoff duration, an
+undervoltage shutdown, missing credentials, and a failed sync of an attached
+`IotNtpClock`. A failed provisioning or config update is reported to the caller
+as an `IotResult`; put it into the `iot.panic()` message.
+
 ```cpp
 iot.telemetry.post("app", telemetry);
 iot.radioOff();                        // flushes the log, then radio off

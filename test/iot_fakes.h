@@ -177,6 +177,7 @@ public:
     std::string localIp() const override { return _connected ? ip : std::string(); }
     int rssi() const override { return _connected ? rssiValue : 0; }
     uint32_t lastConnectDuration_ms() const override { return _connected ? connectDuration_ms : 0; }
+    std::string lastError() const override { return _connected ? std::string() : connectError; }
 
     // --- test control ---
     unsigned connectCount() const { return _connectCount; }
@@ -187,6 +188,7 @@ public:
     std::string ip = "192.168.1.42";
     int rssiValue = -55;
     uint32_t connectDuration_ms = 350;
+    std::string connectError = "ssid not found";
 
 private:
     bool _connected = false;

@@ -249,6 +249,10 @@ public:
      */
     virtual bool connect(uint32_t timeout_ms) = 0;
 
+    /// @return why the last connect() failed, in a few words for the remote
+    /// log (e.g. "ssid not found"); empty after a success or if unknown.
+    virtual std::string lastError() const { return std::string(); }
+
     /// Drop connectivity and power the interface down (radio off); a later
     /// connect() brings it back.
     virtual void disconnect() = 0;
