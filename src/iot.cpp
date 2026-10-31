@@ -209,6 +209,8 @@ void Iot::_initSubsystems()
         if (batteryVoltage_mV >= 0 && batteryVoltage_mV < _batteryMin_mV.get())
         {
             log_e("Battery voltage too low: %d mV < %d mV", batteryVoltage_mV, _batteryMin_mV.get());
+            logger.error(tag, "undervoltage %d mV < %d mV, shutting down",
+                batteryVoltage_mV, _batteryMin_mV.get());
             _shutdown(/*isFailure=*/true);
         }
     }
@@ -242,6 +244,7 @@ bool Iot::begin(unsigned long timeout_ms)
                   "or an NVS partition image, or register a setup flow with "
                   "iot.setNoCredentialsHandler([]{ apProvisioning.run(); }).");
         }
+        logger.error(tag, "no WiFi credentials seeded, shutting down");
         // indefinite deep sleep: nothing can change the "no credentials"
         // condition between wakeups, so a timer retry would only drain the
         // battery. Only a physical reset tries again.
@@ -257,9 +260,19 @@ bool Iot::begin(unsigned long timeout_ms)
     }
 
     bool connected = _network->connect((uint32_t)timeout_ms);
+    if (!connected)
+    {
+        // offline, so this goes to RTC RAM and reaches the server with a later
+        // cycle - the one place the reason is known
+        const std::string reason = _network->lastError();
+        logger.error(tag, "network connect failed: %s", reason.empty() ? "unknown reason" : reason.c_str());
+    }
     _initSubsystems();
 
-    syncNtpTime();
+    if (!syncNtpTime() && _clock != &defaultClock())
+    {
+        logger.warn(tag, "clock sync failed, the time is not plausible");
+    }
     if (!isTimePlausible())
     {
         log_w("begin: the clock is not plausible - device tokens are renewed only "
@@ -522,12 +535,11 @@ void Iot::panic(const char* format...)
     logger.logv(IotLogger::LogLevel::IOT_LOGLEVEL_ERROR, tag, format, args);
     va_end(args);
 
-    // flush buffered logs (including this error) before the panic handler,
-    // which typically sends the device to sleep
-    logger.flush();
-
-    delay(10);  // delay to allow log to be written
+    // the handler typically ends the cycle, and the exit hooks flush this
+    // error together with the handler's own lines in one request (or keep
+    // them in RTC RAM when offline); flush here only if it returns
     _panicHandler();
+    logger.flush();
 }
 
 void Iot::panicEarly(const char* format...)
@@ -540,6 +552,9 @@ void Iot::panicEarly(const char* format...)
     log_e("%s", logBuf);
     va_end(args);
 
+    // no request here: straight into RTC RAM, sent by a later cycle
+    logger.logToRtc(IotLogger::LogLevel::IOT_LOGLEVEL_ERROR, tag, "%s", logBuf);
+
     delay(10);  // delay to allow log to be written
     _panicHandler();
 }
@@ -549,7 +564,10 @@ void Iot::panicEarly(const char* format...)
 void Iot::escalatingSleepPanicHandler()
 {
     // the escalation itself is IotBackoffPolicy (iot_lifecycle.h)
-    log_w("Entering failure backoff (current %d s)", _lifecycle.backoffDuration_s());
+    const int32_t next_s = _lifecycle.backoffPolicy().next(_lifecycle.backoffDuration_s());
+    log_w("Entering failure backoff: sleeping %ld s", (long)next_s);
+    logger.warn(tag, "failure backoff: sleeping %ld s (boot %lu)", (long)next_s,
+        (unsigned long)getBootCount());
     _lifecycle.enterBackoff();  // runs the exit hooks and does not return
 }
 

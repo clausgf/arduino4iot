@@ -72,26 +72,41 @@ void IotLogger::setLogLevel(LogLevel level)
     _logLevel = level;
 }
 
+/// One log line in the ESP log format, "E (1234) tag: message", without newline.
+static void formatLine(char* logBuf, size_t logBufLen, IotLogger::LogLevel level,
+    const char* tag, const char* format, va_list ap)
+{
+    const char * ESP_LOG_LEVEL_CHARS = "EWIDV";
+    int logLevelIndex = int(level);
+    char logLevelChar = '?';
+    if (logLevelIndex >= 0 && logLevelIndex < (int)strlen(ESP_LOG_LEVEL_CHARS))
+    {
+        logLevelChar = ESP_LOG_LEVEL_CHARS[logLevelIndex];
+    }
+    int headerChars = snprintf(logBuf, logBufLen, "%c (%lu) %s: ", logLevelChar, millis(), tag);
+    if (headerChars < 0 || (size_t)headerChars >= logBufLen) { return; }
+    vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
+}
+
+void IotLogger::logToRtc(LogLevel level, const char *tag, const char* format...)
+{
+    if (level > _logLevel) { return; }
+    char logBuf[160];
+    va_list args;
+    va_start(args, format);
+    formatLine(logBuf, sizeof(logBuf), level, tag, format, args);
+    va_end(args);
+    keepOffline(std::string(logBuf) + '\n');
+}
+
 void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_list ap)
 {
     // TODO logging is not reentrant - do we need to change this?
     if (level <= _logLevel)
     {
-        const char * ESP_LOG_LEVEL_CHARS = "EWIDV";
         const int logBufLen = 160;
         char logBuf[logBufLen];
-
-        // print header
-        int logLevelIndex = int(level);
-        char logLevelChar = '?';
-        if (logLevelIndex < strlen(ESP_LOG_LEVEL_CHARS))
-        {
-            logLevelChar = ESP_LOG_LEVEL_CHARS[logLevelIndex];
-        }
-        int headerChars = snprintf(logBuf, logBufLen, "%c (%lu) %s: ", logLevelChar, millis(), tag);
-
-        // print the message itself
-        vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
+        formatLine(logBuf, logBufLen, level, tag, format, ap);
 
         // actual log output
         log_v("Logging level=%d tag=%s msg=\"%s\"", level, tag, logBuf);

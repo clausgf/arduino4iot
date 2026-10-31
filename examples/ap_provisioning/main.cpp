@@ -101,9 +101,12 @@ void setup()
         iot.panic("*** PANIC *** network connection failed");
     }
 
-    if (!api.updateProvisioningOk())
+    // the status goes into the remote log with the panic message
+    IotResult prov = api.updateProvisioning();
+    if (!prov)
     {
-        iot.panic("*** PANIC *** Provisioning failed");
+        iot.panic("*** PANIC *** Provisioning failed (http=%d, transport=%d)",
+            prov.httpStatus, prov.transportError);
     }
 
     config.updateConfig();

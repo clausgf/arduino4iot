@@ -606,6 +606,7 @@ bool IotWifiNetwork::_waitForConnection(unsigned long deadline_ms) const
 
 bool IotWifiNetwork::connect(uint32_t timeout_ms)
 {
+    _lastError.clear();
     if (isConnected())
     {
         log_i("IotWifiNetwork: already connected ip=%s", localIp().c_str());
@@ -614,6 +615,7 @@ bool IotWifiNetwork::connect(uint32_t timeout_ms)
     if (_ssid.isEmpty())
     {
         log_e("IotWifiNetwork: no SSID configured");
+        _lastError = "no SSID configured";
         return false;
     }
 
@@ -680,9 +682,23 @@ bool IotWifiNetwork::connect(uint32_t timeout_ms)
         _waitForConnection(deadline);
     }
 
-    if (WiFi.status() != WL_CONNECTED)
+    const wl_status_t status = WiFi.status();
+    if (status != WL_CONNECTED)
     {
-        log_e("IotWifiNetwork: connection failed");
+        const char* reason;
+        switch (status)
+        {
+            case WL_NO_SSID_AVAIL:    reason = "ssid not found"; break;
+            case WL_CONNECT_FAILED:   reason = "connect failed, wrong password?"; break;
+            case WL_CONNECTION_LOST:  reason = "connection lost"; break;
+            case WL_DISCONNECTED:     reason = "timeout"; break;
+            default:                  reason = "not connected"; break;
+        }
+        char text[96];
+        snprintf(text, sizeof(text), "%s (status %d) ssid=%s after %lu ms%s", reason, (int)status,
+            _ssid.c_str(), (unsigned long)(millis() - startTime), triedFast ? ", fast reconnect tried" : "");
+        _lastError = text;
+        log_e("IotWifiNetwork: connection failed: %s", text);
         return false;
     }
 

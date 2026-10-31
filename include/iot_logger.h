@@ -59,6 +59,13 @@ public:
      */
     void logf(LogLevel level, const char *tag, const char* format...);
 
+    /**
+     * Log a line straight into the RTC log, for a later cycle: never touches
+     * the network or the RAM buffer. For paths where a request is unsafe or
+     * pointless, e.g. a panic before the network is up.
+     */
+    void logToRtc(LogLevel level, const char *tag, const char* format...);
+
     // --- logging helpers ---
     void error(const char *tag, const char* format...);
     void warn(const char *tag, const char* format...);
