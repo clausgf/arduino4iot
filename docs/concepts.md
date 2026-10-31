@@ -372,7 +372,10 @@ relying on the stock `esp32dev` scheme.
 `config` mirrors a server-side JSON file into an `IotStore` (NVS namespace
 `iot-cfg`). `config.updateConfig()` downloads it using `ETag`/`If-None-Match`
 (and `Last-Modified`), so an unchanged file is not transferred again. Values are
-read back with `config.getInt/getBool/getString(...)`.
+read back with `config.getInt/getBool/getString(...)` — reads only: a value is
+changed by the server or, for the cycle, by `set()` on its `IotConfigValue`.
+`config.isMirrored()` tells whether a config.json was ever applied, e.g. to
+fetch it synchronously on a device's first cycle and in the background later.
 
 `IotConfigValue<T>` binds a C++ variable to a config key, which keeps the
 library's own tunables (log level, sleep duration, panic parameters, …)

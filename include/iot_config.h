@@ -11,6 +11,7 @@
 
 #include <ArduinoJson.h>
 
+#include "iot_cache.h"
 #include "iot_names.h"
 #include "iot_ports.h"
 #include "iot_result.h"
@@ -239,12 +240,16 @@ public:
      */
     int applyJsonBody(const char* body, int* oUnknown = nullptr, int* oMismatched = nullptr);
 
-    /// @return the ETag of the mirrored configuration, for diagnostics.
-    std::string etag() const { return _store ? _store->getString(iot_nvs_keys::CONFIG_ETAG, "") : std::string(); }
-    /// @return the Last-Modified date of the mirrored configuration.
-    std::string lastModified() const { return _store ? _store->getString(iot_nvs_keys::CONFIG_DATE, "") : std::string(); }
+    /// @return the ETag and Last-Modified of the mirrored configuration file.
+    IotCacheValidators validators() const;
 
-    // --- free-form access, for values without a bound variable ---
+    /// @return true if a config.json was applied at some point, so the
+    /// registered values hold the server's values from NVS rather than only
+    /// their compile-time defaults. False on a fresh device or after
+    /// factoryReset().
+    bool isMirrored() const { return !validators().isEmpty(); }
+
+    // --- free-form reads, for keys without a bound variable ---
 
     int64_t getInt(const char* key, int64_t defaultValue = 0) const
     {
@@ -258,10 +263,6 @@ public:
     {
         return _store ? _store->getString(key, defaultValue) : defaultValue;
     }
-
-    void setInt(const char* key, int64_t value) { if (_store) { _store->putInt(key, value); } }
-    void setBool(const char* key, bool value) { if (_store) { _store->putBool(key, value); } }
-    void setString(const char* key, const std::string& value) { if (_store) { _store->putString(key, value); } }
 
     /// @return the value registered under @p key for this instance, or nullptr.
     IotConfigValueBase* find(const char* key) const { return _find(key); }

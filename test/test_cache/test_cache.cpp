@@ -276,12 +276,14 @@ struct ConfigFixture
 void test_update_config_applies_and_commits_the_validators()
 {
     ConfigFixture f;
+    TEST_ASSERT_FALSE(f.cfg.isMirrored());
     f.http.reply(200, "{\"sleep_s\":600}", { { "ETag", "\"c1\"" }, { "Last-Modified", "d1" } });
     IotResult r = f.cfg.updateConfig();
     TEST_ASSERT_TRUE(r.isOk());
     TEST_ASSERT_EQUAL_INT32(600, f.sleep_s.get());
-    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.etag().c_str());
-    TEST_ASSERT_EQUAL_STRING("d1", f.cfg.lastModified().c_str());
+    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.validators().etag.c_str());
+    TEST_ASSERT_EQUAL_STRING("d1", f.cfg.validators().lastModified.c_str());
+    TEST_ASSERT_TRUE(f.cfg.isMirrored());
     TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/file/myproject/e32_aabbccddeeff/config.json",
         f.http.lastRequest().url.c_str());
 
@@ -289,7 +291,7 @@ void test_update_config_applies_and_commits_the_validators()
     r = f.cfg.updateConfig();
     TEST_ASSERT_TRUE(r.isNotModified());
     TEST_ASSERT_EQUAL_STRING("\"c1\"", f.http.lastRequest().headers.at("If-None-Match").c_str());
-    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.etag().c_str());
+    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.validators().etag.c_str());
 }
 
 void test_update_config_with_a_malformed_body_keeps_the_old_validators()
@@ -299,7 +301,7 @@ void test_update_config_with_a_malformed_body_keeps_the_old_validators()
     f.http.reply(200, "not json", { { "ETag", "\"c2\"" } });
     IotResult r = f.cfg.updateConfig();
     TEST_ASSERT_EQUAL_INT(IotResult::STATUS_MALFORMED_RESPONSE, r.httpStatus);
-    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.etag().c_str());
+    TEST_ASSERT_EQUAL_STRING("\"c1\"", f.cfg.validators().etag.c_str());
 }
 
 

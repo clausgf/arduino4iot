@@ -84,14 +84,9 @@ static void applyTlsToOta(const IotTlsConfig& tls)
     }
 }
 
-std::string IotOtaEndpoint::etag() const
+IotCacheValidators IotOtaEndpoint::validators() const
 {
-    return api.store().getString(iot_nvs_keys::FIRMWARE_ETAG, "");
-}
-
-std::string IotOtaEndpoint::lastModified() const
-{
-    return api.store().getString(iot_nvs_keys::FIRMWARE_DATE, "");
+    return IotStoredValidators(api.store(), iot_nvs_keys::FIRMWARE_ETAG, iot_nvs_keys::FIRMWARE_DATE).load();
 }
 
 IotResult IotOtaEndpoint::update(const std::string& apiPath,

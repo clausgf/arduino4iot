@@ -237,8 +237,8 @@ void test_free_form_access_uses_the_same_key_space()
     // no second naming scheme: the config.json key is the storage key
     TEST_ASSERT_EQUAL_INT64(120, f.config.getInt("sleep_s"));
 
-    f.config.setString("app_note", "hello");
-    TEST_ASSERT_EQUAL_STRING("hello", f.config.getString("app_note").c_str());
+    // a key nobody declared reads its default, not an error
+    TEST_ASSERT_EQUAL_STRING("none", f.config.getString("app_note", "none").c_str());
 }
 
 void test_an_unbound_config_returns_defaults_instead_of_crashing()
@@ -247,7 +247,8 @@ void test_an_unbound_config_returns_defaults_instead_of_crashing()
     TEST_ASSERT_EQUAL_INT64(7, unbound.getInt("anything", 7));
     TEST_ASSERT_EQUAL_STRING("d", unbound.getString("anything", "d").c_str());
     TEST_ASSERT_EQUAL_INT(-1, unbound.applyJsonBody("{\"sleep_s\":1}"));
-    TEST_ASSERT_EQUAL_STRING("", unbound.etag().c_str());
+    TEST_ASSERT_TRUE(unbound.validators().isEmpty());
+    TEST_ASSERT_FALSE(unbound.isMirrored());
 }
 
 

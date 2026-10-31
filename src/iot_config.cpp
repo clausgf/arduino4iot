@@ -148,7 +148,8 @@ void IotConfig::begin(IotStore& store, const char* apiPath)
     }
 
     reload();
-    log_i("--- Config etag=%s date=%s", etag().c_str(), lastModified().c_str());
+    const IotCacheValidators mirrored = validators();
+    log_i("--- Config etag=%s date=%s", mirrored.etag.c_str(), mirrored.lastModified.c_str());
 }
 
 // *****************************************************************************
@@ -160,6 +161,14 @@ void IotConfig::reload()
     {
         if (v->owner() == this) { v->loadFrom(*_store); }
     }
+}
+
+// *****************************************************************************
+
+IotCacheValidators IotConfig::validators() const
+{
+    if (_store == nullptr) { return IotCacheValidators{}; }
+    return IotStoredValidators(*_store, iot_nvs_keys::CONFIG_ETAG, iot_nvs_keys::CONFIG_DATE).load();
 }
 
 // *****************************************************************************
