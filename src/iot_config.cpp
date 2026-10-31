@@ -305,6 +305,26 @@ std::string IotConfig::schemaJson() const
         }
     }
 
+    if (_schemaExtras != nullptr && _schemaExtras[0] != '\0')
+    {
+        JsonDocument extras;
+        if (deserializeJson(extras, _schemaExtras) || !extras.is<JsonObjectConst>())
+        {
+            log_w("Config: schema extras are not a JSON object, ignored");
+        } else {
+            for (JsonPairConst kv : extras.as<JsonObjectConst>())
+            {
+                const char* key = kv.key().c_str();
+                if (strcmp(key, "properties") == 0 || strcmp(key, "type") == 0
+                    || strcmp(key, "$schema") == 0)
+                {
+                    continue;
+                }
+                doc[key] = kv.value();
+            }
+        }
+    }
+
     std::string out;
     serializeJsonPretty(doc, out);
     return out;

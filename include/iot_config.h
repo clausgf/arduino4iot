@@ -278,6 +278,19 @@ public:
     std::string schemaJson() const;
 
     /**
+     * Add top-level members to schemaJson(), e.g. a form layout:
+     *
+     *   config.setSchemaExtras(R"({"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}})");
+     *
+     * @p json must be a JSON object; its members are copied as they are, except
+     * "properties", "type" and "$schema", which the library owns. They count
+     * for the published hash, so changing them publishes again. Invalid JSON
+     * is logged and ignored. Not copied: @p json must outlive this object,
+     * which a string literal does.
+     */
+    void setSchemaExtras(const char* json) { _schemaExtras = json; }
+
+    /**
      * Upload schemaJson() as file/{project}/{device}/@p filename, unless the
      * same schema was published before (a hash of it is kept in the store).
      * Call after updateConfig(); a new firmware with changed values publishes
@@ -292,6 +305,7 @@ public:
 private:
     IotStore* _store = nullptr;
     const char* _apiPath = nullptr;
+    const char* _schemaExtras = nullptr;
 
     IotConfigValueBase* _find(const char* key) const;
 };

@@ -438,6 +438,13 @@ static IotConfigValue<std::string> rotation(config, "0deg", "rotation",
   changed: a hash of the last published schema is kept in NVS
   (`iotCfgSchema`), so a firmware that adds or changes a value publishes once,
   and every other wakeup costs no request.
+- **Presentation stays with the application:** `config.setSchemaExtras(json)`
+  adds top-level members such as nice4iot's `x-ui` layout or
+  `additionalProperties`. The library owns `properties`, `type` and `$schema`;
+  everything else is copied as is and counts for the published hash.
+  ```cpp
+  config.setSchemaExtras(R"({"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}})");
+  ```
 - **Opt-in:** only a firmware that calls `publishSchema()` (or `schemaJson()`)
   links the schema code.
 - **Approval:** nice4iot ignores a device-uploaded schema until an operator

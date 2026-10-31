@@ -267,7 +267,8 @@ the linker drops every one an application does not reference.
 - **New: `IotConfigMeta`** on `IotConfigValue` (title, description, min/max,
   `enumValues`), enforced on values from `config.json` and NVS, and
   `config.publishSchema()`, which uploads a generated `config.schema.json`
-  once per changed schema. The library's own values are now limited:
+  once per changed schema; `config.setSchemaExtras()` adds an `x-ui` layout or
+  other top-level members. The library's own values are now limited:
   `log_level` 0–5, `sleep_s` 1 s – 7 d, `battery_min_mv` −1–10000,
   `panic_init_s`/`panic_max_s` 1 s – 7 d, `panic_factor` 1–16; a
   `config.json` outside these is clamped. See
