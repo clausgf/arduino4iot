@@ -45,7 +45,7 @@ one of them:
 | Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
-| Firmware update | `iot.ota.update()`, `iot.ota.etag()` |
+| Firmware update | `iot.ota.update()`, `iot.ota.validators()` |
 | HTTP to the server | `api.get()`, `api.post()`, `api.put()`, `api.head()`, `api.send()`, `api.getCached()` |
 | Provisioning | `api.updateProvisioning()` |
 | Configuration | `config.updateConfig()`, `IotConfigValue<T>`, `config.getInt()`/`getString()`/... |
@@ -195,7 +195,7 @@ the linker drops every one an application does not reference.
   `iot_ap_text.h`, `iot_ota_internal.h`, `iot_log.h`). `include/` is the public
   interface; none of these appear in a public header or a sketch.
 - **`api.updateFirmware()` → `iot.ota.update()`**, together with
-  `getFirmwareHttpEtag()/Date()` → `iot.ota.etag()/lastModified()`. The OTA
+  `getFirmwareHttpEtag()/Date()` → `iot.ota.validators()`. The OTA
   downloader is ESP-specific, and `IotApi` is now Arduino-free: it builds URLs,
   merges headers and handles the 401 retry over an `IotHttp` port, while sockets
   and TLS belong to `IotEspHttp`. That is what makes the transport testable —
@@ -257,9 +257,12 @@ the linker drops every one an application does not reference.
   keeps working and also uses the built-in adapter. `iot.getDeviceId()` reads the MAC from the eFuse and therefore works
   without an established connection — it used to return an empty string when the
   connect had failed, which silently broke every API URL on that path.
-- **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**
-  (and `setConfigXxx()` → `setXxx()`); `getConfigHttpEtag()/getConfigHttpDate()`
-  → `etag()/lastModified()`. `IotConfigValue<String>` is now
+- **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**;
+  `setConfigXxx()` is gone (it wrote the config mirror behind the back of the
+  precedence rules — set a declared `IotConfigValue`, or keep application data
+  in an own `IotNvsStore`); `getConfigHttpEtag()/getConfigHttpDate()` →
+  `config.validators()`, and `config.isMirrored()` tells whether a config.json
+  was ever applied. `IotConfigValue<String>` is now
   `IotConfigValue<std::string>`, and `get()` returns a reference.
 - **New: `IotConfigMeta`** on `IotConfigValue` (title, description, min/max,
   `enumValues`), enforced on values from `config.json` and NVS, and
@@ -314,7 +317,7 @@ the linker drops every one an application does not reference.
   `iot.telemetry.postSystem()`, `iotUploadFile()` → `iot.files.upload()`,
   `iotForward()` → `iot.forward.get()`, `iotUpdateFirmware()` →
   `iot.ota.update()`, `iotFirmwareHttpEtag()/Date()` →
-  `iot.ota.etag()/lastModified()`, `iotGetCached()` → `api.getCached()`. Including
+  `iot.ota.validators()`, `iotGetCached()` → `api.getCached()`. Including
   `iot_endpoints.h` is no longer necessary; `iot.h` brings it.
 - **`api.apiGet/apiPost/apiPut/apiHead/apiRequest()` → `api.get/post/put/head/send()`.**
   They return an `IotApiResponse` (`.result`, `.body`, `.header(name)`) instead

@@ -115,8 +115,6 @@ struct IotOtaEndpoint
     IotResult update(const std::string& apiPath = iot_paths::FIRMWARE,
         const std::map<std::string, std::string>& header = {}) const;
 
-    /// @return the ETag of the installed firmware image, for diagnostics.
-    std::string etag() const;
-    /// @return the Last-Modified date of the installed firmware image.
-    std::string lastModified() const;
+    /// @return the ETag and Last-Modified of the installed firmware image.
+    IotCacheValidators validators() const;
 };
