@@ -51,13 +51,8 @@ static std::string takeOffline()
 
 IotLogger::IotLogger()
 {
-    _logLevel = LogLevel::IOT_LOGLEVEL_NOTSET;
+    _level = Level::All;
     _buffered = true;
-}
-
-void IotLogger::begin(LogLevel logLevel)
-{
-    setLogLevel(logLevel);
 }
 
 void IotLogger::end()
@@ -67,17 +62,12 @@ void IotLogger::end()
 
 // *****************************************************************************
 
-void IotLogger::setLogLevel(LogLevel level)
-{
-    _logLevel = level;
-}
-
 /// One log line in the ESP log format, "E (1234) tag: message", without newline.
-static void formatLine(char* logBuf, size_t logBufLen, IotLogger::LogLevel level,
+static void formatLine(char* logBuf, size_t logBufLen, IotLogger::Level level,
     const char* tag, const char* format, va_list ap)
 {
     const char * ESP_LOG_LEVEL_CHARS = "EWIDV";
-    int logLevelIndex = int(level);
+    int logLevelIndex = (int)level;
     char logLevelChar = '?';
     if (logLevelIndex >= 0 && logLevelIndex < (int)strlen(ESP_LOG_LEVEL_CHARS))
     {
@@ -88,9 +78,9 @@ static void formatLine(char* logBuf, size_t logBufLen, IotLogger::LogLevel level
     vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
 }
 
-void IotLogger::logToRtc(LogLevel level, const char *tag, const char* format...)
+void IotLogger::logToRtc(Level level, const char *tag, const char* format...)
 {
-    if (level > _logLevel) { return; }
+    if (level > _level) { return; }
     char logBuf[160];
     va_list args;
     va_start(args, format);
@@ -99,10 +89,10 @@ void IotLogger::logToRtc(LogLevel level, const char *tag, const char* format...)
     keepOffline(std::string(logBuf) + '\n');
 }
 
-void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_list ap)
+void IotLogger::logv(Level level, const char *tag, const char* format, va_list ap)
 {
     // TODO logging is not reentrant - do we need to change this?
-    if (level <= _logLevel)
+    if (level <= _level)
     {
         const int logBufLen = 160;
         char logBuf[logBufLen];
@@ -131,7 +121,7 @@ void IotLogger::logv(LogLevel level, const char *tag, const char* format, va_lis
 
 // *****************************************************************************
 
-void IotLogger::logf(LogLevel level, const char *tag, const char* format...)
+void IotLogger::log(Level level, const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
@@ -143,7 +133,7 @@ void IotLogger::error(const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logv(LogLevel::IOT_LOGLEVEL_ERROR, tag, format, args);
+    logv(Level::Error, tag, format, args);
     va_end(args);
 }
 
@@ -151,7 +141,7 @@ void IotLogger::warn(const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logv(LogLevel::IOT_LOGLEVEL_WARNING, tag, format, args);
+    logv(Level::Warning, tag, format, args);
     va_end(args);
 }
 
@@ -159,7 +149,7 @@ void IotLogger::info(const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logv(LogLevel::IOT_LOGLEVEL_INFO, tag, format, args);
+    logv(Level::Info, tag, format, args);
     va_end(args);
 }
 
@@ -167,7 +157,7 @@ void IotLogger::debug(const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logv(LogLevel::IOT_LOGLEVEL_DEBUG, tag, format, args);
+    logv(Level::Debug, tag, format, args);
     va_end(args);
 }
 
@@ -175,7 +165,7 @@ void IotLogger::verbose(const char *tag, const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logv(LogLevel::IOT_LOGLEVEL_VERBOSE, tag, format, args);
+    logv(Level::Verbose, tag, format, args);
     va_end(args);
 }
 

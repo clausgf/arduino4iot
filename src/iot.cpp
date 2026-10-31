@@ -84,7 +84,7 @@ static IotHttp& defaultHttp()
 Iot::Iot() :
     _lifecycle(defaultPower(), iotRtcState()),
 
-    _logLevel(config, IotLogger::LogLevel::IOT_LOGLEVEL_NOTSET, "log_level",
+    _logLevel(config, (int32_t)IotLogger::Level::All, "log_level",
         { .title = "Log level",
           .description = "Remote log threshold: 0 error, 1 warning, 2 info, 3 debug, 4 verbose, 5 all",
           .min = 0, .max = 5 }),
@@ -189,7 +189,7 @@ void Iot::_initSubsystems()
 
     // read configuration again to allow overwriting hardcoded parameters with WiFi config
     config.begin(configStore());
-    logger.begin((IotLogger::LogLevel)_logLevel.get());
+    logger.setLevel((IotLogger::Level)_logLevel.get());
 
     // the backoff parameters may have been changed by the server config
     _lifecycle.setBackoffPolicy(IotBackoffPolicy{
@@ -212,7 +212,7 @@ void Iot::_initSubsystems()
 
     // initialize other components
     startWatchdog(_watchdogTimeout_s);
-    logger.setNetwork(_network);
+    logger.setNetwork(*_network);
     api.setDeviceName(getDeviceId());
     api.setBoardId(getBoardId());
     api.begin(iotBootstrapStore(), defaultHttp(), *_clock);
@@ -506,7 +506,7 @@ void Iot::panic(const char* format...)
 {
     va_list args;
     va_start(args, format);
-    logger.logv(IotLogger::LogLevel::IOT_LOGLEVEL_ERROR, tag, format, args);
+    logger.logv(IotLogger::Level::Error, tag, format, args);
     va_end(args);
 
     // the handler typically ends the cycle, and the exit hooks flush this
@@ -527,7 +527,7 @@ void Iot::_panicEarly(const char* format...)
     va_end(args);
 
     // no request here: straight into RTC RAM, sent by a later cycle
-    logger.logToRtc(IotLogger::LogLevel::IOT_LOGLEVEL_ERROR, tag, "%s", logBuf);
+    logger.logToRtc(IotLogger::Level::Error, tag, "%s", logBuf);
 
     delay(10);  // delay to allow log to be written
     _panicHandler();
