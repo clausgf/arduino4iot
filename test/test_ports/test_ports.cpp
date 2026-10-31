@@ -151,7 +151,7 @@ void test_absent_battery_is_a_null_pointer()
 {
     // a device without a battery has no port - normal, not an error
     IotBattery* battery = nullptr;
-    int milliVolts = (battery != nullptr) ? battery->readMilliVolts() : -1;
+    int milliVolts = (battery != nullptr) ? battery->read_mV() : -1;
     TEST_ASSERT_EQUAL_INT(-1, milliVolts);
 }
 
@@ -159,24 +159,24 @@ void test_callback_battery_wraps_a_lambda()
 {
     int source_mV = 3812;
     IotCallbackBattery battery([&source_mV] { return source_mV; });
-    TEST_ASSERT_EQUAL_INT(3812, battery.readMilliVolts());
+    TEST_ASSERT_EQUAL_INT(3812, battery.read_mV());
 
     source_mV = 3650;
-    TEST_ASSERT_EQUAL_INT(3650, battery.readMilliVolts());
+    TEST_ASSERT_EQUAL_INT(3650, battery.read_mV());
 }
 
 void test_callback_battery_without_callable_reports_unavailable()
 {
     IotCallbackBattery battery{ std::function<int()>() };
-    TEST_ASSERT_EQUAL_INT(-1, battery.readMilliVolts());
+    TEST_ASSERT_EQUAL_INT(-1, battery.read_mV());
 }
 
 void test_fake_battery_defaults_to_unavailable()
 {
     IotFakeBattery battery;
-    TEST_ASSERT_EQUAL_INT(-1, battery.readMilliVolts());
+    TEST_ASSERT_EQUAL_INT(-1, battery.read_mV());
     battery.milliVolts = 4100;
-    TEST_ASSERT_EQUAL_INT(4100, battery.readMilliVolts());
+    TEST_ASSERT_EQUAL_INT(4100, battery.read_mV());
     TEST_ASSERT_EQUAL_UINT(2, battery.readCount());
 }
 

@@ -249,7 +249,7 @@ the linker drops every one an application does not reference.
   `iot.files.upload()`**. The transport no longer carries the server's endpoint
   map, and both are linked only when referenced.
 - **`api.apiSetConnectionTimeout()` / `api.apiSetRequestTimeout()` are removed**
-  (deprecated since 2.x); use `setConnectionTimeout_ms()` / `setRequestTimeout_ms()`.
+  (deprecated since 2.x); use `setConnectTimeout_ms()` / `setRequestTimeout_ms()`.
 - **`iot.setStaticIp()`, `iot.setFastReconnect()` and `iot.setDhcpCache()` →
   `iot.wifi().setStaticIp()` etc.** (with `#include <iot_esp_ports.h>`). They
   tune the built-in `IotWifiNetwork`; the facade no longer carries WiFi details
@@ -306,6 +306,13 @@ the linker drops every one an application does not reference.
   `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
   (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
   → `api.updateProvisioning()` in a boolean context.
+- **One rule for units and types:** the unit is always a suffix, durations in
+  milliseconds are `uint32_t`, in seconds `int32_t`, points in time `int64_t`
+  unix seconds. Visible changes: `IotBattery::readMilliVolts()` → `read_mV()`
+  (an own `IotBattery` overrides the new name); `api.setConnectionTimeout_ms()`
+  → `setConnectTimeout_ms()`; `setRequestTimeout_ms()` takes `uint32_t` (the
+  ESP adapter clamps to HTTPClient's 65 535 ms); `IotPower::deepSleep()` takes
+  `int32_t`. Most other signatures only widen `int` to `int32_t`.
 - **Logger levels are `IotLogger::Level`** (`Error`, `Warning`, `Info`, `Debug`,
   `Verbose`, `All`) instead of `IotLogger::IOT_LOGLEVEL_*`; `setLogLevel()` →
   `setLevel()`, `logf()` → `log()`. `begin()`, `end()`, `setNetwork()`,

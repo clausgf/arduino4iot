@@ -202,7 +202,7 @@ private:
 class IotFakeBattery : public IotBattery
 {
 public:
-    int readMilliVolts() override
+    int32_t read_mV() override
     {
         _readCount++;
         return milliVolts;
@@ -210,7 +210,7 @@ public:
 
     unsigned readCount() const { return _readCount; }
 
-    int milliVolts = -1;
+    int32_t milliVolts = -1;
 
 private:
     unsigned _readCount = 0;
@@ -231,10 +231,10 @@ public:
     struct Call
     {
         Action action = Action::None;
-        uint32_t duration_s = 0;
+        int32_t duration_s = 0;
     };
 
-    void deepSleep(uint32_t duration_s) override { _calls.push_back({ Action::DeepSleep, duration_s }); }
+    void deepSleep(int32_t duration_s) override { _calls.push_back({ Action::DeepSleep, duration_s }); }
     void restart() override { _calls.push_back({ Action::Restart, 0 }); }
     void shutdown() override { _calls.push_back({ Action::Shutdown, 0 }); }
 
@@ -271,8 +271,8 @@ class IotFakeHttp : public IotHttp
 public:
     void setTls(const IotTlsConfig& tls) override { _tls = &tls; }
     bool hasServerTrust() const override { return _tls != nullptr && _tls->hasServerTrust(); }
-    void setConnectTimeout_ms(int32_t timeout_ms) override { connectTimeout_ms = timeout_ms; }
-    void setRequestTimeout_ms(uint16_t timeout_ms) override { requestTimeout_ms = timeout_ms; }
+    void setConnectTimeout_ms(uint32_t timeout_ms) override { connectTimeout_ms = timeout_ms; }
+    void setRequestTimeout_ms(uint32_t timeout_ms) override { requestTimeout_ms = timeout_ms; }
     void close() override { closeCount++; }
     std::string errorToString(int status) const override { return "fake error " + std::to_string(status); }
 
@@ -304,8 +304,8 @@ public:
 
     /// Status used once the queue runs dry.
     int defaultStatus = 200;
-    int32_t connectTimeout_ms = -1;
-    uint16_t requestTimeout_ms = 0;
+    uint32_t connectTimeout_ms = 0;
+    uint32_t requestTimeout_ms = 0;
     unsigned closeCount = 0;
 
     // --- test inspection ---

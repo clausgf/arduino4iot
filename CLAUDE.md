@@ -195,6 +195,10 @@ firmware's. Falls back gracefully (define unset) without git; skip with
 
 ## Conventions
 
+- Units and types: the unit is always a suffix (`_ms`, `_s`, `_mV`); durations
+  in ms are `uint32_t`, in s `int32_t`, points in time `int64_t` unix seconds
+  (never `time_t`, `int`, `long` or `unsigned long` in a public signature).
+  Defaults are named constants, not literals repeated in signatures.
 - Breaking changes and migration notes belong in the README's
   "Migration to version X" section and in the commit message — **not** in code
   comments. Comments describe what the code does now, not what an earlier

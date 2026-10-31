@@ -128,13 +128,13 @@ public:
      * Set a timeout for establishing the TCP connection to the server.
      * @param timeout_ms the timeout in milliseconds
      */
-    void setConnectionTimeout_ms(int32_t timeout_ms);
+    void setConnectTimeout_ms(uint32_t timeout_ms);
 
     /**
      * Set a timeout for waiting for data in an HTTP request.
      * @param timeout_ms the timeout in milliseconds
      */
-    void setRequestTimeout_ms(uint16_t timeout_ms);
+    void setRequestTimeout_ms(uint32_t timeout_ms);
 
 
 
@@ -164,7 +164,7 @@ public:
      * interval to avoid waking up with an expired token - but also smaller
      * than the lifetime the server issues, or every wakeup re-provisions.
      */
-    void setDeviceTokenExpiryMargin_s(int margin_s) { _tokens.setExpiryMargin_s(margin_s); }
+    void setDeviceTokenExpiryMargin_s(int32_t margin_s) { _tokens.setExpiryMargin_s(margin_s); }
 
     /**
      * Update the provisioning information from the API.

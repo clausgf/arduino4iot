@@ -476,9 +476,9 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
 // Battery
 // *****************************************************************************
 
-int Iot::getBatteryVoltage_mV()
+int32_t Iot::getBatteryVoltage_mV()
 {
-    return _battery != nullptr ? _battery->readMilliVolts() : -1;
+    return _battery != nullptr ? _battery->read_mV() : -1;
 }
 
 
@@ -684,7 +684,7 @@ void Iot::resetWatchdog()
 // System management: sleep, restart, shutdown
 // *****************************************************************************
 
-void Iot::setSleepDuration_s(int sleep_duration_s)
+void Iot::setSleepDuration_s(int32_t sleep_duration_s)
 {
     _sleepDuration_s = sleep_duration_s;
 }
@@ -721,7 +721,7 @@ void Iot::deepSleep()
 // (isFailure) leaves it untouched and is reached only through panic() and the
 // undervoltage check.
 
-void Iot::deepSleep(int sleep_duration_s)
+void Iot::deepSleep(int32_t sleep_duration_s)
 {
     _deepSleep(sleep_duration_s, /*isFailure=*/false);
 }
@@ -736,12 +736,12 @@ void Iot::shutdown()
     _shutdown(/*isFailure=*/false);
 }
 
-void Iot::_deepSleep(int sleep_duration_s, bool isFailure)
+void Iot::_deepSleep(int32_t sleep_duration_s, bool isFailure)
 {
     _registerExitHooks();
     log_w("Active for %lu ms, going to deep sleep for %d s",
         (unsigned long)millis(), sleep_duration_s);
-    _lifecycle.deepSleep(sleep_duration_s > 0 ? (uint32_t)sleep_duration_s : 0, isFailure);
+    _lifecycle.deepSleep(sleep_duration_s > 0 ? sleep_duration_s : 0, isFailure);
 }
 
 void Iot::_restart(bool isFailure)

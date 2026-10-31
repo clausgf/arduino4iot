@@ -112,7 +112,7 @@ public:
     uint32_t bootCount() const { return _rtc.bootCount; }
 
     /// @return how long the *previous* cycle stayed awake, in milliseconds.
-    int64_t lastActiveDuration_ms() const { return _rtc.activeDuration_ms; }
+    uint32_t lastActiveDuration_ms() const { return (uint32_t)_rtc.activeDuration_ms; }
 
     /// @return the nominal duration of the sleep this cycle woke up from, in
     /// seconds; 0 after a restart or shutdown.
@@ -131,7 +131,7 @@ public:
 
     /// Sleep for @p duration_s and wake through a full boot. Does not return
     /// on a real device.
-    void deepSleep(uint32_t duration_s, bool isFailure = false)
+    void deepSleep(int32_t duration_s, bool isFailure = false)
     {
         _exit(Exit::DeepSleep, duration_s, isFailure);
     }
@@ -150,12 +150,12 @@ public:
      *
      * @return the duration slept for, for the caller's log.
      */
-    uint32_t enterBackoff();
+    int32_t enterBackoff();
 
 private:
     enum class Exit { DeepSleep, Restart, Shutdown };
 
-    void _exit(Exit exit, uint32_t duration_s, bool isFailure);
+    void _exit(Exit exit, int32_t duration_s, bool isFailure);
 
     IotPower* _power;
     IotRtcState& _rtc;

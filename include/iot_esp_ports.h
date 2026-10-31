@@ -104,8 +104,8 @@ public:
 
     void setTls(const IotTlsConfig& tls) override;
     bool hasServerTrust() const override { return _serverTrustConfigured; }
-    void setConnectTimeout_ms(int32_t timeout_ms) override;
-    void setRequestTimeout_ms(uint16_t timeout_ms) override;
+    void setConnectTimeout_ms(uint32_t timeout_ms) override;
+    void setRequestTimeout_ms(uint32_t timeout_ms) override;
     int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override;
     void close() override;
     std::string errorToString(int status) const override;
@@ -116,8 +116,8 @@ private:
     WiFiClient* _client = nullptr;
     HTTPClient* _http = nullptr;
     bool _serverTrustConfigured = false;
-    int32_t _connectTimeout_ms = -1;
-    uint16_t _requestTimeout_ms = 0;
+    uint32_t _connectTimeout_ms = 0;   ///< 0: the HTTPClient default
+    uint32_t _requestTimeout_ms = 0;   ///< 0: the HTTPClient default
 
     /// Create the client matching the URL scheme and apply the TLS trust.
     WiFiClient& _clientFor(const std::string& url);
@@ -287,7 +287,7 @@ public:
         int pin           = -1;   ///< ADC pin; < 0 disables the measurement
         int factor        = 2;    ///< divider numerator
         int divider       = 1;    ///< divider denominator (must not be 0)
-        int offset_mV     = 0;    ///< additive correction
+        int32_t offset_mV = 0;    ///< additive correction
         int samples       = 4;    ///< readings to average, at least 1
         int enablePin     = -1;   ///< optional pin powering the divider; < 0 = always on
         bool enableActiveHigh = true;
@@ -298,14 +298,14 @@ public:
 
     /// @return the averaged, corrected voltage in mV, or -1 if no pin is
     /// configured. Cached after the first call within a wakeup cycle.
-    int readMilliVolts() override;
+    int32_t read_mV() override;
 
-    /// Drop the cached reading so the next readMilliVolts() measures again.
+    /// Drop the cached reading so the next read_mV() measures again.
     void invalidate() { _cached_mV = -1; }
 
 private:
     Config _config;
-    int _cached_mV;
+    int32_t _cached_mV;
 };
 
 
@@ -323,7 +323,7 @@ class IotEspPower : public IotPower
 public:
     IotEspPower() = default;
 
-    void deepSleep(uint32_t duration_s) override;
+    void deepSleep(int32_t duration_s) override;
     void restart() override;
     void shutdown() override;
     IotResetReason resetReason() const override;

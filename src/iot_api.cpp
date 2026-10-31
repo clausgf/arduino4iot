@@ -98,12 +98,12 @@ void IotApi::closeConnection()
     }
 }
 
-void IotApi::setConnectionTimeout_ms(int32_t timeout_ms)
+void IotApi::setConnectTimeout_ms(uint32_t timeout_ms)
 {
     if (_http != nullptr) { _http->setConnectTimeout_ms(timeout_ms); }
 }
 
-void IotApi::setRequestTimeout_ms(uint16_t timeout_ms)
+void IotApi::setRequestTimeout_ms(uint32_t timeout_ms)
 {
     if (_http != nullptr) { _http->setRequestTimeout_ms(timeout_ms); }
 }

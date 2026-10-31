@@ -46,11 +46,11 @@ public:
 
     /// How long the AP waits without an associated client before giving up
     /// and going to indefinite sleep. Default 300 s (5 min).
-    void setIdleTimeout_s(int idleTimeout_s);
+    void setIdleTimeout_s(int32_t idleTimeout_s);
 
 private:
     String _ssidPrefix;
-    int _idleTimeout_s;
+    int32_t _idleTimeout_s;
     DNSServer _dnsServer;
     WebServer _webServer;
 
