@@ -84,21 +84,6 @@ public:
     /// Hardware variant substituted for {board} in a path; empty if unset.
     void setBoardId(const std::string& boardId) { _boardId = boardId; }
 
-    /// @return the store the API configuration and tokens live in.
-    IotStore& store() { return *_store; }
-
-    /// @return the device token, i.e. the Authorization header value.
-    const std::string& deviceToken() const { return _tokens.deviceToken(); }
-
-    /// @return the seeded TLS trust, e.g. for an OTA download that opens its
-    /// own connection.
-    const IotTlsConfig& tlsConfig() const { return _tls; }
-
-    /// Merge @p base with the setApiHeader() defaults and @p requestHeader,
-    /// later sources winning. Public because an operation that opens its own
-    /// connection (OTA) needs the same header set.
-    std::map<std::string, std::string> mergeHeaders(std::map<std::string, std::string> base,
-        const std::map<std::string, std::string>& requestHeader) const;
 
 
     // **********************************************************************
@@ -108,8 +93,7 @@ public:
     /**
      * Set the device name, e.g. "my-device".
      *
-     * The device name is replaced for {device} in actual urls generated
-     * for API calls, @see getApiUrlForPath().
+     * The device name is replaced for {device} in the paths of API calls.
      */
     void setDeviceName(const std::string& device);
 
@@ -163,22 +147,6 @@ public:
     // runtime.
 
     /**
-     * Set the device token for API access.
-     *
-     * The API device token is used for authentication in API requests.
-     * Usually, this key is automatically obtained and updated
-     * during provisioning.
-     *
-     * This information is stored in non-volatile NVRAM and restored on the
-     * next startup.
-     *
-     * @param apiToken the API token including the scheme, e.g. "bearer 1234567890abcdef"
-     * @param expiresAt the expiry time of the token as unix timestamp,
-     *        0 if unknown
-     */
-    void setDeviceToken(const std::string& apiToken, time_t expiresAt = 0);
-
-    /**
      * Clear the API token. This is useful for forcing provisioning.
      */
     void clearDeviceToken();
@@ -187,11 +155,11 @@ public:
      * @return the expiry time of the device token as unix timestamp or
      * 0 if unknown
      */
-    time_t getDeviceTokenExpiresAt() { return (time_t)_tokens.deviceTokenExpiresAt(); }
+    int64_t getDeviceTokenExpiresAt() const { return _tokens.deviceTokenExpiresAt(); }
 
     /**
      * Set the margin before the device token expiry at which
-     * updateProvisioningOk() proactively requests a new token.
+     * updateProvisioning() proactively requests a new token.
      * The default is 3600 s. Choose a margin larger than your sleep
      * interval to avoid waking up with an expired token - but also smaller
      * than the lifetime the server issues, or every wakeup re-provisions.
@@ -222,16 +190,6 @@ public:
      */
     IotResult updateProvisioning(const std::string& apiPath = iot_paths::PROVISION);
 
-    /**
-     * Convenience wrapper around updateProvisioning() for callers that only
-     * need a yes/no answer.
-     *
-     * @return true if provisioning information is current (with or without update)
-     */
-    bool updateProvisioningOk(const std::string& apiPath = "provision")
-    {
-        return updateProvisioning(apiPath).isOk();
-    }
 
 
     // **********************************************************************
@@ -239,25 +197,13 @@ public:
     // **********************************************************************
 
     /**
-     * Return the effective URL for a given apiPath.
-     *
-     * This function replaces variables known to the IoT system like
-     * {project}, {device} and {board} (the IOT_BOARD_ID build default, empty
-     * if undefined - see Iot::getBoardId()) in the given path.
-     * It also adds the API base URL.
-     *
-     * @param apiPath the path relative to the API base URL, e.g. "/foo/{device}/bar"
-     * @return the full URL, e.g. "https://api.example.com/api/foo/e32_123/bar"
-     */
-    std::string getApiUrlForPath(const std::string& apiPath);
-
-    /**
      * Send @p request and return status, body and the collected headers.
      *
      *   IotApiResponse r = api.send({ .method = "PATCH", .path = "x/{device}",
      *                                 .body = "{}", .collectHeaders = { "ETag" } });
      *
-     * The URL is built by getApiUrlForPath(). Headers merge, later winning:
+     * The URL is the base URL plus the path, with {project}, {device} and
+     * {board} (IOT_BOARD_ID) substituted. Headers merge, later winning:
      * "Accept"/"Content-Type: application/json" and the device token, then
      * setApiHeader(), then request.headers; an empty value suppresses a header.
      *
@@ -299,6 +245,23 @@ public:
     // **********************************************************************
 
 private:
+    // --- for the OTA download, which opens its own connection ---
+    friend struct IotOtaEndpoint;
+
+    /// @return the store the API configuration and tokens live in.
+    IotStore& store() { return *_store; }
+    /// @return the device token, i.e. the Authorization header value.
+    const std::string& deviceToken() const { return _tokens.deviceToken(); }
+    /// @return the seeded TLS trust.
+    const IotTlsConfig& tlsConfig() const { return _tls; }
+    /// Merge @p base with the setApiHeader() defaults and @p requestHeader,
+    /// later sources winning.
+    std::map<std::string, std::string> mergeHeaders(std::map<std::string, std::string> base,
+        const std::map<std::string, std::string>& requestHeader) const;
+    /// @return the URL of @p apiPath: base URL plus the path with {project},
+    /// {device} and {board} substituted.
+    std::string getApiUrlForPath(const std::string& apiPath);
+
     IotStore* _store = nullptr;
     IotHttp* _http = nullptr;
     IotClock* _clock = nullptr;

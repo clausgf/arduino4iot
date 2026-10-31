@@ -116,11 +116,6 @@ void IotApi::setRequestTimeout_ms(uint16_t timeout_ms)
 // The provisioning token is seeded into NVS by Iot::seedCredentials() and loaded
 // by begin(); it is no longer set at runtime.
 
-void IotApi::setDeviceToken(const std::string& deviceToken, time_t expiresAt)
-{
-    _tokens.setDeviceToken(std::string(deviceToken.c_str()), (int64_t)expiresAt);
-}
-
 void IotApi::clearDeviceToken()
 {
     _tokens.clearDeviceToken();

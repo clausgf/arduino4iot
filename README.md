@@ -47,7 +47,7 @@ one of them:
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
 | Firmware update | `iot.ota.update()`, `iot.ota.etag()` |
 | HTTP to the server | `api.get()`, `api.post()`, `api.put()`, `api.head()`, `api.send()`, `api.getCached()` |
-| Provisioning | `api.updateProvisioning()`, `api.updateProvisioningOk()` |
+| Provisioning | `api.updateProvisioning()` |
 | Configuration | `config.updateConfig()`, `IotConfigValue<T>`, `config.getInt()`/`getString()`/... |
 | Logging | `logger.info()`/`warn()`/`error()`, `logger.flush()` |
 | Application state | `IotRtcSlot<T>` (RTC RAM), `IotNvsStore` (NVS) |
@@ -84,7 +84,7 @@ the library has no group for.
    {
        iot.panic("*** PANIC *** network connection failed");
    }
-   if (!api.updateProvisioningOk())
+   if (!api.updateProvisioning())
    {
        iot.panic("*** PANIC *** Provisioning failed");
    }
@@ -116,7 +116,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 
 - **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_V": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
-- **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). On the device endpoints (telemetry, log, file, forward) the server normalizes *every* authentication failure to **HTTP 401** — devices are deliberately not told why auth failed — which triggers automatic re-provisioning and a single retry. The `/provision` endpoint itself still returns **HTTP 403** for configuration problems that re-provisioning cannot fix (project inactive, device inactive or not approved, HTTP API disabled for the project); this surfaces as a failed `api.updateProvisioningOk()`. Should a device endpoint ever return 403, the library treats it the same way — it keeps the token and does not retry — but current nice4iot emits 403 only from `/provision`.
+- **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). On the device endpoints (telemetry, log, file, forward) the server normalizes *every* authentication failure to **HTTP 401** — devices are deliberately not told why auth failed — which triggers automatic re-provisioning and a single retry. The `/provision` endpoint itself still returns **HTTP 403** for configuration problems that re-provisioning cannot fix (project inactive, device inactive or not approved, HTTP API disabled for the project); this surfaces as `api.updateProvisioning()` returning `.httpStatus == 403`. Should a device endpoint ever return 403, the library treats it the same way — it keeps the token and does not retry — but current nice4iot emits 403 only from `/provision`.
 - **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again. `api.getCached()` offers the same for an application's own resources and returns the `Cache-Control` max-age; see [Conditional GET](docs/concepts.md#conditional-get-for-application-resources).
 - **Connection reuse:** all HTTP(S) requests within a wakeup cycle share a single keep-alive TCP/TLS connection, so the (expensive) TLS handshake is paid only once per cycle. The connection is closed automatically before deep sleep, restart and shutdown (or manually via `api.closeConnection()`).
 - **TLS server authentication:** for an `https://` API URL you must choose how the server certificate is verified — pick exactly one:
@@ -184,7 +184,7 @@ the linker drops every one an application does not reference.
   the server) and `watchdog_s` (a value set too low from the server bricks a
   fleet, and a device that cannot boot cannot fetch a corrected file). None was
   ever seeded, so nothing else is affected. Set them on the object instead:
-  `IotNtpClock::setServers()` / `setResyncInterval_s()`, `iot.setNtpTimeout_ms()`,
+  `IotNtpClock::setServers()` / `setResyncInterval_s()`, `iot.setClockSyncTimeout_ms()`,
   and `iot.startWatchdog(timeout_s)` before `iot.begin()`, which now remembers
   the timeout it was given. Stale keys left in the `iot-cfg` namespace are
   ignored and disappear on `factoryReset()`; a `config.json` still listing them
@@ -292,6 +292,21 @@ the linker drops every one an application does not reference.
   a device with no seeded WiFi SSID logs an error and shuts down. This keeps the
   ~42 KB of `DNSServer`/`WebServer` out of firmware that never opens a setup AP.
   See [`examples/ap_provisioning/`](examples/ap_provisioning/).
+- **The facade drops what the ports already offer, and the panic API shrinks.**
+  `iot.connectWifi()` → `iot.wifi().setCredentials()` + `iot.network().connect()`;
+  `iot.getWifiConnectDuration_ms()` → `iot.network().lastConnectDuration_ms()`;
+  `iot.getNtpLastSyncTime()` → `iot.clock().lastSyncTime()`; `iot.syncNtpTime()`
+  is internal to `begin()`, whose budget is `iot.setClockSyncTimeout_ms()`
+  (was `setNtpTimeout_ms()`). `iot.getTimeIso()` takes an optional epoch.
+  `iot.setPanic(init, factor, max)` → `iot.setBackoff({ .initialDuration_s = …,
+  .factor = …, .maxDuration_s = … })`; `panicEarly()`,
+  `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
+  (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
+  → `api.updateProvisioning()` in a boolean context.
+- **`api.store()`, `deviceToken()`, `setDeviceToken()`, `tlsConfig()`,
+  `mergeHeaders()` and `getApiUrlForPath()` are no longer public.** They were
+  plumbing for the OTA download; a token is issued by provisioning, never set
+  by the application. Keep application data in an own `IotNvsStore`.
 - **Endpoint functions move into groups on `iot`** (see [API overview](#api-overview)).
   Coming from 3.x, the bullets above already name the result; for code written
   against an earlier 4.0 development state:
