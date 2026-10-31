@@ -123,7 +123,7 @@ IotResult IotOtaEndpoint::update(const std::string& apiPath,
 
     std::string newEtag;
     std::string newDate;
-    if (!ota.updateFirmwareFromUrl(newEtag, newDate, api.getApiUrlForPath(apiPath).c_str(), &effective))
+    if (!ota.updateFirmwareFromUrl(newEtag, newDate, api.urlForPath(apiPath).c_str(), &effective))
     {
         // an update was available (HEAD 200) but the download or flash did not
         // complete - report a distinct, non-transient failure

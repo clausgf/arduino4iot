@@ -163,13 +163,13 @@ void Iot::_beginCycle()
     startWatchdog(_watchdogTimeout_s);
 
     log_w("--- Bootup #%lu, reset reason %s, wakeup cause %s after %d s, backoff=%d s",
-        (unsigned long)getBootCount(),
+        (unsigned long)bootCount(),
         iotResetReasonToString(_lifecycle.resetReason()),
         iotWakeupCauseToString(_lifecycle.wakeupCause()),
-        getLastSleepDuration_s(), _backoffDuration_s());
-    log_i("--- Firmware version %s", getFirmwareVersion().c_str());
-    log_i("--- Firmware id %s", getFirmwareId().c_str());
-    log_i("--- SHA256 %s", getFirmwareSha256().c_str());
+        lastSleepDuration_s(), _backoffDuration_s());
+    log_i("--- Firmware version %s", firmwareVersion().c_str());
+    log_i("--- Firmware id %s", firmwareId().c_str());
+    log_i("--- SHA256 %s", firmwareSha256().c_str());
 
     // the previous cycle crashed, hung or browned out: back off rather than
     // retry immediately
@@ -200,7 +200,7 @@ void Iot::_initSubsystems()
     // check the battery voltage
     if (_battery != nullptr && _batteryMin_mV.get() > 0)
     {
-        int batteryVoltage_mV = getBatteryVoltage_mV();
+        int batteryVoltage_mV = battery_mV();
         if (batteryVoltage_mV >= 0 && batteryVoltage_mV < _batteryMin_mV.get())
         {
             log_e("Battery voltage too low: %d mV < %d mV", batteryVoltage_mV, _batteryMin_mV.get());
@@ -213,8 +213,8 @@ void Iot::_initSubsystems()
     // initialize other components
     startWatchdog(_watchdogTimeout_s);
     logger.setNetwork(*_network);
-    api.setDeviceName(getDeviceId());
-    api.setBoardId(getBoardId());
+    api.setDeviceName(deviceId());
+    api.setBoardId(boardId());
     api.begin(iotBootstrapStore(), defaultHttp(), *_clock);
 }
 
@@ -251,7 +251,7 @@ bool Iot::begin(uint32_t timeout_ms)
     if (_network == &defaultNetwork())
     {
         defaultNetwork().setCredentials(ssid, password);
-        defaultNetwork().setHostname(getDeviceId());
+        defaultNetwork().setHostname(deviceId());
     }
 
     bool connected = _network->connect((uint32_t)timeout_ms);
@@ -359,7 +359,7 @@ void Iot::radioOff()
 
 // *****************************************************************************
 
-std::string Iot::getDeviceId()
+std::string Iot::deviceId()
 {
     if (_deviceId.empty())
     {
@@ -376,7 +376,7 @@ std::string Iot::getDeviceId()
 // NTP time
 // *****************************************************************************
 
-std::string Iot::getTimeIso(int64_t epoch_s)
+std::string Iot::timeIso(int64_t epoch_s)
 {
     time_t time = (time_t)(epoch_s < 0 ? _clock->now() : epoch_s);
     struct tm timeinfo;
@@ -442,28 +442,28 @@ IotResult IotTelemetryEndpoint::post(const std::string& kind, const IotTelemetry
 IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::string& apiPath) const
 {
     IotTelemetry telemetry;
-    int battery_mV = iot.getBatteryVoltage_mV();
+    int battery_mV = iot.battery_mV();
     if (battery_mV >= 0)
     {
         telemetry.add("battery_V", battery_mV / 1000.0);
     }
     telemetry.add("wifi_rssi", iot.network().rssi());
     telemetry.add("wifi_connect_ms", (int32_t)iot.network().lastConnectDuration_ms());
-    telemetry.add("boot_count", iot.getBootCount());
-    telemetry.add("active_ms", iot.getActiveDuration_ms());
-    telemetry.add("lastSleep_s", iot.getLastSleepDuration_s());
+    telemetry.add("boot_count", iot.bootCount());
+    telemetry.add("active_ms", iot.lastActiveDuration_ms());
+    telemetry.add("lastSleep_s", iot.lastSleepDuration_s());
     telemetry.add("panicSleep_s", iot._backoffDuration_s());
     // non-numeric fields are ignored by the nice4iot telemetry backend,
     // but kept for backends which support them
-    telemetry.add("time", iot.getTimeIso());
-    telemetry.add("firmware_id", iot.getFirmwareId());
-    std::string firmwareVersion = iot.getFirmwareVersion();
+    telemetry.add("time", iot.timeIso());
+    telemetry.add("firmware_id", iot.firmwareId());
+    std::string firmwareVersion = iot.firmwareVersion();
     if (!firmwareVersion.empty())
     {
         telemetry.add("firmware_version", firmwareVersion);
     }
-    telemetry.add("firmware_sha256", iot.getFirmwareSha256());
-    std::string boardId = iot.getBoardId();
+    telemetry.add("firmware_sha256", iot.firmwareSha256());
+    std::string boardId = iot.boardId();
     if (!boardId.empty())
     {
         telemetry.add("board_id", boardId);
@@ -476,7 +476,7 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
 // Battery
 // *****************************************************************************
 
-int32_t Iot::getBatteryVoltage_mV()
+int32_t Iot::battery_mV()
 {
     return _battery != nullptr ? _battery->read_mV() : -1;
 }
@@ -541,7 +541,7 @@ void Iot::_enterBackoff()
     const int32_t next_s = _lifecycle.backoffPolicy().next(_lifecycle.backoffDuration_s());
     log_w("Entering failure backoff: sleeping %ld s", (long)next_s);
     logger.warn(tag, "failure backoff: sleeping %ld s (boot %lu)", (long)next_s,
-        (unsigned long)getBootCount());
+        (unsigned long)bootCount());
     _lifecycle.enterBackoff();  // runs the exit hooks and does not return
 }
 
@@ -550,7 +550,7 @@ void Iot::_enterBackoff()
 // System management: firmware
 // *****************************************************************************
 
-std::string Iot::getFirmwareVersion()
+std::string Iot::firmwareVersion()
 {
     // precedence: explicit setter (_firmwareVersion) > injected build define
     if (_firmwareVersion.empty())
@@ -567,7 +567,7 @@ void Iot::setFirmwareVersion(const std::string& version)
     _firmwareVersion = version;
 }
 
-std::string Iot::getFirmwareId()
+std::string Iot::firmwareId()
 {
     if (_firmwareId.empty())
     {
@@ -587,7 +587,7 @@ std::string Iot::getFirmwareId()
     return _firmwareId;
 }
 
-std::string Iot::getFirmwareSha256()
+std::string Iot::firmwareSha256()
 {
     if (_firmwareSha256.empty())
     {
@@ -607,7 +607,7 @@ std::string Iot::getFirmwareSha256()
     return _firmwareSha256;
 }
 
-std::string Iot::getBoardId()
+std::string Iot::boardId()
 {
 #ifdef IOT_BOARD_ID
     return std::string(IOT_BOARD_ID);

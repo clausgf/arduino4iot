@@ -155,7 +155,7 @@ public:
      * @return the expiry time of the device token as unix timestamp or
      * 0 if unknown
      */
-    int64_t getDeviceTokenExpiresAt() const { return _tokens.deviceTokenExpiresAt(); }
+    int64_t deviceTokenExpiresAt() const { return _tokens.deviceTokenExpiresAt(); }
 
     /**
      * Set the margin before the device token expiry at which
@@ -260,7 +260,7 @@ private:
         const std::map<std::string, std::string>& requestHeader) const;
     /// @return the URL of @p apiPath: base URL plus the path with {project},
     /// {device} and {board} substituted.
-    std::string getApiUrlForPath(const std::string& apiPath);
+    std::string urlForPath(const std::string& apiPath);
 
     IotStore* _store = nullptr;
     IotHttp* _http = nullptr;

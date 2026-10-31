@@ -184,7 +184,7 @@ skip git with `-DIOT_NO_GIT_VERSION`.
 
 A third, optional field, `board_id`, identifies the hardware variant (as
 opposed to the firmware): set `-DIOT_BOARD_ID="waveshare_esp32_driver"` per
-PlatformIO env and `iot.getBoardId()` returns it, omitted from telemetry if
+PlatformIO env and `iot.boardId()` returns it, omitted from telemetry if
 undefined. Unlike the seeded bootstrap values, this is a plain compile-time
 constant — not seeded, not persisted to NVS.
 
@@ -619,11 +619,11 @@ for API calls applies to the OTA download.
 
 The default apiPath is `file/{project}/{device}/firmware.bin`. A `{board}` 
 parameter is supported and substitutes to the `IOT_BOARD_ID` build default (see
-[`board_id`](#telemetry) / `Iot::getBoardId()`) — this lets a project serve
+[`board_id`](#telemetry) / `Iot::boardId()`) — this lets a project serve
 distinct firmware images per hardware variant from the same project/device
 namespace. If `IOT_BOARD_ID` is undefined, `{board}` substitutes to an empty
 string. `{board}` is available in **any** apiPath template, not just for
-firmware (see `IotApi::getApiUrlForPath()`).
+firmware (see `IotApi::urlForPath()`).
 
 ## Conditional GET for application resources
 
