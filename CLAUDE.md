@@ -187,8 +187,7 @@ firmware's. Falls back gracefully (define unset) without git; skip with
 - Device endpoints normalize **all** auth failures to **HTTP 401** (→ auto
   re-provision + one retry). Only `/provision` returns **403** (unfixable config:
   project/device inactive, not approved, HTTP disabled) — 403 keeps the token and
-  does not retry. See `api.updateProvisioning()` (returns `IotResult`) vs.
-  `updateProvisioningOk()` (`bool` wrapper).
+  does not retry. See `api.updateProvisioning()`, which returns an `IotResult`.
 - Telemetry/log bodies capped at 8 KiB (413 beyond); uploads 10 MiB.
 - Names (device/project) must match `^[a-zA-Z_][a-zA-Z0-9_]*$` — device IDs use
   `e32_<mac>` (underscore, not hyphen).

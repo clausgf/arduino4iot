@@ -57,8 +57,9 @@ void test_placeholders_are_substituted()
 {
     Fixture f;
     f.begin();
+    f.api.get("telemetry/{project}/{device}/system");
     TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/telemetry/myproject/e32_aabbccddeeff/system",
-        f.api.getApiUrlForPath("telemetry/{project}/{device}/system").c_str());
+        f.http.lastRequest().url.c_str());
 }
 
 void test_a_missing_trailing_slash_in_the_base_url_is_added()
@@ -66,14 +67,14 @@ void test_a_missing_trailing_slash_in_the_base_url_is_added()
     Fixture f;
     f.store.putString(iot_nvs_keys::API_URL, "https://api.example.org/api");
     f.begin();
-    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/provision",
-        f.api.getApiUrlForPath("provision").c_str());
+    f.api.get("file/x");
+    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/file/x", f.http.lastRequest().url.c_str());
 
     Fixture g;
     g.store.putString(iot_nvs_keys::API_URL, "https://api.example.org/api/");
     g.begin();
-    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/provision",
-        g.api.getApiUrlForPath("provision").c_str());
+    g.api.get("file/x");
+    TEST_ASSERT_EQUAL_STRING("https://api.example.org/api/file/x", g.http.lastRequest().url.c_str());
 }
 
 
@@ -240,7 +241,9 @@ void test_a_2xx_with_an_unusable_body_is_malformed_not_success()
 
     IotResult result = f.api.updateProvisioning();
     TEST_ASSERT_EQUAL_INT(IotResult::STATUS_MALFORMED_RESPONSE, result.httpStatus);
-    TEST_ASSERT_FALSE(f.api.deviceToken() == "bearer old");
+    // nothing usable was adopted: the next request still carries no token
+    f.api.get("file/x");
+    TEST_ASSERT_EQUAL_STRING("", f.http.header(1, "Authorization").c_str());
 }
 
 void test_a_403_from_provision_is_reported_as_is()

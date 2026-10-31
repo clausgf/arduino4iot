@@ -66,7 +66,8 @@ int32_t iotParseMaxAge(const std::string& cacheControl);
  * Cache validators kept in an IotStore under two keys, for resources whose
  * cached copy survives a power loss.
  *
- *   static IotStoredValidators imageCache(api.store(), "imgEtag", "imgDate");
+ *   static IotNvsStore appStore("myapp");   // appStore.begin() in setup()
+ *   static IotStoredValidators imageCache(appStore, "imgEtag", "imgDate");
  *   IotCachedResponse r = api.getCached(path, imageCache.load());
  *   if (r.result.isOk() && use(r.body)) { imageCache.commit(r.validators); }
  */

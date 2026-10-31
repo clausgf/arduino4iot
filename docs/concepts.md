@@ -481,7 +481,7 @@ The library logs its own failures through the same path, so the reason a
 device went quiet reaches the server once it is back: a failed network connect
 with the adapter's reason (`IotNetwork::lastError()`, e.g. `ssid not found
 (status 1) … after 10012 ms`), a panic at startup after an abnormal reset
-(`panicEarly()` writes straight into RTC RAM), the backoff duration, an
+(written straight into RTC RAM, before any network), the backoff duration, an
 undervoltage shutdown, missing credentials, and a failed sync of an attached
 `IotNtpClock`. A failed provisioning or config update is reported to the caller
 as an `IotResult`; put it into the `iot.panic()` message.
@@ -523,13 +523,13 @@ opt-in optimizations cut this, both with automatic fallback:
 
 The connect also sets `WiFi.persistent(false)` so the WiFi stack does not write
 credentials to NVS on every connect (flash wear). The measured connect duration
-is available via `iot.getWifiConnectDuration_ms()` and posted as the
+is available via `iot.network().lastConnectDuration_ms()` and posted as the
 `wifi_connect_ms` system-telemetry metric, so the saving is verifiable per device.
 
 The other big time sink is the NTP sync, for an application that attaches an
 `IotNtpClock`. The clock should be correct before the first API request, so the
 token expiry check can use it; the sync is therefore not hidden behind other
-work. Instead `syncNtpTime()` sends a
+work. Instead `IotNtpClock::sync()` sends a
 single manual SNTP request and sets the clock directly, bypassing the lwIP SNTP
 daemon's randomized 0–5 s startup delay. Within the resync interval the sync is skipped entirely,
 relying on the RTC clock that survives deep sleep. Pointing the first server at
@@ -622,7 +622,8 @@ open to any resource an application fetches — an image, a schedule, a lookup
 table:
 
 ```cpp
-static IotStoredValidators imageCache(api.store(), "imgEtag", "imgDate");
+static IotNvsStore appStore("myapp");   // appStore.begin() in setup()
+static IotStoredValidators imageCache(appStore, "imgEtag", "imgDate");
 
 IotCachedResponse r = iot.forward.getCached("img", "latest.png",
     imageCache.load(), { .headers = { { "Accept", "image/png" } } });

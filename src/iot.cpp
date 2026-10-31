@@ -79,11 +79,6 @@ static IotHttp& defaultHttp()
     return http;
 }
 
-static void defaultPanicHandler()
-{
-    iot.escalatingSleepPanicHandler();
-}
-
 // *****************************************************************************
 
 Iot::Iot() :
@@ -101,24 +96,24 @@ Iot::Iot() :
         { .title = "Battery minimum (mV)",
           .description = "Shut down below this supply voltage; -1 disables the check",
           .min = -1, .max = 10000 }),
-    _panicSleepDurationInit_s(config, 60, "panic_init_s",
+    _panicSleepDurationInit_s(config, IotBackoffPolicy{}.initialDuration_s, "panic_init_s",
         { .title = "Backoff initial (s)", .description = "First sleep after a failed cycle",
           .min = 1, .max = 7 * 24 * 60 * 60 }),
-    _panicSleepDurationFactor(config, 2, "panic_factor",
+    _panicSleepDurationFactor(config, IotBackoffPolicy{}.factor, "panic_factor",
         { .title = "Backoff factor", .description = "Multiplier per further failed cycle",
           .min = 1, .max = 16 }),
-    _panicSleepDurationMax_s(config, 24 * 60 * 60, "panic_max_s",
+    _panicSleepDurationMax_s(config, IotBackoffPolicy{}.maxDuration_s, "panic_max_s",
         { .title = "Backoff maximum (s)", .description = "Upper bound of the backoff sleep",
           .min = 1, .max = 7 * 24 * 60 * 60 })
 {
     // initialize variables
     _deviceId = "";
     _watchdogTimeout_s = DEFAULT_WATCHDOG_TIMEOUT_S;
-    _ntpTimeout_ms = DEFAULT_NTP_TIMEOUT_MS;
+    _clockSyncTimeout_ms = DEFAULT_CLOCK_SYNC_TIMEOUT_MS;
     _network = &defaultNetwork();
     _clock = &defaultClock();
     _battery = nullptr;
-    _panicHandler = defaultPanicHandler;
+    _panicHandler = [this] { _enterBackoff(); };
     _firmwareVersion = "";
     _firmwareId = "";
     _firmwareSha256 = "";
@@ -171,7 +166,7 @@ void Iot::_beginCycle()
         (unsigned long)getBootCount(),
         iotResetReasonToString(_lifecycle.resetReason()),
         iotWakeupCauseToString(_lifecycle.wakeupCause()),
-        getLastSleepDuration_s(), getPanicSleepDuration_s());
+        getLastSleepDuration_s(), _backoffDuration_s());
     log_i("--- Firmware version %s", getFirmwareVersion().c_str());
     log_i("--- Firmware id %s", getFirmwareId().c_str());
     log_i("--- SHA256 %s", getFirmwareSha256().c_str());
@@ -180,7 +175,7 @@ void Iot::_beginCycle()
     // retry immediately
     if (_lifecycle.isAbnormalStart())
     {
-        panicEarly("*** PANIC *** Previous cycle ended abnormally: %s",
+        _panicEarly("*** PANIC *** Previous cycle ended abnormally: %s",
             iotResetReasonToString(_lifecycle.resetReason()));
     }
 }
@@ -223,7 +218,7 @@ void Iot::_initSubsystems()
     api.begin(iotBootstrapStore(), defaultHttp(), *_clock);
 }
 
-bool Iot::begin(unsigned long timeout_ms)
+bool Iot::begin(uint32_t timeout_ms)
 {
     _beginCycle();
 
@@ -269,7 +264,7 @@ bool Iot::begin(unsigned long timeout_ms)
     }
     _initSubsystems();
 
-    if (!syncNtpTime() && _clock != &defaultClock())
+    if (!_syncClock() && _clock != &defaultClock())
     {
         logger.warn(tag, "clock sync failed, the time is not plausible");
     }
@@ -354,17 +349,6 @@ IotWifiNetwork& Iot::wifi()
     return defaultNetwork();
 }
 
-bool Iot::connectWifi(const char *ssid, const char *password, unsigned long timeout_ms)
-{
-    defaultNetwork().setCredentials(ssid != nullptr ? ssid : "", password != nullptr ? password : "");
-    return defaultNetwork().connect((uint32_t)timeout_ms);
-}
-
-unsigned long Iot::getWifiConnectDuration_ms()
-{
-    return _network->lastConnectDuration_ms();
-}
-
 void Iot::radioOff()
 {
     logger.flush();
@@ -392,8 +376,9 @@ std::string Iot::getDeviceId()
 // NTP time
 // *****************************************************************************
 
-std::string Iot::getTimeIso(time_t time)
+std::string Iot::getTimeIso(int64_t epoch_s)
 {
+    time_t time = (time_t)(epoch_s < 0 ? _clock->now() : epoch_s);
     struct tm timeinfo;
     gmtime_r(&time, &timeinfo);
 
@@ -407,12 +392,6 @@ std::string Iot::getTimeIso(time_t time)
     return buf;
 }
 
-std::string Iot::getTimeIso()
-{
-    time_t now = time(nullptr);
-    return getTimeIso(now);
-}
-
 // *****************************************************************************
 
 bool Iot::isTimePlausible()
@@ -420,14 +399,9 @@ bool Iot::isTimePlausible()
     return _clock->isPlausible();
 }
 
-time_t Iot::getNtpLastSyncTime()
+bool Iot::_syncClock()
 {
-    return (time_t)_clock->lastSyncTime();
-}
-
-bool Iot::syncNtpTime()
-{
-    return _clock->sync(_ntpTimeout_ms);
+    return _clock->sync(_clockSyncTimeout_ms);
 }
 
 
@@ -474,11 +448,11 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
         telemetry.add("battery_V", battery_mV / 1000.0);
     }
     telemetry.add("wifi_rssi", iot.network().rssi());
-    telemetry.add("wifi_connect_ms", (int32_t)iot.getWifiConnectDuration_ms());
+    telemetry.add("wifi_connect_ms", (int32_t)iot.network().lastConnectDuration_ms());
     telemetry.add("boot_count", iot.getBootCount());
     telemetry.add("active_ms", iot.getActiveDuration_ms());
     telemetry.add("lastSleep_s", iot.getLastSleepDuration_s());
-    telemetry.add("panicSleep_s", iot.getPanicSleepDuration_s());
+    telemetry.add("panicSleep_s", iot._backoffDuration_s());
     // non-numeric fields are ignored by the nice4iot telemetry backend,
     // but kept for backends which support them
     telemetry.add("time", iot.getTimeIso());
@@ -512,11 +486,11 @@ int Iot::getBatteryVoltage_mV()
 // Error handling / Panic
 // *****************************************************************************
 
-void Iot::setPanic(int initialDuration_s, int factor, int maxDuration_s)
+void Iot::setBackoff(const IotBackoffPolicy& policy)
 {
-    _panicSleepDurationInit_s = initialDuration_s;
-    _panicSleepDurationFactor = factor;
-    _panicSleepDurationMax_s = maxDuration_s;
+    _panicSleepDurationInit_s = policy.initialDuration_s;
+    _panicSleepDurationFactor = policy.factor;
+    _panicSleepDurationMax_s = policy.maxDuration_s;
 }
 
 std::function<void()> Iot::setPanicHandler(std::function<void()> panicHandler)
@@ -542,7 +516,7 @@ void Iot::panic(const char* format...)
     logger.flush();
 }
 
-void Iot::panicEarly(const char* format...)
+void Iot::_panicEarly(const char* format...)
 {
     va_list args;
     va_start(args, format);
@@ -561,7 +535,7 @@ void Iot::panicEarly(const char* format...)
 
 // *****************************************************************************
 
-void Iot::escalatingSleepPanicHandler()
+void Iot::_enterBackoff()
 {
     // the escalation itself is IotBackoffPolicy (iot_lifecycle.h)
     const int32_t next_s = _lifecycle.backoffPolicy().next(_lifecycle.backoffDuration_s());
@@ -647,7 +621,7 @@ std::string Iot::getBoardId()
 // System management: watchdog
 // *****************************************************************************
 
-void Iot::startWatchdog(int watchdogTimeout_s)
+void Iot::startWatchdog(int32_t watchdogTimeout_s)
 {
     // remembered, so a call before begin() chooses what begin() uses
     if (watchdogTimeout_s < MIN_WATCHDOG_TIMEOUT_S)

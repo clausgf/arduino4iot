@@ -45,7 +45,9 @@ public:
     /// the server bricks a fleet, and a sync timeout is a property of the
     /// deployment's uplink, not an operational knob.
     static constexpr int32_t DEFAULT_WATCHDOG_TIMEOUT_S = 20;
-    static constexpr uint32_t DEFAULT_NTP_TIMEOUT_MS = 10000;
+    static constexpr uint32_t DEFAULT_CLOCK_SYNC_TIMEOUT_MS = 10000;
+    /// Default budget of begin() for the network connect.
+    static constexpr uint32_t DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 
     // disallow copying & assignment
     Iot(const Iot&) = delete;
@@ -66,7 +68,7 @@ public:
      *
      * If the *previous* cycle ended in a crash, a watchdog timeout or a
      * brownout, begin() logs that and enters the escalating backoff instead of
-     * continuing, @see setPanic().
+     * continuing, @see setBackoff().
      *
      * If no WiFi SSID is seeded in NVS, begin() calls the handler registered
      * with setNoCredentialsHandler() instead of attempting to connect. Without
@@ -80,7 +82,7 @@ public:
      *         endpoint works with an unsynchronized clock. Check
      *         isTimePlausible() where it matters; begin() logs a warning.
      */
-    bool begin(unsigned long timeout_ms = 10000);
+    bool begin(uint32_t timeout_ms = DEFAULT_CONNECT_TIMEOUT_MS);
 
     /**
      * Seed the build-time bootstrap configuration (WiFi credentials, API
@@ -160,12 +162,6 @@ public:
     IotNetwork& network() { return *_network; }
 
     /**
-     * Connect using the credentials given here rather than the seeded ones.
-     * Only meaningful for the built-in WiFi adapter.
-     */
-    bool connectWifi(const char *ssid, const char *password, unsigned long timeout_ms = 10000);
-
-    /**
      * The built-in WiFi station, for tuning it before begin():
      *
      *   iot.wifi().setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
@@ -176,13 +172,6 @@ public:
      * after setNetwork() replaced it as the network in use.
      */
     IotWifiNetwork& wifi();
-
-    /**
-     * @return the duration of the last successful WiFi connect in milliseconds,
-     * or 0 if not connected this cycle. Useful to verify the fast-reconnect and
-     * static-IP savings via telemetry (also posted as "wifi_connect_ms").
-     */
-    unsigned long getWifiConnectDuration_ms();
 
     /**
      * Switch the radio off for the rest of the cycle, e.g. before a long
@@ -206,18 +195,14 @@ public:
 
 
     // **********************************************************************
-    // NTP time
+    // Time
     // **********************************************************************
 
     /**
-     * @return the given time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
+     * @return @p epoch_s (unix seconds; negative: the clock's current time) in
+     *         ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
-    std::string getTimeIso(time_t time);
-
-    /**
-     * @return the current time as a string in ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
-     */
-    std::string getTimeIso();
+    std::string getTimeIso(int64_t epoch_s = -1);
 
     /**
      * Replace the clock. The default reads the system time and never
@@ -235,23 +220,12 @@ public:
     /// @return the clock in use.
     IotClock& clock() { return *_clock; }
 
-    /// @return the time of the last successful clock synchronization, or 0.
-    time_t getNtpLastSyncTime();
-
     /// @return true if the time is plausible, i.e. after 2020-01-01.
     bool isTimePlausible();
 
-    /// Budget for a clock synchronization, @see syncNtpTime(). Call before
-    /// begin(); default DEFAULT_NTP_TIMEOUT_MS.
-    void setNtpTimeout_ms(uint32_t timeout_ms) { _ntpTimeout_ms = timeout_ms; }
-
-    /**
-     * Synchronize the clock if it is due. Called by begin() after the network
-     * is up.
-     *
-     * @return true if the time is plausible afterwards
-     */
-    bool syncNtpTime();
+    /// Budget of begin() for synchronizing the clock, which it does once the
+    /// network is up. Call before begin(); default DEFAULT_CLOCK_SYNC_TIMEOUT_MS.
+    void setClockSyncTimeout_ms(uint32_t timeout_ms) { _clockSyncTimeout_ms = timeout_ms; }
 
 
     // **********************************************************************
@@ -302,69 +276,31 @@ public:
     // **********************************************************************
 
     /**
-     * Return whether the device is in the failure backoff and for how long it
-     * will sleep.
+     * Configure the escalating backoff a panic() enters, @see IotBackoffPolicy:
+     * after a failed cycle the device sleeps initialDuration_s, each further
+     * failure multiplies that by factor up to maxDuration_s, and a clean exit
+     * (deepSleep(), restart(), shutdown()) clears it. The state lives in RTC
+     * RAM, so it costs no flash writes in a crash loop.
      *
-     * Kept in the RTC state, which survives a deep sleep as well as a software
-     * or watchdog reset, but not a power loss - a physically power-cycled
-     * device deliberately starts over. Costs no flash write cycles, which
-     * matters precisely in the crash loop it exists for.
-     *
-     * @return <0 if not in backoff, otherwise the sleep duration of the current
-     * backoff cycle in seconds, @see escalatingSleepPanicHandler().
+     * The three values are also config.json keys (panic_init_s, panic_factor,
+     * panic_max_s); this call overrides them for the cycle.
      */
-    int getPanicSleepDuration_s() { return _lifecycle.backoffDuration_s(); }
+    void setBackoff(const IotBackoffPolicy& policy);
 
     /**
-     * Configure the escalating backoff, @see IotBackoffPolicy.
+     * Replace what panic() does after logging. The default enters the
+     * escalating backoff, @see setBackoff().
      *
-     * On begin(), corresponding configuration values are read from
-     * *panic_sleep_init_s*, *panic_sleep_factor*, *panic_sleep_max_s*.
-     * This method allows overwriting these values later.
-     */
-    void setPanic(int initialDuration_s = 60, int factor = 2, int maxDuration_s = 24*60*60);
-
-    /**
-     * Set a panic handler which is called in case of a panic
-     * after logging an error message.
-     * 
-     * The default panic handler is escalatingSleepPanicHandler().
-     * 
      * @return the previous panic handler
      */
     std::function<void()> setPanicHandler(std::function<void()> panicHandler);
 
     /**
      * Log an error message and employ the panic strategy defined by the
-     * panic handler.
-     * The default panic handler is escalatingSleepPanicHandler(). The message
-     * reaches the server with the exit flush, or with a later cycle when
-     * offline.
+     * panic handler. The message reaches the server with the exit flush, or
+     * with a later cycle when offline.
      */
     void panic(const char* format...);
-
-    /**
-     * Log an error message without using the remote api and employ the panic
-     * strategy, see panic(). The message goes to the serial log and straight
-     * into the RTC log, so a later cycle sends it. Safe in the panic handler
-     * and during system initialization.
-     */
-    void panicEarly(const char* format...);
-
-    /**
-     * Panic handler sending the system to sleep for an increasing
-     * duration.
-     * 
-     * The default strategy is to restart the system after sleeping
-     * for an initial duration. 
-     * If it panics again before a clean shutdown, i.e. calling deepSleep(), 
-     * restart() or shutdown(), 
-     * multiply the sleeping time by a factor until it reaches a maximum
-     * duration.
-     * The parameters for this strategy are configurable using
-     * setPanic().
-     */
-    void escalatingSleepPanicHandler();
 
 
     // **********************************************************************
@@ -429,7 +365,7 @@ public:
      * handled like a panic() call. The watchdog timeout is
      * global to the system. A task specific watchdog is reset using resetWatchdog().
      */
-    void startWatchdog(int watchdogTimeout_s = 20);
+    void startWatchdog(int32_t watchdogTimeout_s = DEFAULT_WATCHDOG_TIMEOUT_S);
 
     /**
      * Stop the watchdog timer for the current task.
@@ -535,7 +471,7 @@ private:
     IotBattery* _battery;
 
     int32_t _watchdogTimeout_s;
-    uint32_t _ntpTimeout_ms;
+    uint32_t _clockSyncTimeout_ms;
 
     /// Cycle bookkeeping, exits and failure backoff; holds the state that
     /// survives a deep sleep but not a power loss (IotRtcState).
@@ -557,6 +493,15 @@ private:
     /// Register the library's own exit hooks (log flush, connection close)
     /// exactly once; idempotent, so every exit path can call it.
     void _registerExitHooks();
+    bool _syncClock();
+
+    /// panic() before the network is up: serial and RTC log only, no request.
+    void _panicEarly(const char* format...);
+    /// The default panic handler: sleep for the next backoff duration.
+    void _enterBackoff();
+    /// <0 if not in backoff, otherwise the current backoff sleep in seconds.
+    int32_t _backoffDuration_s() const { return _lifecycle.backoffDuration_s(); }
+    friend struct IotTelemetryEndpoint;
     void _deepSleep(int sleep_duration_s, bool isFailure);
     void _restart(bool isFailure);
     void _shutdown(bool isFailure);
