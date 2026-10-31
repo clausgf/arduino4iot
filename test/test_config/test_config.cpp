@@ -367,6 +367,32 @@ void test_the_schema_uses_the_compile_time_default_not_the_current_value()
 }
 
 
+void test_schema_extras_are_merged_at_the_top_level()
+{
+    MetaFixture f;
+    f.begin();
+    f.config.setSchemaExtras(R"({"x-ui": {"layout": [["min_sleep_s", "rotation"]]},
+        "additionalProperties": false, "type": "array", "properties": {}})");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, f.config.schemaJson()));
+    TEST_ASSERT_EQUAL_STRING("rotation", doc["x-ui"]["layout"][0][1]);
+    TEST_ASSERT_TRUE(doc["additionalProperties"].is<bool>());
+    TEST_ASSERT_FALSE(doc["additionalProperties"].as<bool>());
+    // the library's own members are not overridden
+    TEST_ASSERT_EQUAL_STRING("object", doc["type"]);
+    TEST_ASSERT_EQUAL_size_t(3, doc["properties"].size());
+}
+
+void test_invalid_schema_extras_are_ignored()
+{
+    MetaFixture f;
+    f.begin();
+    const std::string plain = f.config.schemaJson();
+    f.config.setSchemaExtras("not json");
+    TEST_ASSERT_EQUAL_STRING(plain.c_str(), f.config.schemaJson().c_str());
+}
+
+
 // *****************************************************************************
 
 int main(int argc, char **argv)
@@ -399,6 +425,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_an_explicit_set_is_not_checked);
     RUN_TEST(test_the_schema_describes_every_value_in_declaration_order);
     RUN_TEST(test_the_schema_uses_the_compile_time_default_not_the_current_value);
+    RUN_TEST(test_schema_extras_are_merged_at_the_top_level);
+    RUN_TEST(test_invalid_schema_extras_are_ignored);
 
     return UNITY_END();
 }
