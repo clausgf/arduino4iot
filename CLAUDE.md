@@ -195,6 +195,9 @@ firmware's. Falls back gracefully (define unset) without git; skip with
 
 ## Conventions
 
+- Naming: accessors are nouns without `get` (`iot.deviceId()`,
+  `network().rssi()`); setters use `set`; `get` stays only for keyed lookups
+  (`config.getInt("key")`, `IotStore`) and the HTTP verb (`getCached`).
 - Units and types: the unit is always a suffix (`_ms`, `_s`, `_mV`); durations
   in ms are `uint32_t`, in s `int32_t`, points in time `int64_t` unix seconds
   (never `time_t`, `int`, `long` or `unsigned long` in a public signature).

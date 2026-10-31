@@ -41,7 +41,7 @@ one of them:
 | Wakeup cycle | `iot.begin()`, `iot.deepSleep()`, `iot.radioOff()`, `iot.panic()`, `iot.restart()`, `iot.shutdown()` |
 | Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()` |
 | Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
-| Device info | `iot.getDeviceId()`, `iot.getBoardId()`, `iot.getFirmwareVersion()`, `iot.isTimePlausible()`, `iot.getBatteryVoltage_mV()` |
+| Device info | `iot.deviceId()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
 | Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
@@ -204,8 +204,8 @@ the linker drops every one an application does not reference.
 - **The library's string type is `std::string` (action required).** `String` is
   defined by the Arduino core, so any file naming it cannot be compiled — and
   therefore not tested — on the host. Public signatures that took or returned
-  `String` now take `std::string`: `iot.telemetry.post()`, `iot.getDeviceId()`,
-  `iot.getTimeIso()`, `iot.getFirmwareVersion()/Id()/Sha256()/BoardId()`, all of
+  `String` now take `std::string`: `iot.telemetry.post()`, `iot.deviceId()`,
+  `iot.timeIso()`, `iot.firmwareVersion()/Id()/Sha256()/BoardId()`, all of
   `api.*`, `logger.*`, `iot.forward.get()`/`iot.files.upload()`. String *literals* keep
   working unchanged, because `std::string` constructs implicitly from
   `const char*`; only a sketch holding an Arduino `String` needs `.c_str()`:
@@ -254,7 +254,7 @@ the linker drops every one an application does not reference.
   `iot.wifi().setStaticIp()` etc.** (with `#include <iot_esp_ports.h>`). They
   tune the built-in `IotWifiNetwork`; the facade no longer carries WiFi details
   of a port that may be replaced via `iot.setNetwork()`. `iot.connectWifi()`
-  keeps working and also uses the built-in adapter. `iot.getDeviceId()` reads the MAC from the eFuse and therefore works
+  keeps working and also uses the built-in adapter. `iot.deviceId()` reads the MAC from the eFuse and therefore works
   without an established connection — it used to return an empty string when the
   connect had failed, which silently broke every API URL on that path.
 - **`config.getConfigInt32/Bool/String()` → `config.getInt/getBool/getString()`**;
@@ -301,12 +301,21 @@ the linker drops every one an application does not reference.
   `iot.getWifiConnectDuration_ms()` → `iot.network().lastConnectDuration_ms()`;
   `iot.getNtpLastSyncTime()` → `iot.clock().lastSyncTime()`; `iot.syncNtpTime()`
   is internal to `begin()`, whose budget is `iot.setClockSyncTimeout_ms()`
-  (was `setNtpTimeout_ms()`). `iot.getTimeIso()` takes an optional epoch.
+  (was `setNtpTimeout_ms()`). `iot.timeIso()` takes an optional epoch.
   `iot.setPanic(init, factor, max)` → `iot.setBackoff({ .initialDuration_s = …,
   .factor = …, .maxDuration_s = … })`; `panicEarly()`,
   `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
   (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
   → `api.updateProvisioning()` in a boolean context.
+- **Getters drop the `get` prefix**, like the ports already did:
+  `iot.getDeviceId()` → `iot.deviceId()`, likewise `boardId()`,
+  `firmwareVersion()`, `firmwareId()`, `firmwareSha256()`, `bootCount()`,
+  `timeIso()`, `lastSleepDuration_s()`, `iot.getBatteryVoltage_mV()` →
+  `iot.battery_mV()`, `iot.getActiveDuration_ms()` →
+  `iot.lastActiveDuration_ms()` (it is the previous cycle's), and
+  `api.getDeviceTokenExpiresAt()` → `api.deviceTokenExpiresAt()`. Setters keep
+  `set`; keyed lookups (`config.getInt("key")`, `IotStore::getString()`) and
+  `getCached()` (the HTTP verb) keep `get`.
 - **One rule for units and types:** the unit is always a suffix, durations in
   milliseconds are `uint32_t`, in seconds `int32_t`, points in time `int64_t`
   unix seconds. Visible changes: `IotBattery::readMilliVolts()` → `read_mV()`
@@ -320,7 +329,7 @@ the linker drops every one an application does not reference.
   `logv()` and `postLog()` are internal — `iot` drives them. The numeric
   `log_level` config values are unchanged.
 - **`api.store()`, `deviceToken()`, `setDeviceToken()`, `tlsConfig()`,
-  `mergeHeaders()` and `getApiUrlForPath()` are no longer public.** They were
+  `mergeHeaders()` and `urlForPath()` are no longer public.** They were
   plumbing for the OTA download; a token is issued by provisioning, never set
   by the application. Keep application data in an own `IotNvsStore`.
 - **Endpoint functions move into groups on `iot`** (see [API overview](#api-overview)).

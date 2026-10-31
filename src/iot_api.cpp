@@ -189,7 +189,7 @@ IotResult IotApi::_requestDeviceToken(const std::string& apiPath)
 // HTTP requests
 // *****************************************************************************
 
-std::string IotApi::getApiUrlForPath(const std::string& apiPath)
+std::string IotApi::urlForPath(const std::string& apiPath)
 {
     return iot_text::buildApiUrl(
         _baseUrl.c_str(), apiPath.c_str(), _projectName.c_str(), _deviceName.c_str(),
@@ -235,7 +235,7 @@ IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, 
 
     IotHttpRequest request;
     request.method = method;
-    request.url = getApiUrlForPath(apiPath);
+    request.url = urlForPath(apiPath);
     request.body = body;
     request.headers = headers;
     request.collectResponseHeaders = collectHeaders;

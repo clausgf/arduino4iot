@@ -191,7 +191,7 @@ public:
      * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$). Available without an
      * established connection.
      */
-    std::string getDeviceId();
+    std::string deviceId();
 
 
     // **********************************************************************
@@ -202,7 +202,7 @@ public:
      * @return @p epoch_s (unix seconds; negative: the clock's current time) in
      *         ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
-    std::string getTimeIso(int64_t epoch_s = -1);
+    std::string timeIso(int64_t epoch_s = -1);
 
     /**
      * Replace the clock. The default reads the system time and never
@@ -268,7 +268,7 @@ public:
     void setBatteryMin_mV(int32_t batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
 
     /// @return the supply voltage in millivolts, or -1 without a battery.
-    int32_t getBatteryVoltage_mV();
+    int32_t battery_mV();
 
 
     // **********************************************************************
@@ -315,7 +315,7 @@ public:
      * setFirmwareVersion() takes precedence; empty if neither is available.
      * Reported as the "firmware_version" telemetry field.
      */
-    std::string getFirmwareVersion();
+    std::string firmwareVersion();
 
     /**
      * Override the version reported in telemetry (e.g. a CI-supplied value, or
@@ -329,12 +329,12 @@ public:
      * descriptor: "<project> <version> <date> <time> IDF <idf> sec <sec>
      * ARDUINO x.y.z IOT a.b.c". In a PlatformIO/Arduino build the project/version
      * come from the precompiled framework, so this identifies the build
-     * environment rather than the sketch - use getFirmwareVersion() for the
+     * environment rather than the sketch - use firmwareVersion() for the
      * actual firmware version. Reported as the "firmware_id" telemetry field.
      */
-    std::string getFirmwareId();
+    std::string firmwareId();
 
-    std::string getFirmwareSha256();
+    std::string firmwareSha256();
 
     /**
      * @return the board identifier from the IOT_BOARD_ID build define (e.g.
@@ -344,7 +344,7 @@ public:
      * plain compile-time constant, not persisted to NVS. Reported as the
      * "board_id" telemetry field.
      */
-    std::string getBoardId();
+    std::string boardId();
 
 
     // **********************************************************************
@@ -388,19 +388,19 @@ public:
      * power-on reset, this boot included. Counted in begin(), so a cycle that
      * fails to connect counts too.
      */
-    uint32_t getBootCount() { return _lifecycle.bootCount(); }
+    uint32_t bootCount() { return _lifecycle.bootCount(); }
 
     /**
      * @return how long the *previous* boot cycle stayed awake, in milliseconds
      * (recorded at its exit).
      */
-    uint32_t getActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
+    uint32_t lastActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
 
     /**
      * @return the nominal duration of the sleep cycle we just woke up from, in
      * seconds; 0 after a restart or shutdown.
      */
-    int32_t getLastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
+    int32_t lastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
 
     /**
      * Set the duration of the next sleep cycle in seconds.
@@ -438,8 +438,8 @@ public:
     /**
      * Put the system into deep sleep mode for the given duration, ending the
      * cycle cleanly: the escalating backoff is cleared. A failure goes through
-     * panic() instead. Records getActiveDuration_ms() and
-     * getLastSleepDuration_s() and runs the exit hooks.
+     * panic() instead. Records lastActiveDuration_ms() and
+     * lastSleepDuration_s() and runs the exit hooks.
      * @param sleep_duration_s the sleep duration in seconds
      */
     void deepSleep(int32_t sleep_duration_s);
