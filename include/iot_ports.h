@@ -154,8 +154,8 @@ public:
     /// @return true if a TLS trust was successfully applied.
     virtual bool hasServerTrust() const = 0;
 
-    virtual void setConnectTimeout_ms(int32_t timeout_ms) = 0;
-    virtual void setRequestTimeout_ms(uint16_t timeout_ms) = 0;
+    virtual void setConnectTimeout_ms(uint32_t timeout_ms) = 0;
+    virtual void setRequestTimeout_ms(uint32_t timeout_ms) = 0;
 
     /**
      * Perform one request. Requests within a wakeup cycle share a keep-alive
@@ -303,7 +303,7 @@ public:
      * Implementations may cache within a wakeup cycle - the library calls this
      * more than once per cycle (telemetry and undervoltage check).
      */
-    virtual int readMilliVolts() = 0;
+    virtual int32_t read_mV() = 0;
 };
 
 /**
@@ -314,15 +314,15 @@ public:
 class IotCallbackBattery : public IotBattery
 {
 public:
-    explicit IotCallbackBattery(std::function<int()> reader): _reader(std::move(reader)) {}
+    explicit IotCallbackBattery(std::function<int32_t()> reader): _reader(std::move(reader)) {}
 
-    int readMilliVolts() override
+    int32_t read_mV() override
     {
         return _reader ? _reader() : -1;
     }
 
 private:
-    std::function<int()> _reader;
+    std::function<int32_t()> _reader;
 };
 
 
@@ -376,7 +376,7 @@ public:
      * Enter deep sleep for @p duration_s and wake through a full boot. Does not
      * return on a real device; a test double records the call and returns.
      */
-    virtual void deepSleep(uint32_t duration_s) = 0;
+    virtual void deepSleep(int32_t duration_s) = 0;
 
     /// Restart immediately. Does not return on a real device.
     virtual void restart() = 0;

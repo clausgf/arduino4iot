@@ -295,39 +295,52 @@ WiFiClient& IotEspHttp::_clientFor(const std::string& url)
     return *_client;
 }
 
+/// HTTPClient takes the request timeout as uint16_t milliseconds.
+static uint16_t _httpClientTimeout(uint32_t timeout_ms)
+{
+    if (timeout_ms > UINT16_MAX)
+    {
+        log_w("IotEspHttp: request timeout %lu ms exceeds HTTPClient's %u ms, clamping",
+            (unsigned long)timeout_ms, (unsigned)UINT16_MAX);
+        return UINT16_MAX;
+    }
+    return (uint16_t)timeout_ms;
+}
+
+
 HTTPClient& IotEspHttp::_httpClient()
 {
     if (_http == nullptr)
     {
         _http = new HTTPClient();
-        if (_connectTimeout_ms >= 0)
+        if (_connectTimeout_ms > 0)
         {
-            _http->setConnectTimeout(_connectTimeout_ms);
+            _http->setConnectTimeout((int32_t)_connectTimeout_ms);
         }
         if (_requestTimeout_ms > 0)
         {
-            _http->setTimeout(_requestTimeout_ms);
+            _http->setTimeout(_httpClientTimeout(_requestTimeout_ms));
         }
     }
     _http->setReuse(true);
     return *_http;
 }
 
-void IotEspHttp::setConnectTimeout_ms(int32_t timeout_ms)
+void IotEspHttp::setConnectTimeout_ms(uint32_t timeout_ms)
 {
     _connectTimeout_ms = timeout_ms;
-    if (_http != nullptr)
+    if (_http != nullptr && timeout_ms > 0)
     {
-        _http->setConnectTimeout(timeout_ms);
+        _http->setConnectTimeout((int32_t)timeout_ms);
     }
 }
 
-void IotEspHttp::setRequestTimeout_ms(uint16_t timeout_ms)
+void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
 {
     _requestTimeout_ms = timeout_ms;
-    if (_http != nullptr)
+    if (_http != nullptr && timeout_ms > 0)
     {
-        _http->setTimeout(timeout_ms);
+        _http->setTimeout(_httpClientTimeout(timeout_ms));
     }
 }
 
@@ -768,7 +781,7 @@ int IotWifiNetwork::rssi() const
 // IotAdcBattery
 // *****************************************************************************
 
-int IotAdcBattery::readMilliVolts()
+int32_t IotAdcBattery::read_mV()
 {
     if (_config.pin < 0 || _config.divider == 0)
     {
@@ -811,9 +824,9 @@ int IotAdcBattery::readMilliVolts()
 // IotEspPower
 // *****************************************************************************
 
-void IotEspPower::deepSleep(uint32_t duration_s)
+void IotEspPower::deepSleep(int32_t duration_s)
 {
-    esp_deep_sleep((uint64_t)duration_s * 1000000ULL);
+    esp_deep_sleep((uint64_t)(duration_s > 0 ? duration_s : 0) * 1000000ULL);
 }
 
 void IotEspPower::restart()

@@ -28,7 +28,7 @@ void IotAp::setSsidPrefix(const String& prefix)
     _ssidPrefix = prefix;
 }
 
-void IotAp::setIdleTimeout_s(int idleTimeout_s)
+void IotAp::setIdleTimeout_s(int32_t idleTimeout_s)
 {
     _idleTimeout_s = idleTimeout_s;
 }

@@ -265,10 +265,10 @@ public:
      * Undervoltage threshold in millivolts; begin() shuts the device down below
      * it. Values < 0 disable the check. Server-configurable as *battery_min_mv*.
      */
-    void setBatteryMin_mV(int batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
+    void setBatteryMin_mV(int32_t batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
 
     /// @return the supply voltage in millivolts, or -1 without a battery.
-    int getBatteryVoltage_mV();
+    int32_t getBatteryVoltage_mV();
 
 
     // **********************************************************************
@@ -394,13 +394,13 @@ public:
      * @return how long the *previous* boot cycle stayed awake, in milliseconds
      * (recorded at its exit).
      */
-    int64_t getActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
+    uint32_t getActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
 
     /**
      * @return the nominal duration of the sleep cycle we just woke up from, in
      * seconds; 0 after a restart or shutdown.
      */
-    int getLastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
+    int32_t getLastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
 
     /**
      * Set the duration of the next sleep cycle in seconds.
@@ -408,7 +408,7 @@ public:
      * On begin(), corresponding configuration values are read from
      * sleep_s. This method allows overwriting these values later.
      */
-    void setSleepDuration_s(int sleep_duration_s);
+    void setSleepDuration_s(int32_t sleep_duration_s);
 
     /**
      * Replace the power adapter, i.e. how the device actually sleeps, restarts
@@ -442,7 +442,7 @@ public:
      * getLastSleepDuration_s() and runs the exit hooks.
      * @param sleep_duration_s the sleep duration in seconds
      */
-    void deepSleep(int sleep_duration_s);
+    void deepSleep(int32_t sleep_duration_s);
 
     /// Restart the system, ending the cycle cleanly; @see deepSleep(int).
     void restart();
@@ -502,7 +502,7 @@ private:
     /// <0 if not in backoff, otherwise the current backoff sleep in seconds.
     int32_t _backoffDuration_s() const { return _lifecycle.backoffDuration_s(); }
     friend struct IotTelemetryEndpoint;
-    void _deepSleep(int sleep_duration_s, bool isFailure);
+    void _deepSleep(int32_t sleep_duration_s, bool isFailure);
     void _restart(bool isFailure);
     void _shutdown(bool isFailure);
 

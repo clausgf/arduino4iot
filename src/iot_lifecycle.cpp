@@ -44,23 +44,23 @@ void IotLifecycle::begin()
 
 // *****************************************************************************
 
-uint32_t IotLifecycle::enterBackoff()
+int32_t IotLifecycle::enterBackoff()
 {
     int32_t duration_s = _backoff.next(_rtc.panicSleepDuration_s);
     _rtc.panicSleepDuration_s = duration_s;
-    _exit(Exit::DeepSleep, (uint32_t)duration_s, true);
-    return (uint32_t)duration_s;
+    _exit(Exit::DeepSleep, duration_s, true);
+    return duration_s;
 }
 
 // *****************************************************************************
 
-void IotLifecycle::_exit(Exit exit, uint32_t duration_s, bool isFailure)
+void IotLifecycle::_exit(Exit exit, int32_t duration_s, bool isFailure)
 {
     if (!isFailure)
     {
         _rtc.panicSleepDuration_s = -1;  // the cycle ended cleanly
     }
-    _rtc.lastSleepDuration_s = (exit == Exit::DeepSleep) ? (int32_t)duration_s : 0;
+    _rtc.lastSleepDuration_s = (exit == Exit::DeepSleep) ? duration_s : 0;
     _rtc.activeDuration_ms = (int64_t)_power->uptime_ms();
 
     for (auto& hook : _exitHooks)
