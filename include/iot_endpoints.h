@@ -9,6 +9,7 @@
 #include <string>
 
 #include "iot_api.h"
+#include "iot_names.h"
 #include "iot_cache.h"
 #include "iot_result.h"
 
@@ -17,19 +18,6 @@
 // endpoint groups over api, so the transport deals in HTTP and does not carry
 // the endpoint map.
 // *****************************************************************************
-
-/// Server paths. {project}, {device} and {board} are substituted per request,
-/// {kind} by iot.telemetry.post(). Pass a different path to override one.
-namespace iot_paths
-{
-    inline constexpr const char* PROVISION = "provision";
-    inline constexpr const char* TELEMETRY = "telemetry/{project}/{device}/{kind}";
-    inline constexpr const char* LOG       = "log/{project}/{device}";
-    inline constexpr const char* CONFIG    = "file/{project}/{device}/config.json";
-    inline constexpr const char* FIRMWARE  = "file/{project}/{device}/firmware.bin";
-    inline constexpr const char* FILE_DIR  = "file/{project}/{device}/";
-    inline constexpr const char* FORWARD   = "forward/{project}/{device}/";
-}
 
 class IotTelemetry;
 

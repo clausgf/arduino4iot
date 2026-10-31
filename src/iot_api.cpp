@@ -299,7 +299,7 @@ IotApiResponse IotApi::_send(const char* method, const std::string& apiPath, con
     if (response.result.httpStatus == 401 && _tokens.hasProvisioningToken())
     {
         _tokens.clearDeviceToken();
-        if (_requestDeviceToken("provision").isOk())
+        if (_requestDeviceToken(iot_paths::PROVISION).isOk())
         {
             log_i("HTTP %s url=%s retrying after re-provisioning", method, apiPath.c_str());
             // rebuild the headers: they now carry the freshly issued token

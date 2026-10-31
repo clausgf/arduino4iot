@@ -257,6 +257,10 @@ pre-populated by external tooling: `deviceToken`/`deviceTokExp` (issued by
 `/provision`, see [Provisioning and tokens](#provisioning-and-tokens)) and
 `firmwareEtag`/`firmwareDate` (OTA cache).
 
+All keys and both namespaces are defined in one place, `iot_nvs_keys` in
+`iot_names.h`, next to the server paths (`iot_paths`) — the two sets of names
+the library shares with the outside world.
+
 **Compatibility:** key names and value types/encodings in this table are
 SemVer-governed. Renaming a key, changing its NVS type/encoding, or
 repurposing it for a different meaning is a **breaking change** (major

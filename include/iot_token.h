@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 
+#include "iot_names.h"
 #include "iot_ports.h"
 
 // *****************************************************************************
@@ -58,9 +59,6 @@ class IotTokenManager
 {
 public:
     // NVS keys, part of the documented schema (docs/concepts.md)
-    static constexpr const char* KEY_PROVISIONING_TOKEN   = "provToken";
-    static constexpr const char* KEY_DEVICE_TOKEN         = "deviceToken";
-    static constexpr const char* KEY_DEVICE_TOKEN_EXPIRY  = "deviceTokExp";
 
     /// Default margin before the expiry at which a new token is requested.
     static constexpr int32_t DEFAULT_EXPIRY_MARGIN_S = 3600;

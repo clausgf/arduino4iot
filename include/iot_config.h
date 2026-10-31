@@ -11,7 +11,7 @@
 
 #include <ArduinoJson.h>
 
-#include "iot_endpoints.h"
+#include "iot_names.h"
 #include "iot_ports.h"
 #include "iot_result.h"
 
@@ -197,8 +197,6 @@ public:
 
     IotConfig() = default;
 
-    static constexpr const char* KEY_ETAG = "iotCfgEtag";
-    static constexpr const char* KEY_DATE = "iotCfgDate";
 
     /**
      * Bind to a store and publish the mirrored values into the registered
@@ -242,9 +240,9 @@ public:
     int applyJsonBody(const char* body, int* oUnknown = nullptr, int* oMismatched = nullptr);
 
     /// @return the ETag of the mirrored configuration, for diagnostics.
-    std::string etag() const { return _store ? _store->getString(KEY_ETAG, "") : std::string(); }
+    std::string etag() const { return _store ? _store->getString(iot_nvs_keys::CONFIG_ETAG, "") : std::string(); }
     /// @return the Last-Modified date of the mirrored configuration.
-    std::string lastModified() const { return _store ? _store->getString(KEY_DATE, "") : std::string(); }
+    std::string lastModified() const { return _store ? _store->getString(iot_nvs_keys::CONFIG_DATE, "") : std::string(); }
 
     // --- free-form access, for values without a bound variable ---
 
@@ -269,9 +267,6 @@ public:
     IotConfigValueBase* find(const char* key) const { return _find(key); }
 
     // --- schema ---
-
-    /// NVS key of the hash of the last published schema.
-    static constexpr const char* KEY_SCHEMA_HASH = "iotCfgSchema";
 
     /**
      * @return a JSON Schema describing every registered value of this
