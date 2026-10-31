@@ -33,8 +33,8 @@ struct Fixture
         clock.setNow(1700000000LL);
         store.putString(iot_nvs_keys::API_URL, "https://api.example.org/api");
         store.putString(iot_nvs_keys::PROJECT, "myproject");
-        store.putString(IotTokenManager::KEY_PROVISIONING_TOKEN, "P-102-secret");
-        store.putString(IotTokenManager::KEY_DEVICE_TOKEN, "bearer old");
+        store.putString(iot_nvs_keys::PROVISIONING_TOKEN, "P-102-secret");
+        store.putString(iot_nvs_keys::DEVICE_TOKEN, "bearer old");
         api.begin(store, http, clock);
         api.setDeviceName("e32_aabbccddeeff");
     }
@@ -265,7 +265,7 @@ struct ConfigFixture
         clock.setNow(1700000000LL);
         apiStore.putString(iot_nvs_keys::API_URL, "https://api.example.org/api");
         apiStore.putString(iot_nvs_keys::PROJECT, "myproject");
-        apiStore.putString(IotTokenManager::KEY_DEVICE_TOKEN, "bearer old");
+        apiStore.putString(iot_nvs_keys::DEVICE_TOKEN, "bearer old");
         api.begin(apiStore, http, clock);
         api.setDeviceName("e32_aabbccddeeff");
         cfg.begin(configStore);
@@ -295,7 +295,7 @@ void test_update_config_applies_and_commits_the_validators()
 void test_update_config_with_a_malformed_body_keeps_the_old_validators()
 {
     ConfigFixture f;
-    f.configStore.putString(IotConfig::KEY_ETAG, "\"c1\"");
+    f.configStore.putString(iot_nvs_keys::CONFIG_ETAG, "\"c1\"");
     f.http.reply(200, "not json", { { "ETag", "\"c2\"" } });
     IotResult r = f.cfg.updateConfig();
     TEST_ASSERT_EQUAL_INT(IotResult::STATUS_MALFORMED_RESPONSE, r.httpStatus);

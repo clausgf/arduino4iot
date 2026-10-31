@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 
+#include "iot_names.h"
 #include "iot_ports.h"
 
 // *****************************************************************************
@@ -19,30 +20,6 @@
 // into the store on first boot and then left untouched. This lets a secretless
 // firmware update reuse what is already there. See docs/concepts.md.
 // *****************************************************************************
-
-/// NVS keys of the bootstrap values. A documented contract: a device can be
-/// provisioned by writing these directly into an NVS partition image instead of
-/// by a firmware rebuild. See docs/concepts.md, "NVS schema".
-namespace iot_nvs_keys
-{
-    /// The NVS namespace holding all of the below.
-    inline constexpr const char* NAMESPACE = "iot";
-    /// The NVS namespace of the server config mirror (IotConfig), kept apart so
-    /// clearProvisioning() can leave it alone.
-    inline constexpr const char* CONFIG_NAMESPACE = "iot-cfg";
-
-    inline constexpr const char* WIFI_SSID     = "wifiSsid";
-    inline constexpr const char* WIFI_PASSWORD = "wifiPass";
-    inline constexpr const char* API_URL       = "apiUrl";
-    inline constexpr const char* PROJECT       = "project";
-    inline constexpr const char* TLS_MODE      = "tlsMode";
-    inline constexpr const char* CA_CERT       = "caCert";
-    inline constexpr const char* CLIENT_CERT   = "cliCert";
-    inline constexpr const char* CLIENT_KEY    = "cliKey";
-    inline constexpr const char* SEED_GEN      = "seedGen";
-    inline constexpr const char* FIRMWARE_ETAG = "firmwareEtag";
-    inline constexpr const char* FIRMWARE_DATE = "firmwareDate";
-}
 
 /// Values seeded into the store. Empty strings / None / 0 mean "not provided"
 /// and never overwrite an existing value.

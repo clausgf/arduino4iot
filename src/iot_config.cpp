@@ -205,7 +205,7 @@ IotResult IotConfig::updateConfig()
         return IotResult();  // default: transport error, no request was made
     }
 
-    IotStoredValidators cache(*_store, KEY_ETAG, KEY_DATE);
+    IotStoredValidators cache(*_store, iot_nvs_keys::CONFIG_ETAG, iot_nvs_keys::CONFIG_DATE);
     IotCachedResponse response = api.getCached(_apiPath, cache.load());
     if (response.result.isNotModified())
     {
@@ -321,7 +321,7 @@ IotResult IotConfig::publishSchema(const char* filename)
     }
     const std::string schema = schemaJson();
     const std::string hash = schemaHash(schema);
-    if (_store->getString(KEY_SCHEMA_HASH, "") == hash)
+    if (_store->getString(iot_nvs_keys::CONFIG_SCHEMA_HASH, "") == hash)
     {
         return IotResult(304);
     }
@@ -330,7 +330,7 @@ IotResult IotConfig::publishSchema(const char* filename)
         { .headers = { { "Content-Type", "application/schema+json" } } }).result;
     if (result.isOk())
     {
-        _store->putString(KEY_SCHEMA_HASH, hash);
+        _store->putString(iot_nvs_keys::CONFIG_SCHEMA_HASH, hash);
         log_i("Config: published %s (%s)", filename, hash.c_str());
     } else {
         log_w("Config: publishing %s failed status=%d", filename, result.httpStatus);

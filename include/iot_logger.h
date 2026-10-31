@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <string>
 
+#include "iot_names.h"
 #include "iot_ports.h"
 #include "iot_result.h"
 
@@ -111,7 +112,7 @@ public:
      *
      * Goes through api.post(), so the device token and the 401 retry apply.
      */
-    IotResult postLog(const char * body, const char * apiPath = "log/{project}/{device}");
+    IotResult postLog(const char * body, const char * apiPath = iot_paths::LOG);
 
 
     // **********************************************************************

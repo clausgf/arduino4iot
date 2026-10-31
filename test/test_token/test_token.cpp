@@ -151,7 +151,7 @@ void test_the_device_token_survives_a_restart()
 void test_the_seeded_provisioning_token_is_loaded()
 {
     IotFakeStore store;
-    store.putString(IotTokenManager::KEY_PROVISIONING_TOKEN, "P-102-secret");
+    store.putString(iot_nvs_keys::PROVISIONING_TOKEN, "P-102-secret");
 
     IotTokenManager tokens;
     tokens.begin(store);
@@ -186,7 +186,7 @@ void test_clearing_the_token_forces_re_provisioning()
 
     TEST_ASSERT_FALSE(tokens.hasDeviceToken());
     TEST_ASSERT_TRUE(tokens.needsNewToken(NOW, true));
-    TEST_ASSERT_EQUAL_STRING("", store.getString(IotTokenManager::KEY_DEVICE_TOKEN, "x").c_str());
+    TEST_ASSERT_EQUAL_STRING("", store.getString(iot_nvs_keys::DEVICE_TOKEN, "x").c_str());
 }
 
 

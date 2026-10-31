@@ -31,8 +31,8 @@ struct Fixture
         clock.setNow(1700000000LL);   // plausible, so token expiry arithmetic applies
         store.putString(iot_nvs_keys::API_URL, "https://api.example.org/api");
         store.putString(iot_nvs_keys::PROJECT, "myproject");
-        store.putString(IotTokenManager::KEY_PROVISIONING_TOKEN, "P-102-secret");
-        store.putString(IotTokenManager::KEY_DEVICE_TOKEN, "bearer old");
+        store.putString(iot_nvs_keys::PROVISIONING_TOKEN, "P-102-secret");
+        store.putString(iot_nvs_keys::DEVICE_TOKEN, "bearer old");
     }
 
     void begin()
@@ -138,7 +138,7 @@ void test_a_401_re_provisions_and_retries_once()
     // the retry carries the freshly issued token, not the rejected one
     TEST_ASSERT_EQUAL_STRING("bearer old", f.http.header(0, "Authorization").c_str());
     TEST_ASSERT_EQUAL_STRING("bearer fresh", f.http.header(2, "Authorization").c_str());
-    TEST_ASSERT_EQUAL_STRING("bearer fresh", f.store.getString(IotTokenManager::KEY_DEVICE_TOKEN).c_str());
+    TEST_ASSERT_EQUAL_STRING("bearer fresh", f.store.getString(iot_nvs_keys::DEVICE_TOKEN).c_str());
 }
 
 void test_the_provisioning_request_is_unauthenticated()
@@ -173,7 +173,7 @@ void test_a_second_401_is_not_retried_again()
 void test_a_401_without_a_provisioning_token_is_passed_through()
 {
     Fixture f;
-    f.store.remove(IotTokenManager::KEY_PROVISIONING_TOKEN);
+    f.store.remove(iot_nvs_keys::PROVISIONING_TOKEN);
     f.begin();
     f.http.reply(401);
 
@@ -190,7 +190,7 @@ void test_a_403_keeps_the_token_and_does_not_retry()
 
     TEST_ASSERT_EQUAL_INT(403, f.api.get("file/x").result.httpStatus);
     TEST_ASSERT_EQUAL_size_t(1, f.http.requestCount());
-    TEST_ASSERT_EQUAL_STRING("bearer old", f.store.getString(IotTokenManager::KEY_DEVICE_TOKEN).c_str());
+    TEST_ASSERT_EQUAL_STRING("bearer old", f.store.getString(iot_nvs_keys::DEVICE_TOKEN).c_str());
 }
 
 void test_a_transport_error_is_passed_through()
@@ -212,7 +212,7 @@ void test_a_transport_error_is_passed_through()
 void test_a_valid_token_is_not_renewed()
 {
     Fixture f;
-    f.store.putInt(IotTokenManager::KEY_DEVICE_TOKEN_EXPIRY, 4102444800LL);  // 2100
+    f.store.putInt(iot_nvs_keys::DEVICE_TOKEN_EXPIRY, 4102444800LL);  // 2100
     f.begin();
 
     TEST_ASSERT_TRUE(f.api.updateProvisioning().isOk());
@@ -222,8 +222,8 @@ void test_a_valid_token_is_not_renewed()
 void test_provisioning_without_a_token_reports_the_synthetic_status()
 {
     Fixture f;
-    f.store.remove(IotTokenManager::KEY_PROVISIONING_TOKEN);
-    f.store.remove(IotTokenManager::KEY_DEVICE_TOKEN);
+    f.store.remove(iot_nvs_keys::PROVISIONING_TOKEN);
+    f.store.remove(iot_nvs_keys::DEVICE_TOKEN);
     f.begin();
 
     IotResult result = f.api.updateProvisioning();
@@ -234,7 +234,7 @@ void test_provisioning_without_a_token_reports_the_synthetic_status()
 void test_a_2xx_with_an_unusable_body_is_malformed_not_success()
 {
     Fixture f;
-    f.store.remove(IotTokenManager::KEY_DEVICE_TOKEN);
+    f.store.remove(iot_nvs_keys::DEVICE_TOKEN);
     f.begin();
     f.http.reply(200, "{\"nothing\":\"useful\"}");
 
@@ -246,7 +246,7 @@ void test_a_2xx_with_an_unusable_body_is_malformed_not_success()
 void test_a_403_from_provision_is_reported_as_is()
 {
     Fixture f;
-    f.store.remove(IotTokenManager::KEY_DEVICE_TOKEN);
+    f.store.remove(iot_nvs_keys::DEVICE_TOKEN);
     f.begin();
     f.http.reply(403);
 

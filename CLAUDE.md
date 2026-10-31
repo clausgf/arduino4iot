@@ -49,7 +49,7 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Layer | Files | Arduino? |
 |---|---|---|
 | Ports (interfaces + contracts) | `iot_ports.h` | no |
-| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_log.h` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_endpoints.h` `iot_logger.h` | no |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_log.h` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_names.h` `iot_endpoints.h` `iot_logger.h` | no |
 | ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
 | Facade | `iot.{h,cpp}` | yes |
 
@@ -95,7 +95,9 @@ degrades without it.
 
 ### Global singletons (declared `extern` in their headers)
 
-New user-facing calls go where a sketch looks for them: lifecycle on `iot`,
+Server paths and NVS keys live only in `iot_names.h` (`iot_paths`,
+`iot_nvs_keys`); never as a literal or a class constant elsewhere. New
+user-facing calls go where a sketch looks for them: lifecycle on `iot`,
 a nice4iot endpoint into its group on `iot` (`iot.telemetry`, `iot.files`,
 `iot.forward`, `iot.ota`), plain HTTP on `api`. No new free `iot*()` functions.
 

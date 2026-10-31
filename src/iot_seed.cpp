@@ -19,13 +19,13 @@ bool iotSeedCredentials(IotStore& store, const IotSeedConfig& cfg)
     const std::string oldApiUrl = store.getString(API_URL, "");
     const std::string oldProject = store.getString(PROJECT, "");
     const std::string oldProvisioningToken =
-        store.getString(IotTokenManager::KEY_PROVISIONING_TOKEN, "");
+        store.getString(iot_nvs_keys::PROVISIONING_TOKEN, "");
 
     iotSeedString(store, WIFI_SSID, cfg.wifiSsid, force);
     iotSeedString(store, WIFI_PASSWORD, cfg.wifiPassword, force);
     iotSeedString(store, API_URL, cfg.apiUrl, force);
     iotSeedString(store, PROJECT, cfg.projectName, force);
-    iotSeedString(store, IotTokenManager::KEY_PROVISIONING_TOKEN, cfg.provisioningToken, force);
+    iotSeedString(store, iot_nvs_keys::PROVISIONING_TOKEN, cfg.provisioningToken, force);
     iotSeedString(store, CA_CERT, cfg.caCertPem, force);
     iotSeedString(store, CLIENT_CERT, cfg.clientCertPem, force);
     iotSeedString(store, CLIENT_KEY, cfg.clientKeyPem, force);
@@ -37,11 +37,11 @@ bool iotSeedCredentials(IotStore& store, const IotSeedConfig& cfg)
     const bool identityChanged =
         store.getString(API_URL, "") != oldApiUrl ||
         store.getString(PROJECT, "") != oldProject ||
-        store.getString(IotTokenManager::KEY_PROVISIONING_TOKEN, "") != oldProvisioningToken;
+        store.getString(iot_nvs_keys::PROVISIONING_TOKEN, "") != oldProvisioningToken;
     if (identityChanged)
     {
-        store.remove(IotTokenManager::KEY_DEVICE_TOKEN);
-        store.remove(IotTokenManager::KEY_DEVICE_TOKEN_EXPIRY);
+        store.remove(iot_nvs_keys::DEVICE_TOKEN);
+        store.remove(iot_nvs_keys::DEVICE_TOKEN_EXPIRY);
     }
 
     if (force)

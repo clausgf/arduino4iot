@@ -41,9 +41,9 @@ bool iotParseProvisioningResponse(const char* body, IotProvisioningResponse& oRe
 void IotTokenManager::begin(IotStore& store)
 {
     _store = &store;
-    _provisioningToken = store.getString(KEY_PROVISIONING_TOKEN, "");
-    _deviceToken = store.getString(KEY_DEVICE_TOKEN, "");
-    _deviceTokenExpiresAt = store.getInt(KEY_DEVICE_TOKEN_EXPIRY, 0);
+    _provisioningToken = store.getString(iot_nvs_keys::PROVISIONING_TOKEN, "");
+    _deviceToken = store.getString(iot_nvs_keys::DEVICE_TOKEN, "");
+    _deviceTokenExpiresAt = store.getInt(iot_nvs_keys::DEVICE_TOKEN_EXPIRY, 0);
 }
 
 // *****************************************************************************
@@ -73,8 +73,8 @@ void IotTokenManager::setDeviceToken(const std::string& token, int64_t expiresAt
     _deviceTokenExpiresAt = expiresAt;
     if (_store != nullptr)
     {
-        _store->putString(KEY_DEVICE_TOKEN, _deviceToken);
-        _store->putInt(KEY_DEVICE_TOKEN_EXPIRY, _deviceTokenExpiresAt);
+        _store->putString(iot_nvs_keys::DEVICE_TOKEN, _deviceToken);
+        _store->putInt(iot_nvs_keys::DEVICE_TOKEN_EXPIRY, _deviceTokenExpiresAt);
     }
 }
 

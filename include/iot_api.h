@@ -220,7 +220,7 @@ public:
      *         - .httpStatus == IotResult::STATUS_MALFORMED_RESPONSE: 2xx but the
      *           response body lacked a valid accessToken/tokenType.
      */
-    IotResult updateProvisioning(const std::string& apiPath = "provision");
+    IotResult updateProvisioning(const std::string& apiPath = iot_paths::PROVISION);
 
     /**
      * Convenience wrapper around updateProvisioning() for callers that only
