@@ -28,44 +28,19 @@ public:
     IotLogger(const IotLogger&) = delete;
     IotLogger& operator=(const IotLogger&) = delete;
 
-    enum LogLevel { IOT_LOGLEVEL_ERROR = 0, IOT_LOGLEVEL_WARNING = 1, IOT_LOGLEVEL_INFO = 2, IOT_LOGLEVEL_DEBUG = 3, IOT_LOGLEVEL_VERBOSE = 4, IOT_LOGLEVEL_NOTSET = 5  };
+    /// The level of a line, and the threshold of setLevel(): a line is kept if
+    /// its level is at most the threshold. The numbers are the config.json
+    /// values of log_level.
+    enum class Level : uint8_t { Error = 0, Warning = 1, Info = 2, Debug = 3, Verbose = 4, All = 5 };
 
     IotLogger();
-    void begin(LogLevel logLevel = IOT_LOGLEVEL_NOTSET);
-    void end();
 
-    /// Where to ask whether the buffer can be sent. Without one, flush() tries
-    /// and lets the request fail.
-    void setNetwork(IotNetwork* network) { _network = network; }
+    /// Lines above @p level are dropped. Default: All. iot.begin() sets it from
+    /// the config value log_level.
+    void setLevel(Level level) { _level = level; }
 
-
-    // **********************************************************************
-    // Logging
-    // **********************************************************************
-
- 
-    /**
-     * Set minimum criticality of log info to output. Info with lower
-     * criticality is suppressed.
-     */
-    void setLogLevel(LogLevel level);
-
-    /**
-     * Log output with given level, format and arguments referenced by ap.
-     */
-    void logv(LogLevel level, const char *tag, const char* format, va_list ap);
-
-    /**
-     * Log output with given level, format and printf()-style arguments.
-     */
-    void logf(LogLevel level, const char *tag, const char* format...);
-
-    /**
-     * Log a line straight into the RTC log, for a later cycle: never touches
-     * the network or the RAM buffer. For paths where a request is unsafe or
-     * pointless, e.g. a panic before the network is up.
-     */
-    void logToRtc(LogLevel level, const char *tag, const char* format...);
+    /// Log with @p level and printf()-style arguments.
+    void log(Level level, const char *tag, const char* format...);
 
     // --- logging helpers ---
     void error(const char *tag, const char* format...);
@@ -106,21 +81,24 @@ public:
      */
     IotResult flush();
 
-    /**
-     * Post a log message to the API. The body consist of ESP32 formatted
-     * log lines.
-     *
-     * Goes through api.post(), so the device token and the 401 retry apply.
-     */
+private:
+    friend class Iot;
+
+    /// Where to ask whether the buffer can be sent. Without one, flush() tries
+    /// and lets the request fail.
+    void setNetwork(IotNetwork& network) { _network = &network; }
+    void end();
+
+    void logv(Level level, const char *tag, const char* format, va_list ap);
+
+    /// Straight into the RTC log, for a later cycle: never touches the
+    /// network or the RAM buffer. For a panic before the network is up.
+    void logToRtc(Level level, const char *tag, const char* format...);
+
+    /// Post ESP-formatted log lines, split at the server's size limit.
     IotResult postLog(const char * body, const char * apiPath = iot_paths::LOG);
 
-
-    // **********************************************************************
-    // P r i v a t e
-    // **********************************************************************
-
-private:
-    LogLevel _logLevel;
+    Level _level;
     bool _buffered;
     std::string _logBuffer;
     IotNetwork* _network = nullptr;

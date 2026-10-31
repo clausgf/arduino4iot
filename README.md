@@ -274,8 +274,8 @@ the linker drops every one an application does not reference.
   [Metadata, limits and the schema](docs/concepts.md#metadata-limits-and-the-schema).
 - **New: `iot.radioOff()`** and offline logging in RTC RAM (`IOT_RTC_LOG_SIZE`,
   default 1536 bytes). `IotNetwork::disconnect()` now powers the interface
-  down; `IotWifiNetwork` sets `WIFI_OFF`. `logger.flush()` and
-  `logger.postLog()` return `IotResult` instead of an `int`; offline, `flush()`
+  down; `IotWifiNetwork` sets `WIFI_OFF`. `logger.flush()` returns
+  `IotResult` instead of an `int`; offline, `flush()`
   keeps the buffer instead of dropping it. See
   [Offline logging](docs/concepts.md#offline-radio-off-logs-in-rtc-ram).
 - **New: `IotRtcSlot<T>`** (`iot_rtc_slot.h`) for application state in RTC RAM,
@@ -306,6 +306,11 @@ the linker drops every one an application does not reference.
   `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
   (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
   → `api.updateProvisioning()` in a boolean context.
+- **Logger levels are `IotLogger::Level`** (`Error`, `Warning`, `Info`, `Debug`,
+  `Verbose`, `All`) instead of `IotLogger::IOT_LOGLEVEL_*`; `setLogLevel()` →
+  `setLevel()`, `logf()` → `log()`. `begin()`, `end()`, `setNetwork()`,
+  `logv()` and `postLog()` are internal — `iot` drives them. The numeric
+  `log_level` config values are unchanged.
 - **`api.store()`, `deviceToken()`, `setDeviceToken()`, `tlsConfig()`,
   `mergeHeaders()` and `getApiUrlForPath()` are no longer public.** They were
   plumbing for the OTA download; a token is issued by provisioning, never set
