@@ -9,8 +9,11 @@
 
 #include <unity.h>
 
+#include <cstring>
+
 #include "../iot_fakes.h"
 #include "iot_ports.h"
+#include "iot_rtc_slot.h"
 #include "iot_rtc_state.h"
 
 // *****************************************************************************
@@ -256,45 +259,37 @@ void test_reset_reason_strings()
 // IotRtcState
 // *****************************************************************************
 
-void test_rtc_state_starts_invalid_and_resets_to_a_defined_state()
+void test_rtc_state_in_a_slot_starts_zeroed_after_power_on()
 {
-    // simulate the memory as it is after a power-on reset: arbitrary bytes
-    IotRtcState state;
-    memset(&state, 0xa5, sizeof(state));
-    TEST_ASSERT_FALSE(state.isValid());
+    // the memory as it is after a power-on reset: arbitrary bytes
+    IotRtcSlot<IotRtcState> slot;
+    memset(&slot, 0xa5, sizeof(slot));
+    TEST_ASSERT_FALSE(slot.isValid());
 
-    state.reset();
-    TEST_ASSERT_TRUE(state.isValid());
+    IotRtcState& state = slot.get();
+    TEST_ASSERT_TRUE(slot.isValid());
     TEST_ASSERT_EQUAL_UINT32(0, state.bootCount);
     TEST_ASSERT_EQUAL_INT64(0, state.activeDuration_ms);
     TEST_ASSERT_EQUAL_INT32(0, state.wifiChannel);
     TEST_ASSERT_EQUAL_UINT32(0, state.dhcpIp);
     TEST_ASSERT_EQUAL_INT64(0, state.ntpLastSyncTime);
-
-    // -1 means "ended in an orderly way": a fresh device is not in backoff
-    TEST_ASSERT_EQUAL_INT32(-1, state.panicSleepDuration_s);
+    // 0 means "ended in an orderly way": a fresh device is not in backoff
+    TEST_ASSERT_EQUAL_INT32(0, state.panicSleepDuration_s);
 }
 
-void test_rtc_state_survives_as_plain_data()
+void test_rtc_state_survives_a_deep_sleep_in_its_slot()
 {
-    IotRtcState state;
-    state.reset();
-    state.bootCount = 5;
-    state.panicSleepDuration_s = 120;
+    IotRtcSlot<IotRtcState> slot;
+    memset(&slot, 0, sizeof(slot));
+    slot->bootCount = 5;
+    slot->panicSleepDuration_s = 120;
 
     // what a deep sleep does to it: nothing
-    IotRtcState afterSleep = state;
+    IotRtcSlot<IotRtcState> afterSleep;
+    memcpy(&afterSleep, &slot, sizeof(slot));
     TEST_ASSERT_TRUE(afterSleep.isValid());
-    TEST_ASSERT_EQUAL_UINT32(5, afterSleep.bootCount);
-    TEST_ASSERT_EQUAL_INT32(120, afterSleep.panicSleepDuration_s);
-}
-
-void test_rtc_state_magic_rejects_a_foreign_layout()
-{
-    IotRtcState state;
-    state.reset();
-    state.magic = IotRtcState::MAGIC + 1;  // a firmware with a changed layout
-    TEST_ASSERT_FALSE(state.isValid());
+    TEST_ASSERT_EQUAL_UINT32(5, afterSleep->bootCount);
+    TEST_ASSERT_EQUAL_INT32(120, afterSleep->panicSleepDuration_s);
 }
 
 
@@ -324,9 +319,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_abnormal_reset_detection);
     RUN_TEST(test_reset_reason_strings);
 
-    RUN_TEST(test_rtc_state_starts_invalid_and_resets_to_a_defined_state);
-    RUN_TEST(test_rtc_state_survives_as_plain_data);
-    RUN_TEST(test_rtc_state_magic_rejects_a_foreign_layout);
+    RUN_TEST(test_rtc_state_in_a_slot_starts_zeroed_after_power_on);
+    RUN_TEST(test_rtc_state_survives_a_deep_sleep_in_its_slot);
 
     return UNITY_END();
 }

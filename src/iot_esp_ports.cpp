@@ -5,6 +5,8 @@
 
 #include "iot_esp_ports.h"
 
+#include "iot_rtc_slot.h"
+
 #include <cstring>
 #include <vector>
 
@@ -23,16 +25,12 @@
 // RTC_NOINIT_ATTR, not RTC_DATA_ATTR: the bootloader reinitializes .rtc.data
 // from the image on a software or watchdog reset, which would clear the failure
 // backoff exactly when it is needed. .rtc.noinit only loses its contents on a
-// power-on reset, which the magic detects.
-static RTC_NOINIT_ATTR IotRtcState rtcStateStorage;
+// power-on reset, which the slot detects - as it does a changed layout.
+static RTC_NOINIT_ATTR IotRtcSlot<IotRtcState> rtcStateStorage;
 
 IotRtcState& iotRtcState()
 {
-    if (!rtcStateStorage.isValid())
-    {
-        rtcStateStorage.reset();
-    }
-    return rtcStateStorage;
+    return rtcStateStorage.get();
 }
 
 

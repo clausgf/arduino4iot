@@ -19,7 +19,7 @@ IotLogger logger;
 #if IOT_RTC_LOG_SIZE > 0
 /// What could not be sent, kept across deep sleep and software resets for the
 /// next cycle that has connectivity.
-static RTC_NOINIT_ATTR IotRtcSlot<IotRtcLogBuffer<IOT_RTC_LOG_SIZE>> rtcLog;
+static RTC_NOINIT_ATTR IotRtcSlot<IotRtcLog<IOT_RTC_LOG_SIZE>> rtcLog;
 #endif
 
 /// Keep @p lines for a later cycle; @return false if there is no RTC buffer.

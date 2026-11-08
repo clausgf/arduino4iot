@@ -89,7 +89,7 @@ public:
     void addExitHook(std::function<void()> hook) { _exitHooks.push_back(std::move(hook)); }
 
     /**
-     * Start a wakeup cycle: validate the RTC state, count the boot and latch
+     * Start a wakeup cycle: count the boot and latch
      * why the device came up.
      *
      * Deliberately does *not* act on an abnormal reset - the caller decides,
@@ -118,7 +118,7 @@ public:
     /// seconds; 0 after a restart or shutdown.
     int32_t lastSleepDuration_s() const { return _rtc.lastSleepDuration_s; }
 
-    /// @return the running backoff duration in seconds, or -1 when not in
+    /// @return the running backoff duration in seconds, or 0 when not in
     /// backoff (the previous cycle ended in an orderly way).
     int32_t backoffDuration_s() const { return _rtc.panicSleepDuration_s; }
 

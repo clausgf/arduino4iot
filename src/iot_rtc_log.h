@@ -22,9 +22,9 @@
 // *****************************************************************************
 
 template <size_t Capacity>
-struct IotRtcLogBuffer
+struct IotRtcLog
 {
-    static_assert(Capacity > 0 && Capacity < 0x10000, "IotRtcLogBuffer: Capacity must fit uint16_t");
+    static_assert(Capacity > 0 && Capacity < 0x10000, "IotRtcLog: Capacity must fit uint16_t");
 
     uint16_t length;
     uint16_t droppedLines;

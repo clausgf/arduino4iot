@@ -31,11 +31,6 @@ int32_t IotBackoffPolicy::next(int32_t current_s) const
 
 void IotLifecycle::begin()
 {
-    if (!_rtc.isValid())
-    {
-        // power-on reset, or a firmware whose RTC layout changed
-        _rtc.reset();
-    }
     _resetReason = _power->resetReason();
     _wakeupCause = _power->wakeupCause();
     _rtc.bootCount++;
@@ -58,7 +53,7 @@ void IotLifecycle::_exit(Exit exit, int32_t duration_s, bool isFailure)
 {
     if (!isFailure)
     {
-        _rtc.panicSleepDuration_s = -1;  // the cycle ended cleanly
+        _rtc.panicSleepDuration_s = 0;  // the cycle ended cleanly
     }
     _rtc.lastSleepDuration_s = (exit == Exit::DeepSleep) ? duration_s : 0;
     _rtc.activeDuration_ms = (int64_t)_power->uptime_ms();

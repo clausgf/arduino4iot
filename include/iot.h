@@ -499,7 +499,7 @@ private:
     void _panicEarly(const char* format...);
     /// The default panic handler: sleep for the next backoff duration.
     void _enterBackoff();
-    /// <0 if not in backoff, otherwise the current backoff sleep in seconds.
+    /// 0 if not in backoff, otherwise the current backoff sleep in seconds.
     int32_t _backoffDuration_s() const { return _lifecycle.backoffDuration_s(); }
     friend struct IotTelemetryEndpoint;
     void _deepSleep(int32_t sleep_duration_s, bool isFailure);

@@ -1,5 +1,5 @@
 /**
- * Native unit tests for IotRtcLogBuffer (pio test -e native).
+ * Native unit tests for IotRtcLog (pio test -e native).
  *
  * The bounded buffer IotLogger keeps offline log lines in: what fits is kept
  * in order, and when it does not, the oldest whole lines go first.
@@ -17,7 +17,7 @@
 void setUp() {}
 void tearDown() {}
 
-using Small = IotRtcLogBuffer<32>;
+using Small = IotRtcLog<32>;
 
 static Small empty()
 {
@@ -79,7 +79,7 @@ void test_a_single_overlong_line_is_truncated_to_fit()
 
 void test_it_lives_in_an_rtc_slot()
 {
-    IotRtcSlot<IotRtcLogBuffer<64>> slot;
+    IotRtcSlot<IotRtcLog<64>> slot;
     std::memset(&slot, 0xA5, sizeof(slot));   // power-on contents
     TEST_ASSERT_TRUE(slot->isEmpty());          // reset, not garbage
     slot->append("kept\n");

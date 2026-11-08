@@ -312,6 +312,11 @@ the linker drops every one an application does not reference.
   former `IotConfigKind` / `iotConfigValueListHead()`. `config.begin(store)`
   stays public for further `IotConfig` instances, `applyJsonBody()` for a
   configuration that arrives another way.
+- **`IotRtcState` is plain data in an `IotRtcSlot`.** Its `MAGIC`, `isValid()`
+  and `reset()` are gone; the slot detects a power-on or a changed layout from
+  the struct's size. "Not in backoff" is now 0 instead of -1, which the
+  `panicSleep_s` telemetry field shows. After this update every device starts
+  over once: boot count from 1, any running backoff cleared.
 - **New: `IotRtcTelemetry<N>`** for values known only after the radio is off:
   kept in the application's `IotRtcSlot` and added to the next cycle's post of
   the same kind as `last_<key>` (`iot.telemetry.post(kind, t, rtc->next)`).

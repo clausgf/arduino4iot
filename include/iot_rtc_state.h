@@ -6,10 +6,12 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
 
 // *****************************************************************************
 // State that has to survive a deep sleep, but not a power loss.
+//
+// Plain data: validity (power-on garbage, a changed layout) is IotRtcSlot's
+// job, like for any application state in RTC RAM.
 //
 // Deliberately not a port: RTC RAM has no runtime keys (RTC_NOINIT_ATTR is
 // static allocation at link time), no failure mode and no write cost, so a
@@ -24,19 +26,13 @@
 
 struct IotRtcState
 {
-    /// Bumped whenever the layout below changes: a firmware update that
-    /// changes the struct must not reinterpret the previous firmware's bytes.
-    static constexpr uint32_t MAGIC = 0x104C0001;
-
-    uint32_t magic;
-
     // --- cycle bookkeeping ---
     uint32_t bootCount;             ///< boots since the last power-on reset
     int64_t  activeDuration_ms;     ///< how long the previous cycle stayed awake
     int32_t  lastSleepDuration_s;   ///< nominal duration of the sleep we just woke from
 
     // --- failure backoff ---
-    /// Current backoff sleep duration in seconds, -1 when the last cycle ended
+    /// Current backoff sleep duration in seconds, 0 when the last cycle ended
     /// in an orderly way. Here rather than in IotStore so a crash loop does not
     /// write flash on every attempt; RTC_NOINIT_ATTR keeps it across a
     /// software/watchdog reset, and a power loss legitimately starts over.
@@ -54,25 +50,13 @@ struct IotRtcState
     uint32_t dhcpDns1;
     uint32_t dhcpDns2;
     int32_t  dhcpReuseCount;
-
-    /// @return true if the contents were written by this firmware's layout and
-    /// survived; false after a power-on reset or a layout change.
-    bool isValid() const { return magic == MAGIC; }
-
-    /// Bring the struct into a defined initial state. Called automatically by
-    /// iotRtcState() when isValid() is false.
-    void reset()
-    {
-        std::memset(this, 0, sizeof(*this));
-        magic = MAGIC;
-        panicSleepDuration_s = -1;  // -1 means "the last cycle ended cleanly"
-    }
 };
 
 /**
- * @return the process-wide RTC state, reset first if it did not survive (a
- * power-on reset, or a changed layout). Defined by the ESP32 adapter over an
- * RTC_NOINIT_ATTR instance. Services should take an `IotRtcState&` instead of
- * calling this, so they stay testable.
+ * @return the process-wide RTC state, all zero if it did not survive (a
+ * power-on reset, or a firmware with a different layout). Defined by the ESP32
+ * adapter as an IotRtcSlot in RTC_NOINIT_ATTR memory, which does that check.
+ * Services should take an `IotRtcState&` instead of calling this, so they stay
+ * testable.
  */
 IotRtcState& iotRtcState();

@@ -113,9 +113,12 @@ a nice4iot endpoint into its group on `iot` (`iot.telemetry`, `iot.files`,
 
 - `IotStore` (NVS) for what must survive a power loss: tokens, cache validators,
   seeded config, the config mirror. Writes are suppressed when unchanged.
-- `IotRtcState` (`RTC_NOINIT_ATTR`, a plain struct, not a port) for what only has
-  to survive deep sleep: boot count, sleep accounting, failure backoff, WiFi
-  caches. Costs no flash cycles.
+- `IotRtcState` (plain data in an `IotRtcSlot` in `RTC_NOINIT_ATTR`, not a port)
+  for what only has to survive deep sleep: boot count, sleep accounting,
+  failure backoff, WiFi caches. Costs no flash cycles. The slot zeroes it when
+  it did not survive, so "nothing yet" is 0 in every field. Application RTC
+  state uses the same `IotRtcSlot`; a type in a slot must have no constructor
+  and no member initializers (static_assert).
 
 Which one a value uses is decided **where it is declared**. There is no global
 switch.

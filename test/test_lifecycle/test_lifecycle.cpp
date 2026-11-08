@@ -8,8 +8,11 @@
 
 #include <unity.h>
 
+#include <cstring>
+
 #include "../iot_fakes.h"
 #include "iot_lifecycle.h"
+#include "iot_rtc_slot.h"
 #include "iot_rtc_state.h"
 
 // *****************************************************************************
@@ -17,12 +20,13 @@
 void setUp() {}
 void tearDown() {}
 
-/// A freshly powered device: RTC memory holds arbitrary bytes.
+/// A freshly powered device: RTC memory holds arbitrary bytes, which the
+/// slot replaces with a zeroed state.
 static IotRtcState freshRtcState()
 {
-    IotRtcState state;
-    memset(&state, 0x5a, sizeof(state));
-    return state;
+    IotRtcSlot<IotRtcState> slot;
+    memset(&slot, 0x5a, sizeof(slot));
+    return slot.get();
 }
 
 
@@ -82,7 +86,7 @@ void test_backoff_factor_below_two_still_advances()
 // IotLifecycle: starting a cycle
 // *****************************************************************************
 
-void test_begin_resets_an_invalid_rtc_state_and_counts_the_boot()
+void test_begin_counts_the_first_boot_after_power_on()
 {
     IotRtcState rtc = freshRtcState();
     IotFakePower power;
@@ -91,9 +95,8 @@ void test_begin_resets_an_invalid_rtc_state_and_counts_the_boot()
 
     lifecycle.begin();
 
-    TEST_ASSERT_TRUE(rtc.isValid());
     TEST_ASSERT_EQUAL_UINT32(1, lifecycle.bootCount());
-    TEST_ASSERT_EQUAL_INT32(-1, lifecycle.backoffDuration_s());  // not in backoff
+    TEST_ASSERT_EQUAL_INT32(0, lifecycle.backoffDuration_s());  // not in backoff
     TEST_ASSERT_FALSE(lifecycle.isAbnormalStart());
 }
 
@@ -169,7 +172,7 @@ void test_deep_sleep_records_the_cycle_and_clears_the_backoff()
 
     TEST_ASSERT_TRUE(IotFakePower::Action::DeepSleep == power.lastCall().action);
     TEST_ASSERT_EQUAL_UINT32(300, power.lastCall().duration_s);
-    TEST_ASSERT_EQUAL_INT32(-1, rtc.panicSleepDuration_s);  // orderly exit clears it
+    TEST_ASSERT_EQUAL_INT32(0, rtc.panicSleepDuration_s);  // orderly exit clears it
     TEST_ASSERT_EQUAL_INT32(300, rtc.lastSleepDuration_s);
     TEST_ASSERT_EQUAL_INT64(812, rtc.activeDuration_ms);
 }
@@ -293,7 +296,7 @@ void test_an_orderly_cycle_ends_the_backoff()
     IotLifecycle recovered(power, rtc);
     recovered.begin();
     recovered.deepSleep(300);
-    TEST_ASSERT_EQUAL_INT32(-1, rtc.panicSleepDuration_s);
+    TEST_ASSERT_EQUAL_INT32(0, rtc.panicSleepDuration_s);
 
     // so the next failure starts over at the initial duration, not where it left off
     IotLifecycle failingAgain(power, rtc);
@@ -316,7 +319,7 @@ void test_a_power_loss_starts_the_backoff_over()
     IotRtcState afterPowerLoss = freshRtcState();
     IotLifecycle rebooted(power, afterPowerLoss);
     rebooted.begin();
-    TEST_ASSERT_EQUAL_INT32(-1, rebooted.backoffDuration_s());
+    TEST_ASSERT_EQUAL_INT32(0, rebooted.backoffDuration_s());
     TEST_ASSERT_EQUAL_UINT32(1, rebooted.bootCount());
 }
 
@@ -350,7 +353,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_backoff_never_returns_a_zero_sleep);
     RUN_TEST(test_backoff_factor_below_two_still_advances);
 
-    RUN_TEST(test_begin_resets_an_invalid_rtc_state_and_counts_the_boot);
+    RUN_TEST(test_begin_counts_the_first_boot_after_power_on);
     RUN_TEST(test_begin_counts_up_across_deep_sleep_cycles);
     RUN_TEST(test_begin_does_not_act_on_an_abnormal_reset);
     RUN_TEST(test_brownout_and_panic_are_abnormal_starts);

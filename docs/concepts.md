@@ -593,9 +593,10 @@ two interchangeable backends behind one interface:
   `RTC_NOINIT_ATTR`. Deliberately *not* a port: RTC memory has no runtime keys,
   no failure mode and no write cost, so a key/value interface over it would buy
   a vtable and string keys and nothing else. Holds boot count, active/sleep
-  accounting, the failure backoff and the WiFi fast-reconnect caches. A magic
-  word detects that the contents did not survive (power-on reset, or a firmware
-  whose layout changed) and resets the struct.
+  accounting, the failure backoff and the WiFi fast-reconnect caches. It lives
+  in an `IotRtcSlot` like any application state: the slot detects contents that
+  did not survive (power-on reset, or a firmware whose layout changed) and
+  hands out a zeroed struct, so every field's "nothing yet" is 0.
 
 `RTC_NOINIT_ATTR` rather than `RTC_DATA_ATTR` matters: the bootloader
 reinitializes the `.rtc.data` section on a software or watchdog reset, which
@@ -633,7 +634,29 @@ library's own state:
   ```
   Bump the `Version` template argument when the meaning of the struct changes
   without its size changing. Prefer `RTC_NOINIT_ATTR`: `RTC_DATA_ATTR` is
-  reinitialized on every reset that is not a deep-sleep wakeup.
+  reinitialized on every reset that is not a deep-sleep wakeup. `T` must have
+  no constructor and no default member initializers — they would run at
+  startup and overwrite what the slot keeps; a `static_assert` enforces it.
+
+### What survives the cycle, and what a failure does to it
+
+Four things carry data from one wakeup cycle into the next through RTC RAM.
+They differ in who owns them and, deliberately, in what a failed request does:
+
+| Building block | Owner | Holds | On a failed request |
+|---|---|---|---|
+| `IotRtcState` | library | boot count, sleep accounting, backoff, WiFi caches | — |
+| RTC log (`IOT_RTC_LOG_SIZE`) | library | log lines that could not be sent | kept on a transport error or 5xx; oldest lines go first when full |
+| `IotRtcValidators<N>` | application | ETag/Last-Modified of a cached resource | not committed, so the next cycle fetches again |
+| `IotRtcTelemetry<N>` | application | values for the next post, as `last_*` | emptied anyway — a value two cycles late would be wrong |
+
+The library's two are always there: it logs into RTC RAM before any
+application code runs (a panic after an abnormal reset). The application's two
+cost nothing until it declares them, inside its own `IotRtcSlot`.
+
+**Budget:** RTC slow memory is 8 KB on ESP32 and ESP32-S3. The library takes
+about 80 bytes of state plus `IOT_RTC_LOG_SIZE` (1536 by default); the rest
+belongs to the application — and to a ULP program, if it has one.
 
 ## Firmware updates (OTA)
 
