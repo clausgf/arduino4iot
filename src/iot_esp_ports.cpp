@@ -230,6 +230,27 @@ void IotEspHttp::setTls(const IotTlsConfig& tls)
     }
 }
 
+bool IotEspHttp::hasServerTrust() const
+{
+    // decided from the configuration, so it holds before the first request
+    // has created the secure client - the same rule _applyTls() applies
+    if (_tls == nullptr)
+    {
+        return false;
+    }
+    switch (_tls->mode)
+    {
+        case IotTlsMode::Bundle:
+        case IotTlsMode::Insecure:
+            return true;
+        case IotTlsMode::CaPin:
+            return !_tls->caCertPem.empty();
+        case IotTlsMode::None:
+            break;
+    }
+    return false;
+}
+
 void IotEspHttp::_applyTls()
 {
     if (_secureClient == nullptr || _tls == nullptr)
@@ -246,7 +267,6 @@ void IotEspHttp::_applyTls()
             extern const uint8_t rootca_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
             _secureClient->setCACertBundle(rootca_crt_bundle_start,
                 rootca_crt_bundle_end - rootca_crt_bundle_start);
-            _serverTrustConfigured = true;
             break;
         }
         case IotTlsMode::Insecure:
@@ -254,7 +274,6 @@ void IotEspHttp::_applyTls()
                   "connection is encrypted but the server identity is not verified. "
                   "Do not use in production; seed a CA certificate (CaPin) instead.");
             _secureClient->setInsecure();
-            _serverTrustConfigured = true;
             break;
         case IotTlsMode::CaPin:
             if (!_tls->caCertPem.empty())
@@ -262,8 +281,7 @@ void IotEspHttp::_applyTls()
                 // the core keeps the pointer rather than copying, so the PEM has
                 // to stay alive - it does, in the IotTlsConfig the caller owns
                 _secureClient->setCACert(_tls->caCertPem.c_str());
-                _serverTrustConfigured = true;
-            }
+                }
             if (!_tls->clientCertPem.empty() && !_tls->clientKeyPem.empty())
             {
                 _secureClient->setCertificate(_tls->clientCertPem.c_str());
@@ -381,7 +399,9 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
     // a HEAD has no body, and a 304 body would be the cached resource
     if (strcasecmp("HEAD", request.method) != 0 && oResponse.status != HTTP_CODE_NOT_MODIFIED)
     {
-        oResponse.body = http.getString().c_str();
+        // assign with the length: a binary body (e.g. a PNG) contains NUL bytes
+        const String body = http.getString();
+        oResponse.body.assign(body.c_str(), body.length());
     }
 
     http.end();

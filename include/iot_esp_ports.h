@@ -103,7 +103,7 @@ public:
     ~IotEspHttp() override;
 
     void setTls(const IotTlsConfig& tls) override;
-    bool hasServerTrust() const override { return _serverTrustConfigured; }
+    bool hasServerTrust() const override;
     void setConnectTimeout_ms(uint32_t timeout_ms) override;
     void setRequestTimeout_ms(uint32_t timeout_ms) override;
     int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override;
@@ -115,7 +115,6 @@ private:
     WiFiClientSecure* _secureClient = nullptr;
     WiFiClient* _client = nullptr;
     HTTPClient* _http = nullptr;
-    bool _serverTrustConfigured = false;
     uint32_t _connectTimeout_ms = 0;   ///< 0: the HTTPClient default
     uint32_t _requestTimeout_ms = 0;   ///< 0: the HTTPClient default
 

@@ -151,7 +151,8 @@ public:
     /// implementations may keep pointers into @p tls, so it has to outlive them.
     virtual void setTls(const IotTlsConfig& tls) = 0;
 
-    /// @return true if a TLS trust was successfully applied.
+    /// @return true if the TLS configuration establishes server trust. Holds
+    /// from setTls() on, before the first request has opened a connection.
     virtual bool hasServerTrust() const = 0;
 
     virtual void setConnectTimeout_ms(uint32_t timeout_ms) = 0;
