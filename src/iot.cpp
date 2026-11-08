@@ -215,7 +215,6 @@ void Iot::_initSubsystems()
     }
 
     // initialize other components
-    startWatchdog(_watchdogTimeout_s);
     logger.setNetwork(*_network);
     api.setDeviceName(deviceId());
     api.setBoardId(boardId());
@@ -649,30 +648,41 @@ void Iot::startWatchdog(int32_t watchdogTimeout_s)
         .idle_core_mask = 0,
         .trigger_panic = true, // panic on watchdog timeout
     };
-    esp_err_t err = esp_task_wdt_init(&wdtConfig);
+    // reconfigure first: the Arduino core usually initialized the TWDT already
+    // (CONFIG_ESP_TASK_WDT_INIT), and esp_task_wdt_init() would log an error
+    esp_err_t err = esp_task_wdt_reconfigure(&wdtConfig);
     if (err == ESP_ERR_INVALID_STATE)
     {
-        // watchdog already initialized by the Arduino core
-        err = esp_task_wdt_reconfigure(&wdtConfig);
+        err = esp_task_wdt_init(&wdtConfig);
     }
 #else
     esp_err_t err = esp_task_wdt_init(watchdogTimeout_s, true); // panic=true on watchdog timeout
 #endif
     if (err != ESP_OK)
     {
-        panic("*** PANIC *** Error in esp_task_wdt_init: 0x%x", err);
+        panic("*** PANIC *** Error in task watchdog setup: 0x%x", err);
     }
     log_i("Task watchdog timeout=%d s", watchdogTimeout_s);
 
-    err = esp_task_wdt_add(NULL); // NULL for current task
-    if (err != ESP_OK) {
-        log_e("Error in esp_task_wdt_add: 0x=%x", err);
+    // subscribe only once; a repeated call just changes the timeout
+    if (esp_task_wdt_status(NULL) == ESP_ERR_NOT_FOUND) // NULL for current task
+    {
+        err = esp_task_wdt_add(NULL);
+        if (err != ESP_OK)
+        {
+            log_e("Error in esp_task_wdt_add: 0x%x", err);
+        }
     }
     log_d("Task watchdog started for current task");
 }
 
 void Iot::stopWatchdog()
 {
+    // not subscribed (or no TWDT at all): there is nothing to stop
+    if (esp_task_wdt_status(NULL) != ESP_OK)
+    {
+        return;
+    }
     esp_err_t err = esp_task_wdt_delete(NULL);
     if (err != ESP_OK)
     {

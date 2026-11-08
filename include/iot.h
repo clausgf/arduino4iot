@@ -356,11 +356,12 @@ public:
      *
      * The timeout given here is remembered, so calling this before begin()
      * chooses the timeout begin() will use.
-     * 
-     * Watdog supervision is by default enabled for the application 
-     * main task in begin(). 
-     * With this method, it can be enabled for further tasks.
-     * 
+     *
+     * Watchdog supervision is by default enabled for the application
+     * main task in begin(). Calling this again from a task already supervised
+     * only changes the timeout, e.g. to allow for one long operation; from
+     * another task it starts supervising that task as well.
+     *
      * A watchdog timeout will cause the system to reboot and then be
      * handled like a panic() call. The watchdog timeout is
      * global to the system. A task specific watchdog is reset using resetWatchdog().
@@ -368,7 +369,8 @@ public:
     void startWatchdog(int32_t watchdogTimeout_s = DEFAULT_WATCHDOG_TIMEOUT_S);
 
     /**
-     * Stop the watchdog timer for the current task.
+     * Stop the watchdog timer for the current task. Does nothing if the
+     * task is not supervised.
      */
     void stopWatchdog();
 
