@@ -159,7 +159,7 @@ public:
     void setNetwork(IotNetwork& network);
 
     /// @return the network adapter in use.
-    IotNetwork& network() { return *_network; }
+    IotNetwork& network() const { return *_network; }
 
     /**
      * The built-in WiFi station, for tuning it before begin():
@@ -191,7 +191,7 @@ public:
      * nice4iot device name (^[a-zA-Z_][a-zA-Z0-9_]*$). Available without an
      * established connection.
      */
-    std::string deviceId();
+    std::string deviceId() const;
 
 
     // **********************************************************************
@@ -202,7 +202,7 @@ public:
      * @return @p epoch_s (unix seconds; negative: the clock's current time) in
      *         ISO 8601 format, e.g. "2020-01-01T12:34:56Z"
      */
-    std::string timeIso(int64_t epoch_s = -1);
+    std::string timeIso(int64_t epoch_s = -1) const;
 
     /**
      * Replace the clock. The default reads the system time and never
@@ -218,10 +218,10 @@ public:
     void setClock(IotClock& clock);
 
     /// @return the clock in use.
-    IotClock& clock() { return *_clock; }
+    IotClock& clock() const { return *_clock; }
 
     /// @return true if the time is plausible, i.e. after 2020-01-01.
-    bool isTimePlausible();
+    bool isTimePlausible() const;
 
     /// Budget of begin() for synchronizing the clock, which it does once the
     /// network is up. Call before begin(); default DEFAULT_CLOCK_SYNC_TIMEOUT_MS.
@@ -268,7 +268,7 @@ public:
     void setBatteryMin_mV(int32_t batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
 
     /// @return the supply voltage in millivolts, or -1 without a battery.
-    int32_t battery_mV();
+    int32_t battery_mV() const;
 
 
     // **********************************************************************
@@ -315,7 +315,7 @@ public:
      * setFirmwareVersion() takes precedence; empty if neither is available.
      * Reported as the "firmware_version" telemetry field.
      */
-    std::string firmwareVersion();
+    std::string firmwareVersion() const;
 
     /**
      * Override the version reported in telemetry (e.g. a CI-supplied value, or
@@ -332,9 +332,9 @@ public:
      * environment rather than the sketch - use firmwareVersion() for the
      * actual firmware version. Reported as the "firmware_id" telemetry field.
      */
-    std::string firmwareId();
+    std::string firmwareId() const;
 
-    std::string firmwareSha256();
+    std::string firmwareSha256() const;
 
     /**
      * @return the board identifier from the IOT_BOARD_ID build define (e.g.
@@ -344,7 +344,7 @@ public:
      * plain compile-time constant, not persisted to NVS. Reported as the
      * "board_id" telemetry field.
      */
-    std::string boardId();
+    std::string boardId() const;
 
 
     // **********************************************************************
@@ -388,19 +388,19 @@ public:
      * power-on reset, this boot included. Counted in begin(), so a cycle that
      * fails to connect counts too.
      */
-    uint32_t bootCount() { return _lifecycle.bootCount(); }
+    uint32_t bootCount() const { return _lifecycle.bootCount(); }
 
     /**
      * @return how long the *previous* boot cycle stayed awake, in milliseconds
      * (recorded at its exit).
      */
-    uint32_t lastActiveDuration_ms() { return _lifecycle.lastActiveDuration_ms(); }
+    uint32_t lastActiveDuration_ms() const { return _lifecycle.lastActiveDuration_ms(); }
 
     /**
      * @return the nominal duration of the sleep cycle we just woke up from, in
      * seconds; 0 after a restart or shutdown.
      */
-    int32_t lastSleepDuration_s() { return _lifecycle.lastSleepDuration_s(); }
+    int32_t lastSleepDuration_s() const { return _lifecycle.lastSleepDuration_s(); }
 
     /**
      * Set the duration of the next sleep cycle in seconds.
@@ -457,11 +457,11 @@ public:
     // **********************************************************************
 
 private:
-    std::string _deviceId;
+    mutable std::string _deviceId;
     std::function<void()> _panicHandler;
-    std::string _firmwareVersion;
-    std::string _firmwareId;
-    std::string _firmwareSha256;
+    mutable std::string _firmwareVersion;
+    mutable std::string _firmwareId;
+    mutable std::string _firmwareSha256;
     static bool _isWatchdogEnabled;
 
     /// Ports. The network and the clock always have a default; the battery is

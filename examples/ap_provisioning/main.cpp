@@ -105,8 +105,7 @@ void setup()
     IotResult prov = api.updateProvisioning();
     if (!prov)
     {
-        iot.panic("*** PANIC *** Provisioning failed (http=%d, transport=%d)",
-            prov.httpStatus, prov.transportError);
+        iot.panic("*** PANIC *** Provisioning failed (status %d)", prov.code());
     }
 
     config.updateConfig();

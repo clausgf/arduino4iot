@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <string>
 
@@ -90,4 +92,52 @@ private:
     IotStore& _store;
     const char* _etagKey;
     const char* _lastModifiedKey;
+};
+
+/**
+ * Cache validators in RTC RAM, for resources whose cached copy only has to
+ * survive deep sleep. Trivially copyable and without a constructor, so it is a
+ * plain member of the struct in an IotRtcSlot:
+ *
+ *   struct AppState { IotRtcValidators<> image; uint32_t cycles; };
+ *   static RTC_NOINIT_ATTR IotRtcSlot<AppState> rtc;
+ *
+ *   IotCachedResponse r = api.getCached(path, rtc->image.load());
+ *   if (r.result.isOk() && render(r.body)) { rtc->image.commit(r.validators); }
+ *
+ * A validator longer than its field is dropped, which only makes the next
+ * request unconditional.
+ *
+ * @tparam EtagCapacity bytes for the ETag including its terminator
+ */
+template <size_t EtagCapacity = 96>
+struct IotRtcValidators
+{
+    char etag[EtagCapacity];
+    char lastModified[32];   ///< an HTTP-date has 29 characters
+
+    IotCacheValidators load() const { return { _read(etag), _read(lastModified) }; }
+
+    void commit(const IotCacheValidators& validators)
+    {
+        _write(etag, validators.etag);
+        _write(lastModified, validators.lastModified);
+    }
+
+    void clear() { etag[0] = '\0'; lastModified[0] = '\0'; }
+
+    template <size_t N>
+    static std::string _read(const char (&field)[N])
+    {
+        size_t length = 0;
+        while (length < N && field[length] != '\0') { length++; }
+        return length < N ? std::string(field, length) : std::string();  // unterminated: garbage
+    }
+
+    template <size_t N>
+    static void _write(char (&field)[N], const std::string& value)
+    {
+        if (value.size() < N) { std::memcpy(field, value.c_str(), value.size() + 1); }
+        else { field[0] = '\0'; }
+    }
 };

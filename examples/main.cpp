@@ -117,8 +117,7 @@ void setup()
     IotResult fw = iot.ota.update();
     if (!fw.isOkOrNotModified())
     {
-        logger.warn("app", "firmware update failed (http=%d, transport=%d)",
-            fw.httpStatus, fw.transportError);
+        logger.warn("app", "firmware update failed (status %d)", fw.code());
     }
     iot.telemetry.postSystem();
 
@@ -129,8 +128,7 @@ void setup()
     IotResult result = iot.telemetry.post("sensors", telemetry);
     if (!result)
     {
-        logger.warn("app", "telemetry post failed (http=%d, transport=%d)",
-            result.httpStatus, result.transportError);
+        logger.warn("app", "telemetry post failed (status %d)", result.code());
     }
 
     // sleep until the next cycle (duration from config value "sleep_s")

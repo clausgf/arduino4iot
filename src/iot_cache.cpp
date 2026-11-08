@@ -91,8 +91,7 @@ IotCachedResponse IotApi::getCached(const std::string& apiPath, const IotCacheVa
         out.body = std::move(response.body);
         out.validators = { response.header("ETag"), response.header("Last-Modified") };
     } else {
-        log_w("Conditional GET %s failed status=%d", apiPath.c_str(),
-            out.result.isTransportError() ? out.result.transportError : out.result.httpStatus);
+        log_w("Conditional GET %s failed status=%d", apiPath.c_str(), out.result.code());
         out.validators = current;
         return out;
     }

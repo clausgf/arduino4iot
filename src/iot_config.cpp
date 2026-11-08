@@ -21,10 +21,10 @@ IotConfig config;
 
 IotConfigValueBase::IotConfigValueBase(IotConfig& owner, const char* key, Kind kind,
     const IotConfigMeta& meta):
-    _key(key), _owner(&owner), _next(iotConfigValueListHead()), _meta(meta), _kind(kind),
+    _key(key), _owner(&owner), _next(_listHead()), _meta(meta), _kind(kind),
     _overridden(false)
 {
-    iotConfigValueListHead() = this;
+    _listHead() = this;
 }
 
 // *****************************************************************************
@@ -123,7 +123,7 @@ bool IotConfigValue<std::string>::applyJson(JsonVariantConst value, IotStore& st
 
 IotConfigValueBase::~IotConfigValueBase()
 {
-    for (IotConfigValueBase** link = &iotConfigValueListHead();
+    for (IotConfigValueBase** link = &_listHead();
          *link != nullptr; link = &(*link)->_next)
     {
         if (*link == this) { *link = _next; return; }
@@ -138,28 +138,28 @@ void IotConfig::begin(IotStore& store, const char* apiPath)
     _apiPath = apiPath;
 
     // a key that does not fit the store would silently never be stored
-    for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    for (IotConfigValueBase* v = IotConfigValueBase::_listHead(); v != nullptr; v = v->_next)
     {
-        if (v->owner() == this && !IotStore::isValidKey(v->key()))
+        if (v->_owner == this && !IotStore::isValidKey(v->key()))
         {
             log_e("IotConfig: key '%s' exceeds %u characters and cannot be stored",
                 v->key(), (unsigned)IotStore::MAX_KEY_LENGTH);
         }
     }
 
-    reload();
+    _reload();
     const IotCacheValidators mirrored = validators();
     log_i("--- Config etag=%s date=%s", mirrored.etag.c_str(), mirrored.lastModified.c_str());
 }
 
 // *****************************************************************************
 
-void IotConfig::reload()
+void IotConfig::_reload()
 {
     if (_store == nullptr) { return; }
-    for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    for (IotConfigValueBase* v = IotConfigValueBase::_listHead(); v != nullptr; v = v->_next)
     {
-        if (v->owner() == this) { v->loadFrom(*_store); }
+        if (v->_owner == this) { v->loadFrom(*_store); }
     }
 }
 
@@ -175,9 +175,9 @@ IotCacheValidators IotConfig::validators() const
 
 IotConfigValueBase* IotConfig::_find(const char* key) const
 {
-    for (IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    for (IotConfigValueBase* v = IotConfigValueBase::_listHead(); v != nullptr; v = v->_next)
     {
-        if (v->owner() == this && std::string(v->key()) == key) { return v; }
+        if (v->_owner == this && std::string(v->key()) == key) { return v; }
     }
     return nullptr;
 }
@@ -260,9 +260,9 @@ std::string IotConfig::schemaJson() const
     // the list is in reverse registration order; a schema reads better in
     // declaration order, so collect first
     std::vector<const IotConfigValueBase*> values;
-    for (const IotConfigValueBase* v = iotConfigValueListHead(); v != nullptr; v = v->next())
+    for (const IotConfigValueBase* v = IotConfigValueBase::_listHead(); v != nullptr; v = v->_next)
     {
-        if (v->owner() == this) { values.insert(values.begin(), v); }
+        if (v->_owner == this) { values.insert(values.begin(), v); }
     }
 
     for (const IotConfigValueBase* v : values)

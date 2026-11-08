@@ -84,25 +84,25 @@ static IotHttp& defaultHttp()
 Iot::Iot() :
     _lifecycle(defaultPower(), iotRtcState()),
 
-    _logLevel(config, (int32_t)IotLogger::Level::All, "log_level",
+    _logLevel(config, (int32_t)IotLogger::Level::All, iot_config_keys::LOG_LEVEL,
         { .title = "Log level",
           .description = "Remote log threshold: 0 error, 1 warning, 2 info, 3 debug, 4 verbose, 5 all",
           .min = 0, .max = 5 }),
-    _sleepDuration_s(config, 5 * 60, "sleep_s",
+    _sleepDuration_s(config, 5 * 60, iot_config_keys::SLEEP,
         { .title = "Sleep duration (s)", .description = "Deep sleep between wakeups",
           .min = MIN_SLEEP_DURATION_S, .max = 7 * 24 * 60 * 60 }),
 
-    _batteryMin_mV(config, -1, "battery_min_mv",
+    _batteryMin_mV(config, -1, iot_config_keys::BATTERY_MIN,
         { .title = "Battery minimum (mV)",
           .description = "Shut down below this supply voltage; -1 disables the check",
           .min = -1, .max = 10000 }),
-    _panicSleepDurationInit_s(config, IotBackoffPolicy{}.initialDuration_s, "panic_init_s",
+    _panicSleepDurationInit_s(config, IotBackoffPolicy{}.initialDuration_s, iot_config_keys::PANIC_INIT,
         { .title = "Backoff initial (s)", .description = "First sleep after a failed cycle",
           .min = 1, .max = 7 * 24 * 60 * 60 }),
-    _panicSleepDurationFactor(config, IotBackoffPolicy{}.factor, "panic_factor",
+    _panicSleepDurationFactor(config, IotBackoffPolicy{}.factor, iot_config_keys::PANIC_FACTOR,
         { .title = "Backoff factor", .description = "Multiplier per further failed cycle",
           .min = 1, .max = 16 }),
-    _panicSleepDurationMax_s(config, IotBackoffPolicy{}.maxDuration_s, "panic_max_s",
+    _panicSleepDurationMax_s(config, IotBackoffPolicy{}.maxDuration_s, iot_config_keys::PANIC_MAX,
         { .title = "Backoff maximum (s)", .description = "Upper bound of the backoff sleep",
           .min = 1, .max = 7 * 24 * 60 * 60 })
 {
@@ -359,7 +359,7 @@ void Iot::radioOff()
 
 // *****************************************************************************
 
-std::string Iot::deviceId()
+std::string Iot::deviceId() const
 {
     if (_deviceId.empty())
     {
@@ -376,7 +376,7 @@ std::string Iot::deviceId()
 // NTP time
 // *****************************************************************************
 
-std::string Iot::timeIso(int64_t epoch_s)
+std::string Iot::timeIso(int64_t epoch_s) const
 {
     time_t time = (time_t)(epoch_s < 0 ? _clock->now() : epoch_s);
     struct tm timeinfo;
@@ -394,7 +394,7 @@ std::string Iot::timeIso(int64_t epoch_s)
 
 // *****************************************************************************
 
-bool Iot::isTimePlausible()
+bool Iot::isTimePlausible() const
 {
     return _clock->isPlausible();
 }
@@ -476,7 +476,7 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
 // Battery
 // *****************************************************************************
 
-int32_t Iot::battery_mV()
+int32_t Iot::battery_mV() const
 {
     return _battery != nullptr ? _battery->read_mV() : -1;
 }
@@ -550,7 +550,7 @@ void Iot::_enterBackoff()
 // System management: firmware
 // *****************************************************************************
 
-std::string Iot::firmwareVersion()
+std::string Iot::firmwareVersion() const
 {
     // precedence: explicit setter (_firmwareVersion) > injected build define
     if (_firmwareVersion.empty())
@@ -567,7 +567,7 @@ void Iot::setFirmwareVersion(const std::string& version)
     _firmwareVersion = version;
 }
 
-std::string Iot::firmwareId()
+std::string Iot::firmwareId() const
 {
     if (_firmwareId.empty())
     {
@@ -587,7 +587,7 @@ std::string Iot::firmwareId()
     return _firmwareId;
 }
 
-std::string Iot::firmwareSha256()
+std::string Iot::firmwareSha256() const
 {
     if (_firmwareSha256.empty())
     {
@@ -607,7 +607,7 @@ std::string Iot::firmwareSha256()
     return _firmwareSha256;
 }
 
-std::string Iot::boardId()
+std::string Iot::boardId() const
 {
 #ifdef IOT_BOARD_ID
     return std::string(IOT_BOARD_ID);

@@ -9,10 +9,13 @@
 
 #include <unity.h>
 
+#include <cstring>
+
 #include "../iot_fakes.h"
 #include "iot_api.h"
 #include "iot_cache.h"
 #include "iot_config.h"
+#include "iot_rtc_slot.h"
 #include "iot_seed.h"
 
 // *****************************************************************************
@@ -246,6 +249,39 @@ void test_committing_unchanged_validators_writes_nothing()
 }
 
 
+void test_rtc_validators_round_trip_in_an_rtc_slot()
+{
+    struct AppState { IotRtcValidators<16> image; uint32_t cycles; };
+    IotRtcSlot<AppState> slot;
+    std::memset(&slot, 0xA5, sizeof(slot));   // power-on contents
+    TEST_ASSERT_TRUE(slot->image.load().isEmpty());
+
+    slot->image.commit({ "\"abc\"", "Wed, 21 Oct 2026 07:28:00 GMT" });
+    IotCacheValidators loaded = slot->image.load();
+    TEST_ASSERT_EQUAL_STRING("\"abc\"", loaded.etag.c_str());
+    TEST_ASSERT_EQUAL_STRING("Wed, 21 Oct 2026 07:28:00 GMT", loaded.lastModified.c_str());
+
+    slot->image.clear();
+    TEST_ASSERT_TRUE(slot->image.load().isEmpty());
+}
+
+void test_an_rtc_validator_that_does_not_fit_is_dropped()
+{
+    IotRtcValidators<8> v;
+    std::memset(&v, 0, sizeof(v));
+    v.commit({ "\"0123456789\"", "d" });
+    TEST_ASSERT_EQUAL_STRING("", v.load().etag.c_str());
+    TEST_ASSERT_EQUAL_STRING("d", v.load().lastModified.c_str());
+}
+
+void test_an_unterminated_rtc_field_reads_as_empty()
+{
+    IotRtcValidators<8> v;
+    std::memset(&v, 'x', sizeof(v));
+    TEST_ASSERT_TRUE(v.load().isEmpty());
+}
+
+
 // *****************************************************************************
 // IotConfig::updateConfig() over the global api
 // *****************************************************************************
@@ -359,6 +395,9 @@ int main(int argc, char **argv)
 
     RUN_TEST(test_stored_validators_round_trip);
     RUN_TEST(test_committing_unchanged_validators_writes_nothing);
+    RUN_TEST(test_rtc_validators_round_trip_in_an_rtc_slot);
+    RUN_TEST(test_an_rtc_validator_that_does_not_fit_is_dropped);
+    RUN_TEST(test_an_unterminated_rtc_field_reads_as_empty);
 
     RUN_TEST(test_update_config_applies_and_commits_the_validators);
     RUN_TEST(test_update_config_with_a_malformed_body_keeps_the_old_validators);

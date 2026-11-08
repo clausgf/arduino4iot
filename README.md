@@ -285,7 +285,7 @@ the linker drops every one an application does not reference.
   [Application data](docs/concepts.md#application-data).
 - **New: `api.getCached()`** (types in `iot_cache.h`), a conditional GET for an
   application's own resources, with `IotStoredValidators` to keep the
-  validators in an `IotStore`. `config.updateConfig()` is built on it.
+  validators in an `IotStore` and `IotRtcValidators<N>` for RTC RAM. `config.updateConfig()` is built on it.
 - **`config.begin()` takes the store.** The overload binding the default NVS
   namespace is gone, so the configuration service names no adapter;
   `iot.begin()` binds `config` to `iot-cfg` as before. A sketch calling
@@ -307,6 +307,15 @@ the linker drops every one an application does not reference.
   `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
   (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
   → `api.updateProvisioning()` in a boolean context.
+- **`config.store()`, `reload()` and `find()` are internal**, as are
+  `IotConfigValueBase::loadFrom()`, `applyJson()`, `next()`, `owner()` and the
+  former `IotConfigKind` / `iotConfigValueListHead()`. `config.begin(store)`
+  stays public for further `IotConfig` instances, `applyJsonBody()` for a
+  configuration that arrives another way.
+- **New: `IotResult::code()`** — the HTTP status, or the negative transport
+  error, as one number for logs and telemetry. **`IotRtcValidators<N>`** keeps
+  cache validators in RTC RAM inside an `IotRtcSlot`. **`iot_config_keys`**
+  names the library's own config keys.
 - **Getters drop the `get` prefix**, like the ports already did:
   `iot.getDeviceId()` → `iot.deviceId()`, likewise `boardId()`,
   `firmwareVersion()`, `firmwareId()`, `firmwareSha256()`, `bootCount()`,

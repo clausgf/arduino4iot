@@ -55,6 +55,14 @@ void test_negative_is_transport_error()
     TEST_ASSERT_EQUAL_INT(-11, r.transportError);
 }
 
+void test_code_is_one_number_for_every_outcome()
+{
+    TEST_ASSERT_EQUAL_INT(200, IotResult(200).code());
+    TEST_ASSERT_EQUAL_INT(404, IotResult(404).code());
+    TEST_ASSERT_EQUAL_INT(-11, IotResult(-11).code());
+    TEST_ASSERT_EQUAL_INT(IotResult::STATUS_UPDATE_FAILED, IotResult(IotResult::STATUS_UPDATE_FAILED).code());
+}
+
 void test_default_constructed_is_not_ok()
 {
     IotResult r;
@@ -139,6 +147,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_4xx_is_http_error);
     RUN_TEST(test_304_is_http_error_not_ok);
     RUN_TEST(test_negative_is_transport_error);
+    RUN_TEST(test_code_is_one_number_for_every_outcome);
     RUN_TEST(test_default_constructed_is_not_ok);
     RUN_TEST(test_implicit_conversion_from_int);
     RUN_TEST(test_no_provisioning_token_sentinel);

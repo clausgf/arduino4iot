@@ -8,6 +8,7 @@
 #include <climits>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 
 #include <ArduinoJson.h>
 
@@ -38,19 +39,6 @@
 
 class IotConfig;
 class IotConfigValueBase;
-
-/// Head of the intrusive list of all registered values.
-///
-/// Values register themselves from their constructors, which run during static
-/// initialization in an unspecified order across translation units. A raw
-/// pointer is constant-initialized before any of that, so linking into this
-/// list is safe even when the target IotConfig has not been constructed yet -
-/// only its address is taken, never its members.
-inline IotConfigValueBase*& iotConfigValueListHead()
-{
-    static IotConfigValueBase* head = nullptr;
-    return head;
-}
 
 /**
  * Optional description of a configuration value: what the generated
@@ -98,8 +86,6 @@ public:
     virtual ~IotConfigValueBase();
 
     const char* key() const { return _key; }
-    const IotConfig* owner() const { return _owner; }
-    IotConfigValueBase* next() const { return _next; }
     Kind kind() const { return _kind; }
     const IotConfigMeta& meta() const { return _meta; }
 
@@ -107,6 +93,9 @@ public:
     /// it immune to the NVS mirror and to config.json for this cycle.
     bool isOverridden() const { return _overridden; }
     void clearOverride() { _overridden = false; }
+
+protected:
+    IotConfigValueBase(IotConfig& owner, const char* key, Kind kind, const IotConfigMeta& meta);
 
     /// Adopt the stored value, unless overridden.
     virtual void loadFrom(const IotStore& store) = 0;
@@ -116,24 +105,32 @@ public:
     /// is not allowed, @see IotConfigMeta.
     virtual bool applyJson(JsonVariantConst value, IotStore& store) = 0;
 
-protected:
-    IotConfigValueBase(IotConfig& owner, const char* key, Kind kind, const IotConfigMeta& meta);
-
     const char* _key;
     IotConfig* _owner;
     IotConfigValueBase* _next;
     IotConfigMeta _meta;
     Kind _kind;
     bool _overridden;
+
+private:
+    friend class IotConfig;
+
+    /// Head of the intrusive list of all registered values.
+    ///
+    /// Values register themselves from their constructors, which run during
+    /// static initialization in an unspecified order across translation units.
+    /// A raw pointer is constant-initialized before any of that, so linking
+    /// into this list is safe even when the target IotConfig has not been
+    /// constructed yet - only its address is taken, never its members.
+    static IotConfigValueBase*& _listHead()
+    {
+        static IotConfigValueBase* head = nullptr;
+        return head;
+    }
 };
 
 
 // *****************************************************************************
-
-template <typename T> struct IotConfigKind;
-template <> struct IotConfigKind<int32_t>     { static constexpr auto value = IotConfigValueBase::Kind::Int; };
-template <> struct IotConfigKind<bool>        { static constexpr auto value = IotConfigValueBase::Kind::Bool; };
-template <> struct IotConfigKind<std::string> { static constexpr auto value = IotConfigValueBase::Kind::String; };
 
 /**
  * Binds a C++ variable to a configuration key.
@@ -146,7 +143,7 @@ class IotConfigValue : public IotConfigValueBase
 {
 public:
     IotConfigValue(IotConfig& config, T defaultValue, const char* key, const IotConfigMeta& meta = {}):
-        IotConfigValueBase(config, key, IotConfigKind<T>::value, meta),
+        IotConfigValueBase(config, key, _kindOf(), meta),
         _value(defaultValue), _default(std::move(defaultValue))
     {
     }
@@ -161,13 +158,23 @@ public:
     /// Set explicitly; wins over the NVS mirror and config.json for this cycle.
     void set(const T& value) { _value = value; _overridden = true; }
 
-    void loadFrom(const IotStore& store) override;
-    bool applyJson(JsonVariantConst value, IotStore& store) override;
-
     IotConfigValue<T>& operator=(const T& value) { set(value); return *this; }
     operator const T&() const { return _value; }
 
+protected:
+    void loadFrom(const IotStore& store) override;
+    bool applyJson(JsonVariantConst value, IotStore& store) override;
+
 private:
+    static_assert(std::is_same_v<T, int32_t> || std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
+        "IotConfigValue supports int32_t, bool and std::string");
+    static constexpr Kind _kindOf()
+    {
+        if constexpr (std::is_same_v<T, int32_t>) { return Kind::Int; }
+        else if constexpr (std::is_same_v<T, bool>) { return Kind::Bool; }
+        else { return Kind::String; }
+    }
+
     T _value;
     T _default;
 };
@@ -213,10 +220,7 @@ public:
 
     void end() { _store = nullptr; }
 
-    IotStore* store() const { return _store; }
 
-    /// Re-read every registered value of this instance from the store.
-    void reload();
 
     /**
      * Fetch the configuration file if the server has a newer one and apply it.
@@ -264,8 +268,6 @@ public:
         return _store ? _store->getString(key, defaultValue) : defaultValue;
     }
 
-    /// @return the value registered under @p key for this instance, or nullptr.
-    IotConfigValueBase* find(const char* key) const { return _find(key); }
 
     // --- schema ---
 
@@ -308,6 +310,8 @@ private:
     const char* _schemaExtras = nullptr;
 
     IotConfigValueBase* _find(const char* key) const;
+    /// Re-read every registered value of this instance from the store.
+    void _reload();
 };
 
 extern IotConfig config;

@@ -445,6 +445,11 @@ static IotConfigValue<std::string> rotation(config, "0deg", "rotation",
   ```cpp
   config.setSchemaExtras(R"({"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}})");
   ```
+  A layout only needs to name the application's own keys: nice4iot gives every
+  property the layout does not mention a row of its own, so the library's
+  values (`log_level`, `sleep_s`, …) appear below without being listed. To
+  place them anyway, use the constants in `iot_config_keys` (`iot_names.h`)
+  rather than the strings.
 - **Opt-in:** only a firmware that calls `publishSchema()` (or `schemaJson()`)
   links the schema code.
 - **Approval:** nice4iot ignores a device-uploaded schema until an operator
@@ -646,9 +651,16 @@ else if (r.result.isNotModified()) { /* the shown copy is current */ }
   them only once the body was used: a resource that failed to apply is then
   fetched again next cycle instead of answered with 304 forever.
 - **Where they live is the caller's choice.** `IotStoredValidators` keeps them
-  in an `IotStore` (survives a power loss); RTC RAM is enough for a resource
-  that is cheap to fetch once after power-on; a plain struct passed in works
-  for both.
+  in an `IotStore` (survives a power loss). `IotRtcValidators<N>` keeps them in
+  RTC RAM, as a member of the struct in an `IotRtcSlot` — enough for a
+  resource that is cheap to fetch once after power-on:
+  ```cpp
+  struct AppState { IotRtcValidators<> image; uint32_t cycles; };
+  static RTC_NOINIT_ATTR IotRtcSlot<AppState> rtc;
+
+  IotCachedResponse r = api.getCached(path, rtc->image.load());
+  if (r.result.isOk() && render(r.body)) { rtc->image.commit(r.validators); }
+  ```
 - **`maxAge_s`** is the response's `Cache-Control: max-age`, or -1 if absent or
   if `no-cache`/`no-store` forbid reusing it unvalidated. nice4iot's file
   endpoint always sends `no-cache`; a forwarded upstream may send a max-age, e.g.

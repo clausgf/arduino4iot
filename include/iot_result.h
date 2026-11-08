@@ -52,6 +52,10 @@ struct IotResult
     /// conversion to int.
     explicit operator bool() const { return kind == Ok; }
 
+    /// @return the HTTP status, or the negative transport error for a
+    /// TransportError: one number for a log line or a telemetry field.
+    int code() const { return kind == TransportError ? transportError : httpStatus; }
+
     bool isOk() const { return kind == Ok; }
     bool isHttpError() const { return kind == HttpError; }
     bool isTransportError() const { return kind == TransportError; }

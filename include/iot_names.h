@@ -7,7 +7,7 @@
 
 // *****************************************************************************
 // The names the library shares with the outside world: the nice4iot server
-// paths and the NVS keys. Both are contracts - the server serves these paths,
+// paths, its own config.json keys and the NVS keys. Both are contracts - the server serves these paths,
 // and a device can be provisioned by writing the keys into an NVS partition
 // image (docs/concepts.md, "NVS schema") - so they live in one place.
 // *****************************************************************************
@@ -23,6 +23,18 @@ namespace iot_paths
     inline constexpr const char* FIRMWARE  = "file/{project}/{device}/firmware.bin";
     inline constexpr const char* FILE_DIR  = "file/{project}/{device}/";
     inline constexpr const char* FORWARD   = "forward/{project}/{device}/";
+}
+
+/// The library's own config.json keys, e.g. for a form layout in
+/// config.setSchemaExtras(). They are also their NVS keys in "iot-cfg".
+namespace iot_config_keys
+{
+    inline constexpr const char* LOG_LEVEL    = "log_level";
+    inline constexpr const char* SLEEP        = "sleep_s";
+    inline constexpr const char* BATTERY_MIN  = "battery_min_mv";
+    inline constexpr const char* PANIC_INIT   = "panic_init_s";
+    inline constexpr const char* PANIC_FACTOR = "panic_factor";
+    inline constexpr const char* PANIC_MAX    = "panic_max_s";
 }
 
 /// NVS namespaces and keys. Every key fits IotStore::MAX_KEY_LENGTH (15).
