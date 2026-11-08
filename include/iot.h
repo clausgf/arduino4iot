@@ -342,7 +342,7 @@ public:
      * if undefined. Unlike the seeded bootstrap values (see IotSeedConfig),
      * this identifies the hardware variant the sketch was built for and is a
      * plain compile-time constant, not persisted to NVS. Reported as the
-     * "board_id" telemetry field.
+     * "board" telemetry field.
      */
     std::string boardId() const;
 
