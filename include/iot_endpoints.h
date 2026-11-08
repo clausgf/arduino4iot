@@ -12,14 +12,13 @@
 #include "iot_names.h"
 #include "iot_cache.h"
 #include "iot_result.h"
+#include "iot_telemetry.h"
 
 // *****************************************************************************
 // The nice4iot endpoints: every server path the library knows, and the
 // endpoint groups over api, so the transport deals in HTTP and does not carry
 // the endpoint map.
 // *****************************************************************************
-
-class IotTelemetry;
 
 // *****************************************************************************
 // Endpoint groups, reached as members of the facade: iot.telemetry, iot.files,
@@ -40,6 +39,19 @@ struct IotTelemetryEndpoint
      */
     IotResult post(const std::string& kind, const IotTelemetry& telemetry,
         const std::string& apiPath = iot_paths::TELEMETRY) const;
+
+    /**
+     * Post @p telemetry together with the values kept for this cycle in
+     * @p previous, as last_<key>. @p previous is emptied whether or not the
+     * post succeeds: a value sent two cycles late as last_* would be wrong.
+     */
+    template <size_t N>
+    IotResult post(const std::string& kind, IotTelemetry telemetry, IotRtcTelemetry<N>& previous,
+        const std::string& apiPath = iot_paths::TELEMETRY) const
+    {
+        previous.moveInto(telemetry);
+        return post(kind, telemetry, apiPath);
+    }
 
     /// Post a JSON body as is. Bodies larger than IOT_MAX_TELEMETRY_SIZE log a
     /// warning: the server rejects them by default (HTTP 413).

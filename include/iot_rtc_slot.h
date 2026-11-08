@@ -34,6 +34,11 @@ class IotRtcSlot
 {
     static_assert(std::is_trivially_copyable<T>::value,
         "IotRtcSlot holds raw RTC memory: T must be trivially copyable");
+    // A constructor or default member initializers in T would run at startup
+    // and overwrite the very contents the slot exists to keep. Reset values
+    // other than zero belong to whoever reads the field.
+    static_assert(std::is_trivially_default_constructible<T>::value,
+        "IotRtcSlot: T must not have a constructor or default member initializers");
     static_assert(Version < 0x1000, "IotRtcSlot: Version must fit 12 bits");
     static_assert(sizeof(T) < 0x100000, "IotRtcSlot: T is too large for RTC RAM");
 

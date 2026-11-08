@@ -312,6 +312,9 @@ the linker drops every one an application does not reference.
   former `IotConfigKind` / `iotConfigValueListHead()`. `config.begin(store)`
   stays public for further `IotConfig` instances, `applyJsonBody()` for a
   configuration that arrives another way.
+- **New: `IotRtcTelemetry<N>`** for values known only after the radio is off:
+  kept in the application's `IotRtcSlot` and added to the next cycle's post of
+  the same kind as `last_<key>` (`iot.telemetry.post(kind, t, rtc->next)`).
 - **New: `IotResult::code()`** — the HTTP status, or the negative transport
   error, as one number for logs and telemetry. **`IotRtcValidators<N>`** keeps
   cache validators in RTC RAM inside an `IotRtcSlot`. **`iot_config_keys`**

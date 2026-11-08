@@ -5,6 +5,12 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <type_traits>
+
 #include <ArduinoJson.h>
 
 // *****************************************************************************
@@ -74,4 +80,97 @@ public:
 
 private:
     JsonDocument _doc;
+};
+
+// *****************************************************************************
+
+/**
+ * Measurements for the next cycle's telemetry, kept in RTC RAM.
+ *
+ * Some values are only known after the network is gone - a display refresh
+ * that runs after iot.radioOff(), the length of the whole cycle. Staying awake
+ * with the radio on just to send them costs more than they are worth. Keep
+ * them here instead; the next cycle's post of the same kind adds them as
+ * last_<key>. The prefix is honest about it: nice4iot stamps a measurement
+ * with its arrival time, so the values belong to the previous cycle.
+ *
+ * Trivially copyable and without a constructor, so it is a plain member of
+ * the struct in an IotRtcSlot; the application chooses the size and pays the
+ * RTC RAM only when it uses it:
+ *
+ *   struct AppState { IotRtcTelemetry<8> next; };
+ *   static RTC_NOINIT_ATTR IotRtcSlot<AppState> rtc;
+ *
+ *   rtc->next.add("refresh_ms", refreshDuration_ms);   // end of this cycle
+ *   iot.telemetry.post("epaper", t, rtc->next);         // next cycle: last_refresh_ms
+ *
+ * @tparam N the number of values it holds
+ */
+template <size_t N>
+struct IotRtcTelemetry
+{
+    static_assert(N > 0 && N < 256, "IotRtcTelemetry: N must be 1..255");
+
+    /// Keys longer than this minus 1 are rejected.
+    static constexpr size_t KEY_CAPACITY = 24;
+
+    struct Entry
+    {
+        char key[KEY_CAPACITY];
+        bool isInteger;
+        int64_t integer;
+        double real;
+    };
+
+    uint8_t count;
+    Entry entries[N];
+
+    /**
+     * Keep @p value under @p key; the same key again overwrites it.
+     * @return false if the key is too long or all N places are taken
+     */
+    template <typename T>
+    bool add(const char* key, T value)
+    {
+        static_assert(std::is_arithmetic<T>::value, "IotRtcTelemetry holds numbers only");
+        if (key == nullptr || std::strlen(key) >= KEY_CAPACITY) { return false; }
+        Entry* entry = _find(key);
+        if (entry == nullptr)
+        {
+            if (count >= N) { return false; }
+            entry = &entries[count++];
+            std::memcpy(entry->key, key, std::strlen(key) + 1);
+        }
+        entry->isInteger = std::is_integral<T>::value;
+        entry->integer = std::is_integral<T>::value ? (int64_t)value : 0;
+        entry->real = std::is_integral<T>::value ? 0.0 : (double)value;
+        return true;
+    }
+
+    bool isEmpty() const { return count == 0; }
+    void clear() { count = 0; }
+
+    /// Add every value to @p telemetry as last_<key>, then empty this.
+    void moveInto(IotTelemetry& telemetry)
+    {
+        const uint8_t n = count <= N ? count : (uint8_t)N;   // defensive: outside a slot, count may be garbage
+        for (uint8_t i = 0; i < n; i++)
+        {
+            const Entry& entry = entries[i];
+            if (std::memchr(entry.key, '\0', KEY_CAPACITY) == nullptr) { continue; }
+            const std::string key = std::string("last_") + entry.key;
+            if (entry.isInteger) { telemetry.add(key.c_str(), entry.integer); }
+            else { telemetry.add(key.c_str(), entry.real); }
+        }
+        clear();
+    }
+
+    Entry* _find(const char* key)
+    {
+        for (uint8_t i = 0; i < count && i < N; i++)
+        {
+            if (std::strncmp(entries[i].key, key, KEY_CAPACITY) == 0) { return &entries[i]; }
+        }
+        return nullptr;
+    }
 };

@@ -49,6 +49,7 @@ struct AppRtcState
 {
     uint32_t cycles;
     bool clockReported;
+    IotRtcTelemetry<2> next;   // known only after the radio is off, sent next cycle
 };
 static RTC_NOINIT_ATTR IotRtcSlot<AppRtcState> appRtc;
 
@@ -114,6 +115,12 @@ void setup()
     config.publishSchema();   // once per changed schema, e.g. after an update
     iot.telemetry.postSystem();
 
+    // the application's own telemetry, plus what the previous cycle kept
+    // for it in RTC RAM (as last_<key>)
+    IotTelemetry appTelemetry;
+    appTelemetry.add("sample_s", sampleInterval.get());
+    iot.telemetry.post("app", appTelemetry, appRtc->next);
+
     // a lost RTC slot means a power-on (or a new firmware layout): count it
     appStore.begin();
     if (!appRtc.isValid())
@@ -132,8 +139,13 @@ void setup()
     // The network part is done: radio off for the rest of the cycle, e.g.
     // before a long display refresh. What is logged from here on is kept in
     // RTC RAM and sent with the next cycle.
+    const uint32_t radioOff_ms = millis();
     iot.radioOff();
     logger.info("app", "cycle %u done offline", (unsigned)appRtc->cycles);
+
+    // ... long work without network; its duration goes out next cycle as
+    // last_offline_ms with the "app" telemetry
+    appRtc->next.add("offline_ms", millis() - radioOff_ms);
 
     iot.deepSleep();
 }

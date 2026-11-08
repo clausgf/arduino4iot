@@ -171,6 +171,25 @@ iot.telemetry.post("sensors", t);
 bookkeeping, battery voltage if configured, WiFi/connect metrics, firmware
 identification, …). Bodies are capped at 8 KiB by the server.
 
+**Values known only after the network is gone** — a display refresh after
+`iot.radioOff()`, the length of the whole cycle — go into an
+`IotRtcTelemetry<N>` in the application's `IotRtcSlot`. The next cycle's post
+of the same kind adds them as `last_<key>` and empties the buffer, whether or
+not the post succeeds. The prefix is deliberate: nice4iot stamps every
+measurement with its arrival time, so these values belong to the previous
+cycle and must not pose as the current one.
+
+```cpp
+struct AppState { IotRtcTelemetry<8> next; };
+static RTC_NOINIT_ATTR IotRtcSlot<AppState> rtc;
+
+rtc->next.add("refresh_ms", refresh_ms);        // after the radio is off
+iot.telemetry.post("epaper", t, rtc->next);     // next cycle: last_refresh_ms
+```
+
+`add()` overwrites a key it already holds and rejects a key of 24 characters
+or more, or a value beyond `N` places; it holds numbers only, like the server.
+
 The firmware is reported as two fields: `firmware_id` (the composite ESP
 application descriptor — in a PlatformIO/Arduino build this identifies the
 framework, not the sketch) and `firmware_version`, which the library derives from
