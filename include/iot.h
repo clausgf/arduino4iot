@@ -494,6 +494,8 @@ private:
     /// exactly once; idempotent, so every exit path can call it.
     void _registerExitHooks();
     bool _syncClock();
+    /// "boot 17, 2026-11-08T10:00:00Z" - names this cycle in the offline log.
+    std::string _cycleName() const;
 
     /// panic() before the network is up: serial and RTC log only, no request.
     void _panicEarly(const char* format...);

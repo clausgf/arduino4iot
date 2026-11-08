@@ -43,6 +43,7 @@ public:
     void log(Level level, const char *tag, const char* format...);
 
     // --- logging helpers ---
+    // A message is one line: line breaks in it become spaces.
     void error(const char *tag, const char* format...);
     void warn(const char *tag, const char* format...);
     void info(const char *tag, const char* format...);
@@ -105,6 +106,13 @@ private:
 
     /// Without a network adapter flush() tries and lets the request fail.
     bool _isOnline() const;
+
+    /// Names the current cycle in the marker that leads its offline lines,
+    /// e.g. "boot 17, 2026-11-08T10:00:00Z". Set by Iot, which knows both.
+    std::string (*_offlineContext)() = nullptr;
+    bool _offlineMarked = false;
+    void _keepOffline(const std::string& lines);
+    void _restoreOffline(const std::string& lines);
 };
 
 extern IotLogger logger;

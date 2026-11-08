@@ -511,7 +511,15 @@ connection, or when the log request failed with a transport error or a 5xx.
 - It lives in an `IotRtcSlot`, so it survives deep sleep and the
   software/watchdog resets of a crash loop, and is discarded after a power-on
   reset or a firmware with a different layout.
-- Each line keeps the `millis()` timestamp of the cycle it was written in.
+- Each line keeps the `millis()` timestamp of the cycle it was written in, and
+  the first line a cycle keeps is led by a marker naming that cycle:
+  `I (5012) iot: --- kept offline: boot 17, 2026-11-08T10:00:00Z ---` (the time
+  only when the clock is plausible, otherwise `clock not set`). The server
+  stamps the whole upload with its arrival time; the marker is what dates the
+  lines and tells the cycles apart.
+- A message is one line: the logger drops trailing line breaks and turns inner
+  ones into spaces, so the buffer counts lines correctly and the server sees
+  one entry per line.
 
 The library logs its own failures through the same path, so the reason a
 device went quiet reaches the server once it is back: a failed network connect

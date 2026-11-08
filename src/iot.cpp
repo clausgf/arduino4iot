@@ -158,6 +158,10 @@ void Iot::_beginCycle()
         _panicSleepDurationMax_s.get() });
     _lifecycle.begin();
 
+    // lines kept offline are led by a marker naming this cycle: the boot
+    // count always, the time when the clock is plausible
+    logger._offlineContext = [] { return iot._cycleName(); };
+
     // the watchdog must already run before the no-credentials handler is
     // reached, since that call can block far longer than the timeout
     startWatchdog(_watchdogTimeout_s);
@@ -397,6 +401,14 @@ std::string Iot::timeIso(int64_t epoch_s) const
 bool Iot::isTimePlausible() const
 {
     return _clock->isPlausible();
+}
+
+std::string Iot::_cycleName() const
+{
+    char name[64];
+    snprintf(name, sizeof(name), "boot %lu, %s", (unsigned long)bootCount(),
+        isTimePlausible() ? timeIso().c_str() : "clock not set");
+    return name;
 }
 
 bool Iot::_syncClock()

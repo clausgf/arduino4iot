@@ -22,15 +22,34 @@ IotLogger logger;
 static RTC_NOINIT_ATTR IotRtcSlot<IotRtcLog<IOT_RTC_LOG_SIZE>> rtcLog;
 #endif
 
-/// Keep @p lines for a later cycle; @return false if there is no RTC buffer.
-static bool keepOffline(const std::string& lines)
+/// Keep @p lines for a later cycle. The first lines a cycle keeps are led by a
+/// marker naming the cycle, since millis() alone cannot be dated or told
+/// apart once several cycles share the buffer.
+void IotLogger::_keepOffline(const std::string& lines)
 {
 #if IOT_RTC_LOG_SIZE > 0
+    if (!_offlineMarked)
+    {
+        _offlineMarked = true;
+        const std::string cycle = _offlineContext != nullptr ? _offlineContext() : std::string("unknown cycle");
+        char marker[96];
+        snprintf(marker, sizeof(marker), "I (%lu) iot: --- kept offline: %s ---\n",
+            (unsigned long)millis(), cycle.c_str());
+        rtcLog->append(marker);
+    }
     rtcLog->append(lines);
-    return true;
 #else
     (void)lines;
-    return false;
+#endif
+}
+
+/// Put back what takeOffline() returned, unchanged.
+void IotLogger::_restoreOffline(const std::string& lines)
+{
+#if IOT_RTC_LOG_SIZE > 0
+    if (!lines.empty()) { rtcLog->append(lines); }
+#else
+    (void)lines;
 #endif
 }
 
@@ -76,6 +95,18 @@ static void formatLine(char* logBuf, size_t logBufLen, IotLogger::Level level,
     int headerChars = snprintf(logBuf, logBufLen, "%c (%lu) %s: ", logLevelChar, millis(), tag);
     if (headerChars < 0 || (size_t)headerChars >= logBufLen) { return; }
     vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
+
+    // one entry is one line: drop trailing line breaks, flatten inner ones
+    char* message = logBuf + headerChars;
+    size_t length = strlen(message);
+    while (length > 0 && (message[length - 1] == '\n' || message[length - 1] == '\r'))
+    {
+        message[--length] = '\0';
+    }
+    for (char* p = message; *p != '\0'; ++p)
+    {
+        if (*p == '\n' || *p == '\r') { *p = ' '; }
+    }
 }
 
 void IotLogger::logToRtc(Level level, const char *tag, const char* format...)
@@ -86,7 +117,7 @@ void IotLogger::logToRtc(Level level, const char *tag, const char* format...)
     va_start(args, format);
     formatLine(logBuf, sizeof(logBuf), level, tag, format, args);
     va_end(args);
-    keepOffline(std::string(logBuf) + '\n');
+    _keepOffline(std::string(logBuf) + '\n');
 }
 
 void IotLogger::logv(Level level, const char *tag, const char* format, va_list ap)
@@ -114,7 +145,7 @@ void IotLogger::logv(Level level, const char *tag, const char* format, va_list a
         } else if (_isOnline()) {
             postLog(logBuf);
         } else {
-            keepOffline(std::string(logBuf) + '\n');
+            _keepOffline(std::string(logBuf) + '\n');
         }
     }
 }
@@ -189,26 +220,29 @@ IotResult IotLogger::flush()
         {
             log_i("IotLogger::flush: offline, keeping %u log bytes in RTC RAM",
                 (unsigned)_logBuffer.length());
-            keepOffline(_logBuffer);
+            _keepOffline(_logBuffer);
             _logBuffer.clear();
         }
         return IotResult();  // transport error: nothing could be sent
     }
 
     // what earlier cycles could not send goes first, in order
-    std::string body = takeOffline();
-    body += _logBuffer;
+    const std::string earlier = takeOffline();
+    const std::string current = _logBuffer;
     _logBuffer.clear();
-    if (body.empty())
+    if (earlier.empty() && current.empty())
     {
         return IotResult(200);
     }
 
-    IotResult result = postLog(body.c_str());
+    IotResult result = postLog((earlier + current).c_str());
     if (result.isTransportError() || result.httpStatus >= 500)
     {
-        // worth another try next cycle; a 4xx would only fail again
-        keepOffline(body);
+        // worth another try next cycle; a 4xx would only fail again. The
+        // earlier lines go back as they were, with their own markers; this
+        // cycle's get one.
+        _restoreOffline(earlier);
+        if (!current.empty()) { _keepOffline(current); }
     }
     return result;
 }
