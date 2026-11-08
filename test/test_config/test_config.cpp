@@ -383,6 +383,51 @@ void test_schema_extras_are_merged_at_the_top_level()
     TEST_ASSERT_EQUAL_size_t(3, doc["properties"].size());
 }
 
+void test_the_layout_names_values_and_appends_the_library_rows()
+{
+    MetaFixture f;
+    // two of the library's own keys, as Iot registers them
+    IotConfigValue<int32_t> sleep_s{ f.config, 300, iot_config_keys::SLEEP };
+    IotConfigValue<int32_t> panicFactor{ f.config, 2, iot_config_keys::PANIC_FACTOR };
+    f.begin();
+    f.config.setLayout({ { f.rotation, f.minSleep }, { f.verbose } });
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, f.config.schemaJson()));
+    JsonArrayConst layout = doc["x-ui"]["layout"];
+    TEST_ASSERT_EQUAL_size_t(4, layout.size());
+    TEST_ASSERT_EQUAL_STRING("rotation", layout[0][0]);
+    TEST_ASSERT_EQUAL_STRING("min_sleep_s", layout[0][1]);
+    TEST_ASSERT_EQUAL_STRING("verbose", layout[1][0]);
+    // library rows, only with the keys this config has
+    TEST_ASSERT_EQUAL_size_t(1, layout[2].size());
+    TEST_ASSERT_EQUAL_STRING("sleep_s", layout[2][0]);
+    TEST_ASSERT_EQUAL_STRING("panic_factor", layout[3][0]);
+}
+
+void test_a_library_value_the_application_placed_is_not_repeated()
+{
+    MetaFixture f;
+    IotConfigValue<int32_t> sleep_s{ f.config, 300, iot_config_keys::SLEEP };
+    f.begin();
+    f.config.setLayout({ { f.minSleep, sleep_s } });
+
+    JsonDocument doc;
+    deserializeJson(doc, f.config.schemaJson());
+    TEST_ASSERT_EQUAL_size_t(1, doc["x-ui"]["layout"].size());
+}
+
+void test_schema_extras_replace_the_generated_layout()
+{
+    MetaFixture f;
+    f.begin();
+    f.config.setLayout({ { f.rotation } });
+    f.config.setSchemaExtras(std::string(R"({"x-ui": {"layout": [["verbose"]]}})"));
+    JsonDocument doc;
+    deserializeJson(doc, f.config.schemaJson());
+    TEST_ASSERT_EQUAL_STRING("verbose", doc["x-ui"]["layout"][0][0]);
+}
+
 void test_invalid_schema_extras_are_ignored()
 {
     MetaFixture f;
@@ -427,6 +472,9 @@ int main(int argc, char **argv)
     RUN_TEST(test_the_schema_uses_the_compile_time_default_not_the_current_value);
     RUN_TEST(test_schema_extras_are_merged_at_the_top_level);
     RUN_TEST(test_invalid_schema_extras_are_ignored);
+    RUN_TEST(test_the_layout_names_values_and_appends_the_library_rows);
+    RUN_TEST(test_a_library_value_the_application_placed_is_not_repeated);
+    RUN_TEST(test_schema_extras_replace_the_generated_layout);
 
     return UNITY_END();
 }

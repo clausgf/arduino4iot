@@ -25,8 +25,8 @@ namespace iot_paths
     inline constexpr const char* FORWARD   = "forward/{project}/{device}/";
 }
 
-/// The library's own config.json keys, e.g. for a form layout in
-/// config.setSchemaExtras(). They are also their NVS keys in "iot-cfg".
+/// The library's own config.json keys, which are also their NVS keys in
+/// "iot-cfg". config.setLayout() places these values itself.
 namespace iot_config_keys
 {
     inline constexpr const char* LOG_LEVEL    = "log_level";

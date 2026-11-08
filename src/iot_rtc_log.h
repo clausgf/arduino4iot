@@ -76,5 +76,6 @@ struct IotRtcLog
         return out;
     }
 
+private:
     void _countDropped() { if (droppedLines < UINT16_MAX) { droppedLines++; } }
 };

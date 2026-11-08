@@ -267,8 +267,10 @@ the linker drops every one an application does not reference.
 - **New: `IotConfigMeta`** on `IotConfigValue` (title, description, min/max,
   `enumValues`), enforced on values from `config.json` and NVS, and
   `config.publishSchema()`, which uploads a generated `config.schema.json`
-  once per changed schema; `config.setSchemaExtras()` adds an `x-ui` layout or
-  other top-level members. The library's own values are now limited:
+  once per changed schema; `config.setLayout({ { cvA, cvB }, { cvC } })`
+  arranges the server's form from the values (the library appends rows for
+  its own), `config.setSchemaExtras()` adds other top-level members. The
+  library's own values are now limited:
   `log_level` 0–5, `sleep_s` 1 s – 7 d, `battery_min_mv` −1–10000,
   `panic_init_s`/`panic_max_s` 1 s – 7 d, `panic_factor` 1–16; a
   `config.json` outside these is clamped. See
@@ -323,7 +325,10 @@ the linker drops every one an application does not reference.
 - **New: `IotResult::code()`** — the HTTP status, or the negative transport
   error, as one number for logs and telemetry. **`IotRtcValidators<N>`** keeps
   cache validators in RTC RAM inside an `IotRtcSlot`. **`iot_config_keys`**
-  names the library's own config keys.
+  names the library's own config keys (a layout does not need them:
+  `config.setLayout()` places the library's values itself).
+- **`config.setSchemaExtras()` takes a `std::string` and copies it**; there is
+  no lifetime to keep. A layout goes through `config.setLayout()` now.
 - **Getters drop the `get` prefix**, like the ports already did:
   `iot.getDeviceId()` → `iot.deviceId()`, likewise `boardId()`,
   `firmwareVersion()`, `firmwareId()`, `firmwareSha256()`, `bootCount()`,

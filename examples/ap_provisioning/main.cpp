@@ -110,8 +110,8 @@ void setup()
     }
 
     config.updateConfig();
-    // the form layout is presentation, so it stays with the application
-    config.setSchemaExtras(R"({"x-ui": {"layout": [["sample_s", "sleep_s"]]}})");
+    // the server's form: the application's rows; the library appends its own
+    config.setLayout({ { sampleInterval } });
     config.publishSchema();   // once per changed schema, e.g. after an update
     iot.telemetry.postSystem();
 

@@ -457,18 +457,18 @@ static IotConfigValue<std::string> rotation(config, "0deg", "rotation",
   changed: a hash of the last published schema is kept in NVS
   (`iotCfgSchema`), so a firmware that adds or changes a value publishes once,
   and every other wakeup costs no request.
-- **Presentation stays with the application:** `config.setSchemaExtras(json)`
-  adds top-level members such as nice4iot's `x-ui` layout or
-  `additionalProperties`. The library owns `properties`, `type` and `$schema`;
-  everything else is copied as is and counts for the published hash.
+- **Layout:** `config.setLayout()` arranges nice4iot's form (`x-ui.layout`)
+  from the values themselves, not their key strings. The application lists
+  its own rows; the library appends its own, grouped (log level and sleep,
+  battery, backoff), and leaves out any the application already placed. A
+  value in no row gets one of its own below.
   ```cpp
-  config.setSchemaExtras(R"({"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}})");
+  config.setLayout({ { cvPanel, cvRotation }, { cvImagePath } });
   ```
-  A layout only needs to name the application's own keys: nice4iot gives every
-  property the layout does not mention a row of its own, so the library's
-  values (`log_level`, `sleep_s`, …) appear below without being listed. To
-  place them anyway, use the constants in `iot_config_keys` (`iot_names.h`)
-  rather than the strings.
+- **Anything else** goes through `config.setSchemaExtras(json)`: top-level
+  members such as `additionalProperties`, copied as they are and applied last
+  (an `x-ui` there replaces the generated layout). The library owns
+  `properties`, `type` and `$schema`. Both count for the published hash.
 - **Opt-in:** only a firmware that calls `publishSchema()` (or `schemaJson()`)
   links the schema code.
 - **Approval:** nice4iot ignores a device-uploaded schema until an operator

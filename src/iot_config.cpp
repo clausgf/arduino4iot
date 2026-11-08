@@ -305,7 +305,36 @@ std::string IotConfig::schemaJson() const
         }
     }
 
-    if (_schemaExtras != nullptr && _schemaExtras[0] != '\0')
+    if (!_layout.empty())
+    {
+        JsonArray layout = doc["x-ui"]["layout"].to<JsonArray>();
+        std::vector<std::string> placed;
+        for (const auto& row : _layout)
+        {
+            JsonArray out = layout.add<JsonArray>();
+            for (const char* key : row) { out.add(key); placed.push_back(key); }
+        }
+        // the library's own values, grouped, after the application's rows
+        static const std::vector<std::vector<const char*>> LIBRARY_ROWS = {
+            { iot_config_keys::LOG_LEVEL, iot_config_keys::SLEEP },
+            { iot_config_keys::BATTERY_MIN },
+            { iot_config_keys::PANIC_INIT, iot_config_keys::PANIC_FACTOR, iot_config_keys::PANIC_MAX },
+        };
+        for (const auto& row : LIBRARY_ROWS)
+        {
+            JsonArray out;
+            for (const char* key : row)
+            {
+                bool isPlaced = false;
+                for (const std::string& p : placed) { if (p == key) { isPlaced = true; } }
+                if (isPlaced || _find(key) == nullptr) { continue; }
+                if (out.isNull()) { out = layout.add<JsonArray>(); }
+                out.add(key);
+            }
+        }
+    }
+
+    if (!_schemaExtras.empty())
     {
         JsonDocument extras;
         if (deserializeJson(extras, _schemaExtras) || !extras.is<JsonObjectConst>())
@@ -328,6 +357,17 @@ std::string IotConfig::schemaJson() const
     std::string out;
     serializeJsonPretty(doc, out);
     return out;
+}
+
+void IotConfig::setLayout(std::initializer_list<LayoutRow> rows)
+{
+    _layout.clear();
+    for (const LayoutRow& row : rows)
+    {
+        std::vector<const char*> keys;
+        for (const IotConfigValueBase& value : row) { keys.push_back(value.key()); }
+        _layout.push_back(std::move(keys));
+    }
 }
 
 /// FNV-1a: a schema changes rarely and is not adversarial, so a short hash

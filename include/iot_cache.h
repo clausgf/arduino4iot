@@ -126,6 +126,7 @@ struct IotRtcValidators
 
     void clear() { etag[0] = '\0'; lastModified[0] = '\0'; }
 
+private:
     template <size_t N>
     static std::string _read(const char (&field)[N])
     {

@@ -165,6 +165,7 @@ struct IotRtcTelemetry
         clear();
     }
 
+private:
     Entry* _find(const char* key)
     {
         for (uint8_t i = 0; i < count && i < N; i++)

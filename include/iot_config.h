@@ -8,6 +8,9 @@
 #include <climits>
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <initializer_list>
+#include <functional>
 #include <type_traits>
 
 #include <ArduinoJson.h>
@@ -279,18 +282,31 @@ public:
      */
     std::string schemaJson() const;
 
+    /// One row of a form layout: values shown side by side.
+    using LayoutRow = std::initializer_list<std::reference_wrapper<const IotConfigValueBase>>;
+
     /**
-     * Add top-level members to schemaJson(), e.g. a form layout:
+     * Lay out the form nice4iot builds from the schema (its x-ui.layout):
      *
-     *   config.setSchemaExtras(R"({"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}})");
+     *   config.setLayout({ { cvPanel, cvRotation }, { cvImagePath } });
+     *
+     * The library appends rows for its own values (log level and sleep,
+     * battery, backoff), so an application names only its own. A value in no
+     * row gets one of its own below. Counts for the published hash.
+     */
+    void setLayout(std::initializer_list<LayoutRow> rows);
+
+    /**
+     * Add top-level members to schemaJson(), e.g. additionalProperties:
+     *
+     *   config.setSchemaExtras(R"({"additionalProperties": false})");
      *
      * @p json must be a JSON object; its members are copied as they are, except
-     * "properties", "type" and "$schema", which the library owns. They count
-     * for the published hash, so changing them publishes again. Invalid JSON
-     * is logged and ignored. Not copied: @p json must outlive this object,
-     * which a string literal does.
+     * "properties", "type" and "$schema", which the library owns. They are
+     * applied last, so an "x-ui" here replaces the one setLayout() builds.
+     * They count for the published hash. Invalid JSON is logged and ignored.
      */
-    void setSchemaExtras(const char* json) { _schemaExtras = json; }
+    void setSchemaExtras(const std::string& json) { _schemaExtras = json; }
 
     /**
      * Upload schemaJson() as file/{project}/{device}/@p filename, unless the
@@ -307,7 +323,8 @@ public:
 private:
     IotStore* _store = nullptr;
     const char* _apiPath = nullptr;
-    const char* _schemaExtras = nullptr;
+    std::string _schemaExtras;
+    std::vector<std::vector<const char*>> _layout;   ///< rows of keys
 
     IotConfigValueBase* _find(const char* key) const;
     /// Re-read every registered value of this instance from the store.
