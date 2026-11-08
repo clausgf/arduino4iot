@@ -502,8 +502,10 @@ into RTC RAM, and the first flush of a later cycle that has connectivity sends
 it ahead of its own lines. The same happens when a cycle never got a
 connection, or when the log request failed with a transport error or a 5xx.
 
-- The RTC buffer holds `IOT_RTC_LOG_SIZE` bytes (default 1536, `0` disables
-  it). When full, the oldest whole lines are dropped first and a note with
+- The RTC buffer holds `IOT_RTC_LOG_SIZE` bytes (default 1536, about 15–25
+  lines; `0` disables it). Set it as a build flag
+  (`build_flags = -DIOT_RTC_LOG_SIZE=4096`): a `#define` in the sketch does not
+  reach the library's own translation unit. When full, the oldest whole lines are dropped first and a note with
   their count leads the next upload — the most recent lines, usually the ones
   explaining a failure, are kept.
 - It lives in an `IotRtcSlot`, so it survives deep sleep and the
