@@ -211,7 +211,7 @@ IotResult IotConfig::updateConfig()
     if (_store == nullptr || _apiPath == nullptr)
     {
         log_e("IotConfig not initialized - call begin() first");
-        return IotResult();  // default: transport error, no request was made
+        return IotResult(IotResult::STATUS_NOT_CONFIGURED);
     }
 
     IotStoredValidators cache(*_store, iot_nvs_keys::CONFIG_ETAG, iot_nvs_keys::CONFIG_DATE);
@@ -386,7 +386,7 @@ IotResult IotConfig::publishSchema(const char* filename)
     if (_store == nullptr)
     {
         log_e("IotConfig not initialized - call begin() first");
-        return IotResult();
+        return IotResult(IotResult::STATUS_NOT_CONFIGURED);
     }
     const std::string schema = schemaJson();
     const std::string hash = schemaHash(schema);

@@ -63,6 +63,19 @@ static std::string takeOffline()
 #endif
 }
 
+/// @return true if a failed log request may succeed in a later cycle, so its
+/// lines are worth keeping: no connection, a server-side failure, a 401 the
+/// re-provisioning could not resolve this time, a timeout or rate limit, or
+/// a device not yet configured. Any other 4xx would only fail again.
+static bool worthRetrying(const IotResult& result)
+{
+    if (result.isOk()) { return false; }
+    if (result.isTransportError()) { return true; }
+    const int status = result.httpStatus;
+    return (status >= 500 && status < 600) || status == 401 || status == 408 || status == 429
+        || status == IotResult::STATUS_NOT_CONFIGURED;
+}
+
 
 // *****************************************************************************
 // Logging
@@ -143,7 +156,8 @@ void IotLogger::logv(Level level, const char *tag, const char* format, va_list a
             _logBuffer += logBuf;
             _logBuffer += '\n';
         } else if (_isOnline()) {
-            postLog(logBuf);
+            const std::string line = std::string(logBuf) + '\n';
+            if (worthRetrying(postLog(line))) { _keepOffline(line); }
         } else {
             _keepOffline(std::string(logBuf) + '\n');
         }
@@ -209,7 +223,9 @@ void IotLogger::setBuffered(bool enabled)
 
 bool IotLogger::_isOnline() const
 {
-    return _network == nullptr || _network->isConnected();
+    // before iot.begin() has initialized the API - e.g. on the early exit
+    // paths - a request could only fail
+    return api.isInitialized() && (_network == nullptr || _network->isConnected());
 }
 
 IotResult IotLogger::flush()
@@ -235,36 +251,43 @@ IotResult IotLogger::flush()
         return IotResult(200);
     }
 
-    IotResult result = postLog((earlier + current).c_str());
-    if (result.isTransportError() || result.httpStatus >= 500)
+    size_t sent = 0;
+    IotResult result = postLog(earlier + current, &sent);
+    if (worthRetrying(result))
     {
-        // worth another try next cycle; a 4xx would only fail again. The
-        // earlier lines go back as they were, with their own markers; this
-        // cycle's get one.
-        _restoreOffline(earlier);
-        if (!current.empty()) { _keepOffline(current); }
+        // only what the server has not accepted yet, so a chunk that went
+        // through is not sent twice. The earlier lines go back as they were,
+        // with their own markers; this cycle's get one.
+        if (sent < earlier.size())
+        {
+            _restoreOffline(earlier.substr(sent));
+            sent = 0;
+        } else {
+            sent -= earlier.size();
+        }
+        if (sent < current.size()) { _keepOffline(current.substr(sent)); }
     }
     return result;
 }
 
 // *****************************************************************************
 
-IotResult IotLogger::postLog(const char * body, const char * apiPath)
+IotResult IotLogger::postLog(const std::string& body, size_t* oSent, const char * apiPath)
 {
     // the server rejects bodies larger than its max_log_size (default 8 KiB)
     // with HTTP 413, so split large bodies into chunks at line boundaries
-    size_t bodyLen = strlen(body);
     IotResult result(200);
 
     size_t offset = 0;
-    do
+    while (offset < body.size())
     {
-        size_t chunkLen = iot_text::nextLogChunkLength(body, bodyLen, offset, IOT_MAX_TELEMETRY_SIZE);
-        std::string chunk(body + offset, chunkLen);
-        result = api.post(apiPath, chunk, { .headers = { { "Content-Type", "text/plain" } } }).result;
+        size_t chunkLen = iot_text::nextLogChunkLength(body.c_str(), body.size(), offset, IOT_MAX_TELEMETRY_SIZE);
+        result = api.post(apiPath, body.substr(offset, chunkLen),
+            { .headers = { { "Content-Type", "text/plain" } } }).result;
+        if (!result.isOk()) { break; }
         offset += chunkLen;
-    } while (offset < bodyLen && result.isOk());
-
+    }
+    if (oSent != nullptr) { *oSent = offset; }
     return result;
 }
 

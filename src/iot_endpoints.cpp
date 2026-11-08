@@ -6,6 +6,7 @@
 #include "iot_endpoints.h"
 
 #include "Arduino.h"
+#include "sdkconfig.h"
 
 #include "iot_api.h"
 #include "iot_cache.h"
@@ -84,14 +85,66 @@ static void applyTlsToOta(const IotTlsConfig& tls)
     }
 }
 
+/// @return why the OTA downloader cannot fetch @p url with @p tls in this
+/// firmware, or nullptr if it can. esp_https_ota only accepts what the
+/// framework's sdkconfig enables, and would fail with an unexplained error.
+static const char* otaUnsupportedReason(const std::string& url, const IotTlsConfig& tls)
+{
+    if (url.rfind("https://", 0) != 0)
+    {
+#ifdef CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP
+        return nullptr;
+#else
+        return "the URL is not https:// and the framework is built without "
+               "CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP";
+#endif
+    }
+    switch (tls.mode)
+    {
+        case IotTlsMode::Bundle:
+            return nullptr;
+        case IotTlsMode::CaPin:
+            return tls.caCertPem.empty() ? "tlsMode CaPin without a CA certificate" : nullptr;
+        case IotTlsMode::Insecure:
+            // esp_https_ota refuses a config without a certificate or bundle
+            // unless it allows plain http, and esp-tls then needs to be told
+            // to skip the verification
+#if defined(CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP) && defined(CONFIG_ESP_TLS_INSECURE) \
+    && defined(CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY)
+            return nullptr;
+#else
+            return "tlsMode Insecure, but the framework is built without "
+                   "CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP/CONFIG_ESP_TLS_INSECURE - seed Bundle or CaPin";
+#endif
+        case IotTlsMode::None:
+            break;
+    }
+    return "no TLS server trust seeded";
+}
+
 IotCacheValidators IotOtaEndpoint::validators() const
 {
+    if (!api.isInitialized()) { return IotCacheValidators{}; }
     return IotStoredValidators(api.store(), iot_nvs_keys::FIRMWARE_ETAG, iot_nvs_keys::FIRMWARE_DATE).load();
 }
 
 IotResult IotOtaEndpoint::update(const std::string& apiPath,
     const std::map<std::string, std::string>& header) const
 {
+    if (!api.isInitialized())
+    {
+        log_e("Firmware update: IotApi not initialized - call iot.begin() first");
+        return IotResult(IotResult::STATUS_NOT_CONFIGURED);
+    }
+    // checked before the HEAD: an update this firmware cannot download would
+    // otherwise be found, and fail, every cycle
+    const std::string url = api.urlForPath(apiPath);
+    if (const char* reason = otaUnsupportedReason(url, api.tlsConfig()))
+    {
+        log_e("Firmware update from %s impossible: %s", url.c_str(), reason);
+        return IotResult(IotResult::STATUS_NOT_CONFIGURED);
+    }
+
     IotStoredValidators cache(api.store(), iot_nvs_keys::FIRMWARE_ETAG, iot_nvs_keys::FIRMWARE_DATE);
     const IotCacheValidators current = cache.load();
     std::map<std::string, std::string> conditional = {
@@ -105,7 +158,12 @@ IotResult IotOtaEndpoint::update(const std::string& apiPath,
     const IotResult check = api.head(apiPath, { .headers = conditional }).result;
     if (check.httpStatus != 200)
     {
-        log_i("No firmware update available status=%d", check.httpStatus);
+        if (check.isNotModified() || check.httpStatus == 404)
+        {
+            log_i("No firmware update available status=%d", check.httpStatus);
+        } else {
+            log_w("Firmware update check failed status=%d", check.code());
+        }
         return check;
     }
 
@@ -123,7 +181,7 @@ IotResult IotOtaEndpoint::update(const std::string& apiPath,
 
     std::string newEtag;
     std::string newDate;
-    if (!ota.updateFirmwareFromUrl(newEtag, newDate, api.urlForPath(apiPath).c_str(), &effective))
+    if (!ota.updateFirmwareFromUrl(newEtag, newDate, url.c_str(), &effective))
     {
         // an update was available (HEAD 200) but the download or flash did not
         // complete - report a distinct, non-transient failure

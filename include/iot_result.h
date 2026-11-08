@@ -30,6 +30,7 @@ struct IotResult
     static constexpr int STATUS_NO_PROVISIONING_TOKEN = 600; ///< no provisioning token configured
     static constexpr int STATUS_MALFORMED_RESPONSE    = 601; ///< 2xx but missing/invalid body
     static constexpr int STATUS_UPDATE_FAILED         = 602; ///< update was available but could not be downloaded/applied
+    static constexpr int STATUS_NOT_CONFIGURED        = 603; ///< not set up for the request: begin() not called, no API URL seeded, or a URL/TLS mode the firmware cannot serve
 
     Kind kind;
     int httpStatus;      ///< HTTP status code for Ok/HttpError, 0 otherwise

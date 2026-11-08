@@ -61,24 +61,36 @@ String IotAp::_apSsid()
     return _ssidPrefix + mac.substring(mac.length() - 4);
 }
 
-void IotAp::_startSoftAp()
+bool IotAp::_startSoftAp()
 {
     WiFi.mode(WIFI_AP);
     // pin the AP IP to the documented QR-deep-link contract rather than
     // relying on the arduino-esp32 default (currently the same value)
     IPAddress apIp(192, 168, 4, 1);
-    WiFi.softAPConfig(apIp, apIp, IPAddress(255, 255, 255, 0));
+    if (!WiFi.softAPConfig(apIp, apIp, IPAddress(255, 255, 255, 0)))
+    {
+        log_w("run: cannot pin the SoftAP address to %s", apIp.toString().c_str());
+    }
     String ssid = _apSsid();
-    WiFi.softAP(ssid.c_str()); // open network, no password (by design)
+    if (!WiFi.softAP(ssid.c_str())) // open network, no password (by design)
+    {
+        log_e("run: SoftAP '%s' could not be started", ssid.c_str());
+        return false;
+    }
     log_w("run: SoftAP '%s' started, ip=%s", ssid.c_str(), WiFi.softAPIP().toString().c_str());
 
-    // wildcard DNS: answer every query with our own IP (captive-portal spoof)
-    _dnsServer.start(53, "*", WiFi.softAPIP());
+    // wildcard DNS: answer every query with our own IP (captive-portal spoof).
+    // Without it the form is still reachable at the IP, just not as a portal.
+    if (!_dnsServer.start(53, "*", WiFi.softAPIP()))
+    {
+        log_w("run: captive-portal DNS could not be started");
+    }
 
     _webServer.on("/", HTTP_GET, [this]() { _handleRoot(); });
     _webServer.on("/save", HTTP_POST, [this]() { _handleSave(); });
     _webServer.onNotFound([this]() { _handleNotFound(); });
     _webServer.begin();
+    return true;
 }
 
 String IotAp::_renderForm(const String& wifiSsid, const String& wifiPassword,
@@ -138,6 +150,18 @@ void IotAp::_handleSave()
         .seedGeneration    = storedGeneration + 1,
     };
     iot.seedCredentials(cfg);
+
+    // read back: a failed NVS write would otherwise reboot into this portal
+    // again, with the form claiming success
+    IotStore& store = iotBootstrapStore();
+    if (store.getString(iot_nvs_keys::WIFI_SSID, "") != cfg.wifiSsid
+        || store.getString(iot_nvs_keys::API_URL, "") != cfg.apiUrl
+        || store.getString(iot_nvs_keys::PROVISIONING_TOKEN, "") != cfg.provisioningToken)
+    {
+        log_e("_handleSave: the settings could not be stored");
+        _webServer.send(500, "text/plain", "The settings could not be stored on the device.");
+        return;
+    }
     log_w("_handleSave: provisioned via captive portal, rebooting");
 
     _webServer.send(200, "text/html",
@@ -163,7 +187,11 @@ void IotAp::_handleNotFound()
 
 void IotAp::run()
 {
-    _startSoftAp();
+    if (!_startSoftAp())
+    {
+        // no way to reach the form: the idle wait would only drain the battery
+        iot.shutdown(); // never returns
+    }
 
     unsigned long idleDeadline = millis() + (unsigned long)_idleTimeout_s * 1000UL;
     while ((long)(millis() - idleDeadline) < 0)

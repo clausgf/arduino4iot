@@ -86,7 +86,7 @@ private:
     friend class Iot;
 
     /// Where to ask whether the buffer can be sent. Without one, flush() tries
-    /// and lets the request fail.
+    /// once the API is initialized and lets the request fail.
     void setNetwork(IotNetwork& network) { _network = &network; }
     void end();
 
@@ -97,14 +97,18 @@ private:
     void logToRtc(Level level, const char *tag, const char* format...);
 
     /// Post ESP-formatted log lines, split at the server's size limit.
-    IotResult postLog(const char * body, const char * apiPath = iot_paths::LOG);
+    /// @param oSent if given, receives how many bytes of @p body the server
+    /// accepted before a chunk failed - all of them on success.
+    IotResult postLog(const std::string& body, size_t* oSent = nullptr,
+        const char * apiPath = iot_paths::LOG);
 
     Level _level;
     bool _buffered;
     std::string _logBuffer;
     IotNetwork* _network = nullptr;
 
-    /// Without a network adapter flush() tries and lets the request fail.
+    /// Whether a request can be tried: the API is initialized and the
+    /// network, if one is set, is connected.
     bool _isOnline() const;
 
     /// Names the current cycle in the marker that leads its offline lines,

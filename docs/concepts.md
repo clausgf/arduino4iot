@@ -500,7 +500,11 @@ What is logged afterwards cannot go out this cycle. Instead of dropping it,
 `flush()` — including the automatic one before deep sleep — moves the buffer
 into RTC RAM, and the first flush of a later cycle that has connectivity sends
 it ahead of its own lines. The same happens when a cycle never got a
-connection, or when the log request failed with a transport error or a 5xx.
+connection, or when the log request failed in a way a later cycle may not:
+a transport error, a 5xx, a 401 the re-provisioning could not resolve, a 408
+or 429, or a device without a seeded API URL. Of a log split into several
+requests only the part the server has not accepted is kept, so nothing is sent
+twice. Before `iot.begin()` has initialized the API no request is tried at all.
 
 - The RTC buffer holds `IOT_RTC_LOG_SIZE` bytes (default 1536, about 15–25
   lines; `0` disables it). Set it as a build flag
@@ -672,7 +676,15 @@ belongs to the application — and to a ULP program, if it has one.
 
 `iot.ota.update()` does a conditional check (ETag/Last-Modified) and streams
 a new image only when one is available. The same TLS trust configuration used
-for API calls applies to the OTA download.
+for API calls applies to the OTA download. The download feeds the task
+watchdog, so an image may take longer than one watchdog period.
+
+The downloader (`esp_https_ota`) only accepts what the framework's sdkconfig
+enables. The prebuilt arduino-esp32 has neither `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`
+nor `CONFIG_ESP_TLS_INSECURE`, so OTA needs an `https://` URL with `tlsMode`
+`Bundle` or `CaPin`; a plain `http://` API or `Insecure` works for API calls
+but not for OTA. `update()` checks this before any request and returns
+`STATUS_NOT_CONFIGURED` with the reason in the log.
 
 The default apiPath is `file/{project}/{device}/firmware.bin`. A `{board}` 
 parameter is supported and substitutes to the `IOT_BOARD_ID` build default (see
@@ -757,7 +769,14 @@ if (r.result) { use(r.body, r.header("ETag")); }
 
 Synthetic statuses (all ≥ 600 so they never collide with real codes) let the
 library report client-side conditions through the same type:
-`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`.
+`STATUS_NO_PROVISIONING_TOKEN`, `STATUS_MALFORMED_RESPONSE`, `STATUS_UPDATE_FAILED`,
+and `STATUS_NOT_CONFIGURED` for a request that cannot be made at all: before
+`begin()`, without a seeded API URL, or an OTA download this firmware cannot do.
+
+A body that arrives shorter than announced (Content-Length, or a chunked
+transfer without its last chunk) is a transport error
+(`HTTPC_ERROR_READ_TIMEOUT`), not a success with a truncated body — otherwise
+`getCached()` would keep the fragment under the new ETag.
 
 Cache-aware calls (`config.updateConfig()`, `iot.ota.update()`, `api.getCached()`)
 return `IotResult` too, but for them **HTTP 304 Not Modified is a normal

@@ -229,7 +229,14 @@ IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, 
     if (_http == nullptr)
     {
         log_e("IotApi not initialized - call begin() first");
-        out.result = IotResult(-1);
+        out.result = IotResult(IotResult::STATUS_NOT_CONFIGURED);
+        return out;
+    }
+    if (_baseUrl.empty())
+    {
+        log_e("HTTP %s %s: no API URL seeded - set apiUrl via iot.seedCredentials()",
+            method, apiPath.c_str());
+        out.result = IotResult(IotResult::STATUS_NOT_CONFIGURED);
         return out;
     }
 
@@ -268,8 +275,14 @@ IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, 
         log_e("HTTP %s url=%s -> status=403 FORBIDDEN - access refused by the server",
             method, request.url.c_str());
     } else if (httpStatusCode < 200 || httpStatusCode >= 400) {
-        log_e("HTTP %s url=%s requestBody=%s -> status=%d responseBody=%s",
-            method, request.url.c_str(), body.c_str(), httpStatusCode, out.body.c_str());
+        // the response body only, shortened: it usually explains the error,
+        // while the request body can carry secrets (the provisioning token)
+        // and be up to the server's size limit
+        const int MAX_LOGGED_BODY = 200;
+        const int shown = out.body.length() > (size_t)MAX_LOGGED_BODY ? MAX_LOGGED_BODY : (int)out.body.length();
+        log_e("HTTP %s url=%s -> status=%d responseBody=%.*s%s",
+            method, request.url.c_str(), httpStatusCode, shown, out.body.c_str(),
+            out.body.length() > (size_t)shown ? "..." : "");
     } else {
         log_i("HTTP %s url=%s -> status=%d", method, request.url.c_str(), httpStatusCode);
     }

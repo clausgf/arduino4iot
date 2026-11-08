@@ -121,6 +121,9 @@ struct IotOtaEndpoint
      *         isNotModified() (304) if already up to date;
      *         .httpStatus == IotResult::STATUS_UPDATE_FAILED if an update was
      *         available but the download or flash did not complete;
+     *         .httpStatus == IotResult::STATUS_NOT_CONFIGURED before begin(),
+     *         or if this firmware cannot download from the URL with the
+     *         seeded TLS mode (checked before any request);
      *         otherwise the HTTP or transport error.
      *         Use isOkOrNotModified() to test for "no error".
      */

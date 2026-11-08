@@ -81,6 +81,9 @@ public:
     void begin(IotStore& store, IotHttp& http, IotClock& clock);
     void end();
 
+    /// @return true between begin() and end(), i.e. when requests can be made.
+    bool isInitialized() const { return _http != nullptr; }
+
     /// Hardware variant substituted for {board} in a path; empty if unset.
     void setBoardId(const std::string& boardId) { _boardId = boardId; }
 

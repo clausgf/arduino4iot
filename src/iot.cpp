@@ -426,7 +426,7 @@ IotResult IotTelemetryEndpoint::post(const std::string& kind, const std::string&
     if (jsonData.length() > IOT_MAX_TELEMETRY_SIZE)
     {
         log_w("Telemetry body size %u exceeds the server's default limit of %u bytes",
-            jsonData.length(), IOT_MAX_TELEMETRY_SIZE);
+            (unsigned)jsonData.length(), (unsigned)IOT_MAX_TELEMETRY_SIZE);
     }
     std::string path = apiPath;
     size_t kindPos = path.find("{kind}");
@@ -670,7 +670,8 @@ void Iot::startWatchdog(int32_t watchdogTimeout_s)
         err = esp_task_wdt_add(NULL);
         if (err != ESP_OK)
         {
-            log_e("Error in esp_task_wdt_add: 0x%x", err);
+            // the cycle runs unsupervised, and resetWatchdog() does nothing
+            log_e("Error in esp_task_wdt_add: 0x%x, the task is not supervised", err);
         }
     }
     log_d("Task watchdog started for current task");
@@ -693,6 +694,12 @@ void Iot::stopWatchdog()
 
 void Iot::resetWatchdog()
 {
+    // not subscribed (e.g. after stopWatchdog(), or another task): nothing to
+    // feed - checked first, since esp_task_wdt_reset() would log an error
+    if (esp_task_wdt_status(NULL) != ESP_OK)
+    {
+        return;
+    }
     esp_err_t err = esp_task_wdt_reset();
     if (err != ESP_OK)
     {

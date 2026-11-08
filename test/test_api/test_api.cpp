@@ -206,6 +206,26 @@ void test_a_transport_error_is_passed_through()
 }
 
 
+void test_a_request_before_begin_is_not_configured()
+{
+    Fixture f;
+
+    IotResult result = f.api.get("file/x").result;
+    TEST_ASSERT_EQUAL_INT(IotResult::STATUS_NOT_CONFIGURED, result.httpStatus);
+    TEST_ASSERT_FALSE(f.api.isInitialized());
+}
+
+void test_a_request_without_api_url_is_not_configured()
+{
+    Fixture f;
+    f.store.remove(iot_nvs_keys::API_URL);
+    f.begin();
+
+    IotResult result = f.api.get("file/x").result;
+    TEST_ASSERT_EQUAL_INT(IotResult::STATUS_NOT_CONFIGURED, result.httpStatus);
+    TEST_ASSERT_EQUAL_size_t(0, f.http.requestCount());
+}
+
 // *****************************************************************************
 // Provisioning
 // *****************************************************************************
@@ -359,6 +379,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_a_401_without_a_provisioning_token_is_passed_through);
     RUN_TEST(test_a_403_keeps_the_token_and_does_not_retry);
     RUN_TEST(test_a_transport_error_is_passed_through);
+    RUN_TEST(test_a_request_before_begin_is_not_configured);
+    RUN_TEST(test_a_request_without_api_url_is_not_configured);
 
     RUN_TEST(test_a_valid_token_is_not_renewed);
     RUN_TEST(test_provisioning_without_a_token_reports_the_synthetic_status);

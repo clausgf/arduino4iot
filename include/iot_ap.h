@@ -55,7 +55,8 @@ private:
     WebServer _webServer;
 
     String _apSsid();
-    void _startSoftAp();
+    /// @return false if the access point could not be started.
+    bool _startSoftAp();
     String _renderForm(const String& wifiSsid, const String& wifiPassword,
         const String& apiUrl, const String& project, const String& provisioningToken);
     void _handleRoot();

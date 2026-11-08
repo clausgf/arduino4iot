@@ -149,11 +149,19 @@ void IotNvsStore::putString(const char* key, const std::string& value)
     {
         return;  // unchanged: do not spend a flash write cycle
     }
-    if (_preferences.putString(key, value.c_str()) == 0 && !value.empty())
+    // putString() returns the length written, so an empty value is checked by
+    // its type instead
+    auto written = [&](size_t n) {
+        return value.empty() ? _preferences.getType(key) == PT_STR : n == value.length();
+    };
+    if (!written(_preferences.putString(key, value.c_str())))
     {
         // the key exists with a different NVS type - drop it and normalize
         _preferences.remove(key);
-        _preferences.putString(key, value.c_str());
+        if (!written(_preferences.putString(key, value.c_str())))
+        {
+            log_e("IotNvsStore('%s'): cannot write '%s'", _nvsNamespace, key);
+        }
     }
 }
 
@@ -171,7 +179,10 @@ void IotNvsStore::putInt(const char* key, int64_t value)
     if (_preferences.putLong64(key, value) == 0)
     {
         _preferences.remove(key);
-        _preferences.putLong64(key, value);
+        if (_preferences.putLong64(key, value) == 0)
+        {
+            log_e("IotNvsStore('%s'): cannot write '%s'", _nvsNamespace, key);
+        }
     }
 }
 
@@ -189,7 +200,10 @@ void IotNvsStore::putBool(const char* key, bool value)
     if (_preferences.putBool(key, value) == 0)
     {
         _preferences.remove(key);
-        _preferences.putBool(key, value);
+        if (_preferences.putBool(key, value) == 0)
+        {
+            log_e("IotNvsStore('%s'): cannot write '%s'", _nvsNamespace, key);
+        }
     }
 }
 
@@ -365,7 +379,12 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
     oResponse = IotHttpResponse{};
 
     HTTPClient& http = _httpClient();
-    http.begin(_clientFor(request.url), String(request.url.c_str()));
+    if (!http.begin(_clientFor(request.url), String(request.url.c_str())))
+    {
+        log_e("IotEspHttp: invalid URL '%s'", request.url.c_str());
+        oResponse.status = HTTPC_ERROR_CONNECTION_REFUSED;
+        return oResponse.status;
+    }
 
     for (auto const& kv : request.headers)
     {
@@ -376,15 +395,15 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
         }
     }
 
-    std::vector<const char*> headerKeys;
+    // Transfer-Encoding always: it tells whether a missing size means
+    // "chunked transfer broke off" or "no Content-Length"
+    static const char* TRANSFER_ENCODING = "Transfer-Encoding";
+    std::vector<const char*> headerKeys = { TRANSFER_ENCODING };
     for (auto const& key : request.collectResponseHeaders)
     {
         headerKeys.push_back(key.c_str());
     }
-    if (!headerKeys.empty())
-    {
-        http.collectHeaders(headerKeys.data(), headerKeys.size());
-    }
+    http.collectHeaders(headerKeys.data(), headerKeys.size());
 
     oResponse.status = http.sendRequest(request.method,
         (uint8_t*)request.body.c_str(), request.body.length());
@@ -402,6 +421,27 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
         // assign with the length: a binary body (e.g. a PNG) contains NUL bytes
         const String body = http.getString();
         oResponse.body.assign(body.c_str(), body.length());
+
+        // getString() hands back what it got: a read timeout, a dropped
+        // connection or a failed allocation yields a short or empty body under
+        // the server's status. Delivered as a success, a cache would keep it
+        // with the new ETag, so report it as the transport error it is.
+        // The size is the Content-Length; for a chunked body HTTPClient sets
+        // it only once the last chunk arrived, so -1 then means it broke off.
+        const int expected = http.getSize();
+        const bool chunked = http.header(TRANSFER_ENCODING).equalsIgnoreCase("chunked");
+        const bool incomplete = expected >= 0
+            ? oResponse.body.length() != (size_t)expected
+            : chunked;
+        if (oResponse.status > 0 && incomplete)
+        {
+            log_e("IotEspHttp: body incomplete, %u of %d bytes%s",
+                (unsigned)oResponse.body.length(), expected, chunked ? " (chunked)" : "");
+            oResponse.status = HTTPC_ERROR_READ_TIMEOUT;
+            oResponse.body.clear();
+            // the rest of the body may still be in flight: do not reuse
+            http.setReuse(false);
+        }
     }
 
     http.end();

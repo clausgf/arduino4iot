@@ -9,6 +9,7 @@
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
 #include "esp_crt_bundle.h"
+#include "esp_task_wdt.h"
 
 #include "iot_ota_internal.h"
 
@@ -110,7 +111,8 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt) noexcept
 
 bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDate, const char * url, std::map<std::string, std::string> * headerPtr)
 {
-    _headerPtr = headerPtr;
+    static std::map<std::string, std::string> noHeaders;
+    _headerPtr = headerPtr != nullptr ? headerPtr : &noHeaders;
     ESP_LOGW(tag, "OTA updating firmware from %s", url);
 
     esp_http_client_config_t http_cfg;
@@ -148,7 +150,7 @@ bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDat
     esp_https_ota_handle_t https_ota_handle = NULL;
     esp_err_t err = esp_https_ota_begin(&ota_config, &https_ota_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(tag, "OTA begin failed");
+        ESP_LOGE(tag, "OTA begin failed: %s", esp_err_to_name(err));
         return false;
     }
 
@@ -161,14 +163,19 @@ bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDat
     // }
     // err = validate_image_header(&app_desc);
 
+    // the download takes longer than a watchdog period; feed it per block,
+    // but only if this task is supervised (a reset otherwise logs an error)
+    const bool supervised = esp_task_wdt_status(NULL) == ESP_OK;
+
     int image_size = esp_https_ota_get_image_size(https_ota_handle);
     do {
+        if (supervised) { esp_task_wdt_reset(); }
         err = esp_https_ota_perform(https_ota_handle);
         ESP_LOGD(tag, "OTA Image bytes read: %d/%d", esp_https_ota_get_image_len_read(https_ota_handle), image_size);
     } while (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
 
     if (esp_https_ota_is_complete_data_received(https_ota_handle) != true) {
-        ESP_LOGE(tag, "OTA data incomplete. Aborting.");
+        ESP_LOGE(tag, "OTA data incomplete (%s). Aborting.", esp_err_to_name(err));
         esp_https_ota_abort(https_ota_handle);
         return false;
     }
@@ -180,7 +187,7 @@ bool IotOtaInternal::updateFirmwareFromUrl(std::string& oEtag, std::string& oDat
     }
 
     if ((err != ESP_OK) || (ota_finish_err != ESP_OK)) {
-        ESP_LOGE(tag, "OTA update failed 0x%x/0x%x", err, ota_finish_err);
+        ESP_LOGE(tag, "OTA update failed: %s/%s", esp_err_to_name(err), esp_err_to_name(ota_finish_err));
         return false;
     }
 
