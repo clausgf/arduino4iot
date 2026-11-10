@@ -122,6 +122,27 @@ inline std::string formatMacAddress(const std::string& hex)
 }
 
 /**
+ * The host part of @p url, without scheme, credentials, port and path:
+ * "https://user@[::1]:8443/api" -> "::1", "http://host:80/x" -> "host".
+ */
+inline std::string hostOfUrl(const std::string& url)
+{
+    size_t start = url.find("://");
+    start = (start == std::string::npos) ? 0 : start + 3;
+    const size_t end = url.find_first_of("/?#", start);
+    std::string authority = url.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    const size_t at = authority.rfind('@');
+    if (at != std::string::npos) { authority.erase(0, at + 1); }
+    if (!authority.empty() && authority[0] == '[')
+    {
+        const size_t close = authority.find(']');
+        return authority.substr(1, close == std::string::npos ? std::string::npos : close - 1);
+    }
+    const size_t colon = authority.find(':');
+    return colon == std::string::npos ? authority : authority.substr(0, colon);
+}
+
+/**
  * The release part of a version string: "v5.4.1-1-g2f7dcd862a-dirty" ->
  * "5.4.1". Drops a leading "v" and everything from the first "-".
  */

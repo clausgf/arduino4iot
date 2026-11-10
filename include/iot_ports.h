@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "iot_result.h"
+
 // *****************************************************************************
 // Ports - the seams between the library's services and the platform.
 //
@@ -131,6 +133,13 @@ struct IotHttpResponse
     int status = 0;
     std::string body;
     std::map<std::string, std::string> headers;
+
+    /// For a transport error: where it happened, None if the adapter cannot tell.
+    IotTransportPhase phase = IotTransportPhase::None;
+    /// For a TLS failure: the TLS library's error code, 0 otherwise.
+    int tlsError = 0;
+    /// Duration of the request, including connect and handshake.
+    uint32_t elapsed_ms = 0;
 };
 
 /**
@@ -157,6 +166,8 @@ public:
 
     virtual void setConnectTimeout_ms(uint32_t timeout_ms) = 0;
     virtual void setRequestTimeout_ms(uint32_t timeout_ms) = 0;
+    /// Bound the TLS handshake of a new connection.
+    virtual void setHandshakeTimeout_ms(uint32_t timeout_ms) = 0;
 
     /**
      * Perform one request. Requests within a wakeup cycle share a keep-alive
@@ -171,6 +182,10 @@ public:
 
     /// @return a human-readable description of a negative status.
     virtual std::string errorToString(int status) const = 0;
+
+    /// @return a human-readable description of IotHttpResponse::tlsError, or
+    /// "" if the adapter has none.
+    virtual std::string tlsErrorToString(int tlsError) const { (void)tlsError; return std::string(); }
 };
 
 

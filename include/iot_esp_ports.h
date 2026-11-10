@@ -103,13 +103,34 @@ public:
     IotEspHttp() = default;
     ~IotEspHttp() override;
 
+    /// HTTPClient's connect timeout, used while setConnectTimeout_ms() is not called.
+    static constexpr uint32_t DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+    /// Instead of NetworkClientSecure's 120 s, which outlasts any watchdog.
+    /// Above the connect timeout, so a TCP and a TLS timeout can be told
+    /// apart by the time they took.
+    static constexpr uint32_t DEFAULT_HANDSHAKE_TIMEOUT_MS = 6000;
+
     void setTls(const IotTlsConfig& tls) override;
     bool hasServerTrust() const override;
     void setConnectTimeout_ms(uint32_t timeout_ms) override;
     void setRequestTimeout_ms(uint32_t timeout_ms) override;
+    /// Applied in whole seconds, rounded up (NetworkClientSecure's unit). The
+    /// handshake waits in steps of the connect timeout, so a stalled handshake
+    /// can take up to the next multiple of it.
+    void setHandshakeTimeout_ms(uint32_t timeout_ms) override;
+
+    /**
+     * Perform one request. Resets the task watchdog first, since each request
+     * is bounded by the timeouts, and reports where a transport error
+     * happened: the server name is resolved explicitly before a new
+     * connection (a cache hit for the connect that follows), a TLS failure
+     * carries the mbedTLS code, and a timeout without one is a TCP or a TLS
+     * timeout by the time it took.
+     */
     int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override;
     void close() override;
     std::string errorToString(int status) const override;
+    std::string tlsErrorToString(int tlsError) const override;
 
 private:
     const IotTlsConfig* _tls = nullptr;   ///< owned by the caller, kept alive there
@@ -118,6 +139,10 @@ private:
     HTTPClient* _http = nullptr;
     uint32_t _connectTimeout_ms = 0;   ///< 0: the HTTPClient default
     uint32_t _requestTimeout_ms = 0;   ///< 0: the HTTPClient default
+    uint32_t _handshakeTimeout_ms = DEFAULT_HANDSHAKE_TIMEOUT_MS;
+
+    /// Where a failed request broke off, @see send().
+    void _classifyError(IotHttpResponse& oResponse, bool newConnection) const;
 
     /// Create the client matching the URL scheme and apply the TLS trust.
     WiFiClient& _clientFor(const std::string& url);

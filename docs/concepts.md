@@ -924,6 +924,55 @@ This keeps a single result type across the whole library instead of a separate
 type per endpoint; the one HTTP nuance the cache-aware endpoints need (304) lives
 in `IotResult` as a pair of predicates.
 
+### Where a transport error happened
+
+A transport error code alone hardly tells a person what to check: HTTPClient
+reports every failure to connect - an unknown name, a refused or unreachable
+port, a rejected certificate, a stalled handshake - as `-1`. A `TransportError`
+therefore also carries:
+
+- `phase` (`IotTransportPhase`): `Dns`, `Connect`, `Tls`, `Send`, `Receive`,
+  or `None` if unknown;
+- `tlsError`: the mbedTLS code of a TLS failure, e.g. `-0x2700` for a
+  certificate that does not verify;
+- `elapsed_ms`: how long the request took (set for every request).
+
+`api.errorText(result)` turns it into one line for a log or a display, e.g.
+`connection refused (tls, TLS -0x2700: X509 - Certificate verification failed) after 812 ms`,
+and the library logs exactly that line for a failed request.
+
+`IotEspHttp` finds the phase like this: before a new connection it resolves the
+server name itself (the connect that follows gets it from the DNS cache), so a
+DNS failure is certain. A failed connect then has the mbedTLS code
+`NetworkClientSecure` recorded for it - a TLS failure - or `-1`, which is a
+refused connection, a TCP timeout or a TLS handshake timeout. The two timeouts
+are told apart by the time they took, which works as long as the handshake
+timeout is longer than the connect timeout. After the connect, HTTPClient's
+codes are specific: `-2`/`-3` sending, `-5`/`-7`/`-11` receiving.
+
+### Timeouts and the watchdog
+
+Every phase of a request is bounded, so a stall ends the request instead of
+the cycle:
+
+| Phase | Bound | Set with |
+|---|---|---|
+| DNS | lwIP's resolver retries, not configurable | — |
+| TCP connect | 5 s | `api.setConnectTimeout_ms()` |
+| TLS handshake | 6 s, in steps of the connect timeout (so up to 10 s) | `api.setHandshakeTimeout_ms()` |
+| response | 5 s per wait for data | `api.setRequestTimeout_ms()` |
+
+The TLS handshake needs its own bound: `NetworkClientSecure` waits up to
+120 s by default, longer than any watchdog. `IotEspHttp::send()` resets the
+task watchdog before each request, because a single `api.send()` can make
+three of them (request, re-provisioning after a 401, retry). A request whose
+phases all succeed slowly can still add up, so keep the sum of the timeouts
+well below the watchdog timeout (20 s by default). The three setters may be
+called before `iot.begin()`.
+
+OTA downloads go through `esp_https_ota`, with their own timeout, and are not
+covered by this.
+
 ## Failure handling: panic and backoff
 
 `iot.panic(...)` is the library's escalating failure strategy for a device with

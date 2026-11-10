@@ -139,6 +139,26 @@ void test_transport_error_is_not_not_modified()
 
 // *****************************************************************************
 
+void test_a_new_result_has_no_transport_details()
+{
+    IotResult result(-1);
+    TEST_ASSERT_EQUAL_INT((int)IotTransportPhase::None, (int)result.phase);
+    TEST_ASSERT_EQUAL_INT(0, result.tlsError);
+    TEST_ASSERT_EQUAL_UINT32(0, result.elapsed_ms);
+}
+
+void test_transport_phases_have_stable_names()
+{
+    TEST_ASSERT_EQUAL_STRING("none", iotTransportPhaseToString(IotTransportPhase::None));
+    TEST_ASSERT_EQUAL_STRING("dns", iotTransportPhaseToString(IotTransportPhase::Dns));
+    TEST_ASSERT_EQUAL_STRING("connect", iotTransportPhaseToString(IotTransportPhase::Connect));
+    TEST_ASSERT_EQUAL_STRING("tls", iotTransportPhaseToString(IotTransportPhase::Tls));
+    TEST_ASSERT_EQUAL_STRING("send", iotTransportPhaseToString(IotTransportPhase::Send));
+    TEST_ASSERT_EQUAL_STRING("receive", iotTransportPhaseToString(IotTransportPhase::Receive));
+}
+
+// *****************************************************************************
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
@@ -157,5 +177,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_2xx_is_ok_or_not_modified_but_not_not_modified);
     RUN_TEST(test_real_http_error_is_not_not_modified);
     RUN_TEST(test_transport_error_is_not_not_modified);
+    RUN_TEST(test_a_new_result_has_no_transport_details);
+    RUN_TEST(test_transport_phases_have_stable_names);
     return UNITY_END();
 }

@@ -129,15 +129,37 @@ public:
 
     /**
      * Set a timeout for establishing the TCP connection to the server.
+     * May be called before begin(); 0 keeps the adapter's default.
      * @param timeout_ms the timeout in milliseconds
      */
     void setConnectTimeout_ms(uint32_t timeout_ms);
 
     /**
-     * Set a timeout for waiting for data in an HTTP request.
+     * Set a timeout for waiting for data in an HTTP request - per wait, not
+     * for the whole response. May be called before begin(); 0 keeps the
+     * adapter's default.
      * @param timeout_ms the timeout in milliseconds
      */
     void setRequestTimeout_ms(uint32_t timeout_ms);
+
+    /**
+     * Set a timeout for the TLS handshake of a new connection. May be called
+     * before begin(); 0 keeps the adapter's default. Keep connect, handshake
+     * and request timeouts together well below the watchdog timeout, and the
+     * handshake timeout above the connect timeout, so the two failures can be
+     * told apart, @see IotEspHttp::DEFAULT_HANDSHAKE_TIMEOUT_MS.
+     * @param timeout_ms the timeout in milliseconds
+     */
+    void setHandshakeTimeout_ms(uint32_t timeout_ms);
+
+    /**
+     * Describe a failed result for a log line or a display, e.g.
+     * "connection refused (tls, mbedTLS -0x2700: X509 - Certificate
+     * verification failed) after 812 ms" or "HTTP 404".
+     *
+     * @return "" for a success
+     */
+    std::string errorText(const IotResult& result) const;
 
 
 
@@ -267,6 +289,10 @@ private:
 
     IotStore* _store = nullptr;
     IotHttp* _http = nullptr;
+    /// 0: the adapter's default. Kept so they can be set before begin().
+    uint32_t _connectTimeout_ms = 0;
+    uint32_t _requestTimeout_ms = 0;
+    uint32_t _handshakeTimeout_ms = 0;
     IotClock* _clock = nullptr;
     std::string _boardId;
 

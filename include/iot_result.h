@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 // *****************************************************************************
 // Typed result of an API operation.
 //
@@ -17,6 +19,23 @@
 // This type is intentionally free of Arduino dependencies so it can be
 // unit-tested on the native platform (see test/test_result).
 // *****************************************************************************
+
+/**
+ * Where a transport error happened, for a message that tells a person what
+ * to check. The values are stable.
+ */
+enum class IotTransportPhase : uint8_t
+{
+    None    = 0,  ///< no transport error, or the phase is unknown
+    Dns     = 1,  ///< the server name did not resolve
+    Connect = 2,  ///< no TCP connection: refused, unreachable or timed out
+    Tls     = 3,  ///< the TLS handshake failed (see tlsError) or timed out
+    Send    = 4,  ///< the request could not be sent
+    Receive = 5,  ///< no or no complete response: timeout or connection lost
+};
+
+/// @return "none", "dns", "connect", "tls", "send" or "receive".
+const char* iotTransportPhaseToString(IotTransportPhase phase);
 
 struct IotResult
 {
@@ -35,6 +54,14 @@ struct IotResult
     Kind kind;
     int httpStatus;      ///< HTTP status code for Ok/HttpError, 0 otherwise
     int transportError;  ///< negative ESP HTTPClient error for TransportError, 0 otherwise
+
+    /// For a TransportError: where it happened, None if unknown.
+    IotTransportPhase phase = IotTransportPhase::None;
+    /// For a TLS failure: the mbedTLS error code (negative), 0 otherwise.
+    int tlsError = 0;
+    /// How long the request took, including connect and handshake; 0 if no
+    /// request was made.
+    uint32_t elapsed_ms = 0;
 
     IotResult(): kind(TransportError), httpStatus(0), transportError(0) {}
 

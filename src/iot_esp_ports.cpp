@@ -6,6 +6,7 @@
 #include "iot_esp_ports.h"
 
 #include "iot_rtc_slot.h"
+#include "iot_text.h"
 
 #include <cstring>
 #include <vector>
@@ -14,6 +15,8 @@
 #include <esp_mac.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <mbedtls/error.h>
 #include <sys/time.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
@@ -317,6 +320,7 @@ WiFiClient& IotEspHttp::_clientFor(const std::string& url)
             _secureClient = new WiFiClientSecure();
             _client = _secureClient;
             _applyTls();
+            _secureClient->setHandshakeTimeout((_handshakeTimeout_ms + 999) / 1000);
         } else {
             log_d("Create WiFiClient");
             _client = new WiFiClient();
@@ -365,6 +369,19 @@ void IotEspHttp::setConnectTimeout_ms(uint32_t timeout_ms)
     }
 }
 
+void IotEspHttp::setHandshakeTimeout_ms(uint32_t timeout_ms)
+{
+    if (timeout_ms == 0)
+    {
+        return;
+    }
+    _handshakeTimeout_ms = timeout_ms;
+    if (_secureClient != nullptr)
+    {
+        _secureClient->setHandshakeTimeout((timeout_ms + 999) / 1000);
+    }
+}
+
 void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
 {
     _requestTimeout_ms = timeout_ms;
@@ -374,9 +391,65 @@ void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
     }
 }
 
+void IotEspHttp::_classifyError(IotHttpResponse& oResponse, bool newConnection) const
+{
+    switch (oResponse.status)
+    {
+        case HTTPC_ERROR_CONNECTION_REFUSED:  // any failure to connect
+            break;
+        case HTTPC_ERROR_SEND_HEADER_FAILED:
+        case HTTPC_ERROR_SEND_PAYLOAD_FAILED:
+            oResponse.phase = IotTransportPhase::Send;
+            return;
+        case HTTPC_ERROR_NOT_CONNECTED:
+            oResponse.phase = IotTransportPhase::Connect;
+            return;
+        case HTTPC_ERROR_CONNECTION_LOST:
+        case HTTPC_ERROR_NO_HTTP_SERVER:
+        case HTTPC_ERROR_READ_TIMEOUT:
+        case HTTPC_ERROR_STREAM_WRITE:
+            oResponse.phase = IotTransportPhase::Receive;
+            return;
+        default:
+            return;  // no stream, out of memory, encoding: not a network phase
+    }
+
+    oResponse.phase = IotTransportPhase::Connect;
+    if (_secureClient == nullptr || !newConnection)
+    {
+        return;
+    }
+    // NetworkClientSecure records the outcome of every connect attempt: an
+    // mbedTLS code for a TLS failure, -1 for a TCP failure or a handshake timeout
+    char text[2];
+    const int tlsError = _secureClient->lastError(text, sizeof(text));
+    if (tlsError < -1)
+    {
+        oResponse.phase = IotTransportPhase::Tls;
+        oResponse.tlsError = tlsError;
+        return;
+    }
+    // a TCP timeout ends after the connect timeout, a handshake timeout after
+    // at least the (longer) handshake timeout
+    const uint32_t connect_ms = _connectTimeout_ms > 0 ? _connectTimeout_ms : DEFAULT_CONNECT_TIMEOUT_MS;
+    if (_handshakeTimeout_ms > connect_ms
+        && oResponse.elapsed_ms >= (connect_ms + _handshakeTimeout_ms) / 2)
+    {
+        oResponse.phase = IotTransportPhase::Tls;
+    }
+}
+
 int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
 {
     oResponse = IotHttpResponse{};
+
+    // each request is bounded by the timeouts, the sequence of them is not:
+    // a 401 retry alone makes three
+    if (esp_task_wdt_status(nullptr) == ESP_OK)
+    {
+        esp_task_wdt_reset();
+    }
+    const unsigned long start = millis();
 
     HTTPClient& http = _httpClient();
     if (!http.begin(_clientFor(request.url), String(request.url.c_str())))
@@ -384,6 +457,24 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
         log_e("IotEspHttp: invalid URL '%s'", request.url.c_str());
         oResponse.status = HTTPC_ERROR_CONNECTION_REFUSED;
         return oResponse.status;
+    }
+
+    // HTTPClient reports every connect failure as -1; resolving the name
+    // first tells a DNS failure apart, and the connect then hits the cache
+    const bool newConnection = !http.connected();
+    if (newConnection)
+    {
+        const std::string host = iot_text::hostOfUrl(request.url);
+        IPAddress address;
+        if (!WiFi.hostByName(host.c_str(), address))
+        {
+            oResponse.status = HTTPC_ERROR_CONNECTION_REFUSED;
+            oResponse.phase = IotTransportPhase::Dns;
+            oResponse.elapsed_ms = (uint32_t)(millis() - start);
+            log_e("IotEspHttp: cannot resolve '%s'", host.c_str());
+            http.end();
+            return oResponse.status;
+        }
     }
 
     for (auto const& kv : request.headers)
@@ -445,6 +536,11 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
     }
 
     http.end();
+    oResponse.elapsed_ms = (uint32_t)(millis() - start);
+    if (oResponse.status < 0)
+    {
+        _classifyError(oResponse, newConnection);
+    }
     return oResponse.status;
 }
 
@@ -460,6 +556,13 @@ void IotEspHttp::close()
 std::string IotEspHttp::errorToString(int status) const
 {
     return std::string(HTTPClient::errorToString(status).c_str());
+}
+
+std::string IotEspHttp::tlsErrorToString(int tlsError) const
+{
+    char text[100];
+    mbedtls_strerror(tlsError, text, sizeof(text));
+    return std::string(text);
 }
 
 

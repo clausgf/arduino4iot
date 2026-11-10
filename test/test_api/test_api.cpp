@@ -205,6 +205,44 @@ void test_a_transport_error_is_passed_through()
     TEST_ASSERT_EQUAL_INT(-11, result.transportError);
 }
 
+void test_a_transport_error_carries_phase_tls_error_and_duration()
+{
+    Fixture f;
+    f.begin();
+    f.http.replyTransportError(-1, IotTransportPhase::Tls, -0x2700, 812);
+
+    IotResult result = f.api.get("file/x").result;
+    TEST_ASSERT_TRUE(result.isTransportError());
+    TEST_ASSERT_EQUAL_INT((int)IotTransportPhase::Tls, (int)result.phase);
+    TEST_ASSERT_EQUAL_INT(-0x2700, result.tlsError);
+    TEST_ASSERT_EQUAL_UINT32(812, result.elapsed_ms);
+    TEST_ASSERT_EQUAL_STRING("fake error -1 (tls, TLS -0x2700: fake tls -9984) after 812 ms",
+        f.api.errorText(result).c_str());
+}
+
+void test_error_text_of_success_http_and_synthetic_results()
+{
+    Fixture f;
+    f.begin();
+    TEST_ASSERT_EQUAL_STRING("", f.api.errorText(IotResult(200)).c_str());
+    TEST_ASSERT_EQUAL_STRING("HTTP 404", f.api.errorText(IotResult(404)).c_str());
+    TEST_ASSERT_EQUAL_STRING("not configured",
+        f.api.errorText(IotResult(IotResult::STATUS_NOT_CONFIGURED)).c_str());
+    TEST_ASSERT_EQUAL_STRING("fake error -11 (receive)",
+        f.api.errorText([] { IotResult r(-11); r.phase = IotTransportPhase::Receive; return r; }()).c_str());
+}
+
+void test_timeouts_set_before_begin_reach_the_adapter()
+{
+    Fixture f;
+    f.api.setConnectTimeout_ms(3000);
+    f.api.setHandshakeTimeout_ms(7000);
+    f.api.setRequestTimeout_ms(4000);
+    f.begin();
+    TEST_ASSERT_EQUAL_UINT32(3000, f.http.connectTimeout_ms);
+    TEST_ASSERT_EQUAL_UINT32(7000, f.http.handshakeTimeout_ms);
+    TEST_ASSERT_EQUAL_UINT32(4000, f.http.requestTimeout_ms);
+}
 
 void test_a_request_before_begin_is_not_configured()
 {
@@ -379,6 +417,9 @@ int main(int argc, char **argv)
     RUN_TEST(test_a_401_without_a_provisioning_token_is_passed_through);
     RUN_TEST(test_a_403_keeps_the_token_and_does_not_retry);
     RUN_TEST(test_a_transport_error_is_passed_through);
+    RUN_TEST(test_a_transport_error_carries_phase_tls_error_and_duration);
+    RUN_TEST(test_error_text_of_success_http_and_synthetic_results);
+    RUN_TEST(test_timeouts_set_before_begin_reach_the_adapter);
     RUN_TEST(test_a_request_before_begin_is_not_configured);
     RUN_TEST(test_a_request_without_api_url_is_not_configured);
 

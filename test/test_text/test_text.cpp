@@ -127,6 +127,15 @@ void test_mac_empty_stays_empty()
 // releaseVersion, firmwareId
 // *****************************************************************************
 
+void test_host_of_url()
+{
+    TEST_ASSERT_EQUAL_STRING("iot.example.org", hostOfUrl("https://iot.example.org/api/x").c_str());
+    TEST_ASSERT_EQUAL_STRING("host", hostOfUrl("http://host:8080/x?y=1").c_str());
+    TEST_ASSERT_EQUAL_STRING("host", hostOfUrl("http://user:pw@host").c_str());
+    TEST_ASSERT_EQUAL_STRING("::1", hostOfUrl("https://[::1]:8443/api").c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.5", hostOfUrl("http://192.168.1.5/").c_str());
+}
+
 void test_release_version_drops_v_and_suffix()
 {
     TEST_ASSERT_EQUAL_STRING("5.4.1", releaseVersion("v5.4.1-1-g2f7dcd862a-dirty").c_str());
@@ -166,6 +175,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_chunk_full_iteration_terminates_and_covers_body);
     RUN_TEST(test_mac_gets_colons);
     RUN_TEST(test_mac_empty_stays_empty);
+    RUN_TEST(test_host_of_url);
     RUN_TEST(test_release_version_drops_v_and_suffix);
     RUN_TEST(test_firmware_id_joins_all_parts);
     RUN_TEST(test_firmware_id_leaves_out_empty_parts_and_adds_a_secure_version);

@@ -6,6 +6,7 @@
 #include "iot_api.h"
 
 #include <cctype>
+#include <cstdio>
 #include <ctime>
 
 #include <ArduinoJson.h>
@@ -44,6 +45,10 @@ void IotApi::begin(IotStore& store, IotHttp& http, IotClock& clock)
     // _tls outlives the http adapter's use of it: both live in this object's
     // and the application's lifetime
     _http->setTls(_tls);
+
+    if (_connectTimeout_ms > 0) { _http->setConnectTimeout_ms(_connectTimeout_ms); }
+    if (_requestTimeout_ms > 0) { _http->setRequestTimeout_ms(_requestTimeout_ms); }
+    if (_handshakeTimeout_ms > 0) { _http->setHandshakeTimeout_ms(_handshakeTimeout_ms); }
 }
 
 void IotApi::end()
@@ -100,12 +105,64 @@ void IotApi::closeConnection()
 
 void IotApi::setConnectTimeout_ms(uint32_t timeout_ms)
 {
-    if (_http != nullptr) { _http->setConnectTimeout_ms(timeout_ms); }
+    _connectTimeout_ms = timeout_ms;
+    if (_http != nullptr && timeout_ms > 0) { _http->setConnectTimeout_ms(timeout_ms); }
 }
 
 void IotApi::setRequestTimeout_ms(uint32_t timeout_ms)
 {
-    if (_http != nullptr) { _http->setRequestTimeout_ms(timeout_ms); }
+    _requestTimeout_ms = timeout_ms;
+    if (_http != nullptr && timeout_ms > 0) { _http->setRequestTimeout_ms(timeout_ms); }
+}
+
+void IotApi::setHandshakeTimeout_ms(uint32_t timeout_ms)
+{
+    _handshakeTimeout_ms = timeout_ms;
+    if (_http != nullptr && timeout_ms > 0) { _http->setHandshakeTimeout_ms(timeout_ms); }
+}
+
+std::string IotApi::errorText(const IotResult& result) const
+{
+    char text[64];
+    switch (result.kind)
+    {
+        case IotResult::Ok:
+            return std::string();
+        case IotResult::HttpError:
+            switch (result.httpStatus)
+            {
+                case IotResult::STATUS_NO_PROVISIONING_TOKEN: return "no provisioning token";
+                case IotResult::STATUS_MALFORMED_RESPONSE:    return "malformed response";
+                case IotResult::STATUS_UPDATE_FAILED:         return "update failed";
+                case IotResult::STATUS_NOT_CONFIGURED:        return "not configured";
+                default: break;
+            }
+            snprintf(text, sizeof(text), "HTTP %d", result.httpStatus);
+            return text;
+        case IotResult::TransportError:
+            break;
+    }
+
+    std::string out = _http != nullptr
+        ? _http->errorToString(result.transportError)
+        : "transport error " + std::to_string(result.transportError);
+    out += " (";
+    out += iotTransportPhaseToString(result.phase);
+    if (result.tlsError != 0)
+    {
+        // mbedTLS documents its codes in hex
+        snprintf(text, sizeof(text), ", TLS -0x%04X", (unsigned)-result.tlsError);
+        out += text;
+        const std::string tlsText = _http != nullptr ? _http->tlsErrorToString(result.tlsError) : "";
+        if (!tlsText.empty()) { out += ": " + tlsText; }
+    }
+    out += ")";
+    if (result.elapsed_ms > 0)
+    {
+        snprintf(text, sizeof(text), " after %lu ms", (unsigned long)result.elapsed_ms);
+        out += text;
+    }
+    return out;
 }
 
 
@@ -253,6 +310,12 @@ IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, 
     IotHttpResponse response;
     const int httpStatusCode = _http->send(request, response);
     out.result = IotResult(httpStatusCode);
+    out.result.elapsed_ms = response.elapsed_ms;
+    if (out.result.isTransportError())
+    {
+        out.result.phase = response.phase;
+        out.result.tlsError = response.tlsError;
+    }
     out.body = std::move(response.body);
     out.headers = std::move(response.headers);
 
@@ -265,7 +328,7 @@ IotApiResponse IotApi::_perform(const char* method, const std::string& apiPath, 
             : "";
         log_e("HTTP %s url=%s -> status=%d error=%s%s",
             method, request.url.c_str(), httpStatusCode,
-            _http->errorToString(httpStatusCode).c_str(), tlsHint);
+            errorText(out.result).c_str(), tlsHint);
     } else if (httpStatusCode == 401) {
         log_e("HTTP %s url=%s -> status=401 UNAUTHORIZED - device token invalid or expired",
             method, request.url.c_str());

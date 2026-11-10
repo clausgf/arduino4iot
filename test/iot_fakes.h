@@ -273,8 +273,10 @@ public:
     bool hasServerTrust() const override { return _tls != nullptr && _tls->hasServerTrust(); }
     void setConnectTimeout_ms(uint32_t timeout_ms) override { connectTimeout_ms = timeout_ms; }
     void setRequestTimeout_ms(uint32_t timeout_ms) override { requestTimeout_ms = timeout_ms; }
+    void setHandshakeTimeout_ms(uint32_t timeout_ms) override { handshakeTimeout_ms = timeout_ms; }
     void close() override { closeCount++; }
     std::string errorToString(int status) const override { return "fake error " + std::to_string(status); }
+    std::string tlsErrorToString(int tlsError) const override { return "fake tls " + std::to_string(tlsError); }
 
     int send(const IotHttpRequest& request, IotHttpResponse& oResponse) override
     {
@@ -291,6 +293,18 @@ public:
 
     // --- test control ---
 
+    /// Queue a transport error with its phase, TLS code and duration.
+    void replyTransportError(int status, IotTransportPhase phase, int tlsError = 0,
+        uint32_t elapsed_ms = 0)
+    {
+        IotHttpResponse response;
+        response.status = status;
+        response.phase = phase;
+        response.tlsError = tlsError;
+        response.elapsed_ms = elapsed_ms;
+        _replies.push_back(response);
+    }
+
     /// Queue one reply; they are consumed in order.
     void reply(int status, const std::string& body = "",
         const std::map<std::string, std::string>& headers = {})
@@ -306,6 +320,7 @@ public:
     int defaultStatus = 200;
     uint32_t connectTimeout_ms = 0;
     uint32_t requestTimeout_ms = 0;
+    uint32_t handshakeTimeout_ms = 0;
     unsigned closeCount = 0;
 
     // --- test inspection ---

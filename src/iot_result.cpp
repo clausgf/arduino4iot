@@ -25,3 +25,19 @@ IotResult::IotResult(int status)
         transportError = 0;
     }
 }
+
+// *****************************************************************************
+
+const char* iotTransportPhaseToString(IotTransportPhase phase)
+{
+    switch (phase)
+    {
+        case IotTransportPhase::Dns:     return "dns";
+        case IotTransportPhase::Connect: return "connect";
+        case IotTransportPhase::Tls:     return "tls";
+        case IotTransportPhase::Send:    return "send";
+        case IotTransportPhase::Receive: return "receive";
+        case IotTransportPhase::None:    break;
+    }
+    return "none";
+}
