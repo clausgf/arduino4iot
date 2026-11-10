@@ -483,7 +483,7 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
     int battery_mV = iot.battery_mV();
     if (battery_mV >= 0)
     {
-        telemetry.add("battery_V", battery_mV / 1000.0);
+        telemetry.add("battery_v", battery_mV / 1000.0);
     }
     telemetry.add("wifi_rssi", iot.network().rssi());
     telemetry.add("wifi_connect_ms", (int32_t)iot.network().lastConnectDuration_ms());

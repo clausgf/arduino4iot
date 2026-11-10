@@ -115,7 +115,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 
 ## Server API notes
 
-- **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_V": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
+- **Telemetry format:** the server expects a *flat* JSON object whose values are numbers, e.g. `{"temperature": 22.4, "battery_v": 3.71}`. Non-numeric fields are currently ignored by the telemetry backend (see open points below). The `IotTelemetry` builder guarantees a flat, valid JSON object.
 - **Size limits:** telemetry and log bodies are limited to 8 KiB by default (HTTP 413 beyond that); file uploads are limited to 10 MiB.
 - **Authentication:** all API calls use a bearer token obtained via provisioning. Tokens are short-lived (7 days by default); the library renews them proactively using the `expiresIn` field of the provisioning response (margin configurable with `api.setDeviceTokenExpiryMargin_s()`). On the device endpoints (telemetry, log, file, forward) the server normalizes *every* authentication failure to **HTTP 401** — devices are deliberately not told why auth failed — which triggers automatic re-provisioning and a single retry. The `/provision` endpoint itself still returns **HTTP 403** for configuration problems that re-provisioning cannot fix (project inactive, device inactive or not approved, HTTP API disabled for the project); this surfaces as `api.updateProvisioning()` returning `.httpStatus == 403`. Should a device endpoint ever return 403, the library treats it the same way — it keeps the token and does not retry — but current nice4iot emits 403 only from `/provision`.
 - **Caching:** configuration and firmware downloads use `ETag`/`If-None-Match` and `Last-Modified`/`If-Modified-Since` for cache validation, so unchanged files are not downloaded again. `api.getCached()` offers the same for an application's own resources and returns the `Cache-Control` max-age; see [Conditional GET](docs/concepts.md#conditional-get-for-application-resources).
@@ -166,7 +166,8 @@ no wall-clock time no `IotClock` — and the core names no optional adapter, so
 the linker drops every one an application does not reference.
 
 - **System telemetry fields in snake case (action required for dashboards).**
-  `lastSleep_s` → `last_sleep_s`, `panicSleep_s` → `panic_sleep_s`. New fields:
+  `lastSleep_s` → `last_sleep_s`, `panicSleep_s` → `panic_sleep_s`, and the unit
+  suffix in lower case like in the config keys, `battery_V` → `battery_v`. New fields:
   `reset_reason`, `panic_count`, `crash_count`, `undervoltage_count`, see
   [Telemetry](docs/concepts.md#telemetry).
 - **`config.json` keys renamed (action required).** One key now names a value in
@@ -248,7 +249,7 @@ the linker drops every one an application does not reference.
   ```
   `IotAdcBattery` adds multi-sample averaging and an optional enable pin; an I2C
   fuel gauge goes through `IotCallbackBattery`. Without a battery there is no
-  `battery_V` telemetry and no undervoltage check. `battery_min_mv` is unchanged.
+  `battery_v` telemetry and no undervoltage check. `battery_min_mv` is unchanged.
 - **The LED helpers are removed.** `iot.setLedPin()`, `iot.setLed()` and the
   `led_pin` config key were a `digitalWrite()` wrapper; do it in the sketch.
 - **`api.apiForward()` → `iot.forward.get()` and `api.uploadFile()` →

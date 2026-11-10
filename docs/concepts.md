@@ -103,7 +103,7 @@ care how it is obtained. `IotAdcBattery` covers a divider on an ADC pin
 off between measurements); `IotCallbackBattery` wraps any lambda, e.g. an I2C
 fuel gauge; anything else implements `IotBattery`.
 
-Without a battery there is no `battery_V` telemetry field and no undervoltage
+Without a battery there is no `battery_v` telemetry field and no undervoltage
 check. With one, `battery_min_mv` (server-configurable) is the threshold below
 which `begin()` does not connect. The check runs early in `begin()`: before the
 WiFi connect, whose current peaks are what browns a weak battery out, and
@@ -189,11 +189,12 @@ iot.telemetry.post("sensors", t);
 ```
 
 `iot.telemetry.postSystem()` posts a set of device-health values. Bodies are
-capped at 8 KiB by the server.
+capped at 8 KiB by the server. Field names are snake case with the unit as a
+lower-case suffix (`_v`, `_ms`, `_s`), like the config keys.
 
 | Field | Meaning |
 |---|---|
-| `battery_V` | supply voltage; only with an `IotBattery` |
+| `battery_v` | supply voltage; only with an `IotBattery` |
 | `wifi_rssi`, `wifi_connect_ms` | signal strength and duration of this cycle's connect |
 | `boot_count` | boots since the last power-on reset |
 | `reset_reason` | why this cycle started, `IotResetReason` as a number: 0 unknown, 1 power-on, 2 reset pin, 3 software, 4 panic, 5 watchdog, 6 brownout, 7 deep sleep |

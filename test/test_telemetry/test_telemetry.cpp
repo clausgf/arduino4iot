@@ -62,7 +62,7 @@ void test_add_string_value()
 void test_measure_matches_serialized_size()
 {
     IotTelemetry telemetry;
-    telemetry.add("battery_V", 3.71).add("wifi_rssi", -67);
+    telemetry.add("battery_v", 3.71).add("wifi_rssi", -67);
     TEST_ASSERT_EQUAL_UINT(serialize(telemetry).size(), telemetry.measure());
 }
 
@@ -97,7 +97,7 @@ void test_rtc_telemetry_moves_into_the_next_post_as_last()
     TEST_ASSERT_TRUE(slot->next.isEmpty());
 
     TEST_ASSERT_TRUE(slot->next.add("refresh_ms", 15234u));
-    TEST_ASSERT_TRUE(slot->next.add("battery_V", 3.71));
+    TEST_ASSERT_TRUE(slot->next.add("battery_v", 3.71));
 
     IotTelemetry t;
     t.add("temperature", 21);
@@ -106,7 +106,7 @@ void test_rtc_telemetry_moves_into_the_next_post_as_last()
 
     std::string json;
     t.serializeTo(json);
-    TEST_ASSERT_EQUAL_STRING("{\"temperature\":21,\"last_refresh_ms\":15234,\"last_battery_V\":3.71}", json.c_str());
+    TEST_ASSERT_EQUAL_STRING("{\"temperature\":21,\"last_refresh_ms\":15234,\"last_battery_v\":3.71}", json.c_str());
 }
 
 void test_rtc_telemetry_overwrites_a_key_and_rejects_overflow()
