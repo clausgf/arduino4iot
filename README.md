@@ -41,7 +41,7 @@ one of them:
 | Wakeup cycle | `iot.begin()`, `iot.deepSleep()`, `iot.radioOff()`, `iot.panic()`, `iot.restart()`, `iot.shutdown()` |
 | Failure reactions | `iot.setPanicHandler()`, `iot.defaultPanicHandler()`, `iot.setUndervoltageHandler()`, `iot.defaultUndervoltageHandler()`, `iot.setBatteryMin_mV()`, `iot.setBatterySleep_s()` |
 | Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()`, `iot.setSetupTrigger()` |
-| Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
+| Hardware ports | `iot.setNetwork()`, `iot.setHttp()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
 | Device info | `iot.deviceId()`, `iot.macAddress()`, `iot.resetReason()`, `iot.panicCount()`, `iot.crashCount()`, `iot.undervoltageCount()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
 | Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
@@ -165,6 +165,16 @@ adapters in `iot_esp_ports.h`. Optional ports are held as pointers that may be
 no wall-clock time no `IotClock` — and the core names no optional adapter, so
 the linker drops every one an application does not reference.
 
+- **New in 4.2: an HTTP adapter of its own (`IotIdfHttp`).** The default
+  transport no longer goes through HTTPClient and NetworkClientSecure but an
+  lwIP socket and mbedTLS directly, non-blocking throughout: DNS, connect, TLS
+  handshake and every wait for data have their own bound, a transport error
+  names its phase without guessing, the whole-request deadline also covers the
+  response headers and chunked bodies, and the watchdog is fed while data
+  arrives. The firmware is about 34 KB smaller. Error codes HTTPClient also has
+  keep their values (`-1` connect, `-5` connection lost, `-11` read timeout);
+  new are `-101` invalid URL and `-102` no TLS server trust. To go back to
+  HTTPClient: `static IotEspHttp espHttp; iot.setHttp(espHttp);`.
 - **New in 4.1:** WiFi transmit power (`iot.wifi().setMaxTxPower_qdBm()`,
   config `wifi_tx_qdbm`); the setup AP on request (`iot.setSetupTrigger()` with
   `apProvisioning.waitForButton()`) showing device id and MAC

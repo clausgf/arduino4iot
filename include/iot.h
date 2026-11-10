@@ -178,6 +178,19 @@ public:
     IotNetwork& network() const { return *_network; }
 
     /**
+     * Replace the HTTP adapter. Defaults to IotIdfHttp (lwIP sockets and
+     * mbedTLS, non-blocking, a timeout per phase). The previous adapter over
+     * HTTPClient remains as a fallback:
+     *
+     *   #include <iot_esp_ports.h>
+     *   static IotEspHttp espHttp;
+     *   iot.setHttp(espHttp);
+     *
+     * Call before begin(); @p http must outlive this object.
+     */
+    void setHttp(IotHttp& http);
+
+    /**
      * The built-in WiFi station, for tuning it before begin():
      *
      *   iot.wifi().setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
@@ -552,6 +565,7 @@ private:
     /// Ports. The network and the clock always have a default; the battery is
     /// nullptr unless the application attaches one.
     IotNetwork* _network;
+    IotHttp* _http;
     IotClock* _clock;
     IotBattery* _battery;
 

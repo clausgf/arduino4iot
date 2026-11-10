@@ -151,7 +151,7 @@ std::string IotApi::errorText(const IotResult& result) const
     }
 
     // a failure while setting up the connection is described by its phase:
-    // the transport reports all of them with one generic code (HTTPClient's
+    // the adapters report all of them with one generic code (HTTPClient's
     // "connection refused"), which would be wrong for a timeout or a TLS error
     std::string out;
     switch (result.phase)

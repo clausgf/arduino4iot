@@ -20,6 +20,7 @@
 // in via setNoCredentialsHandler(), and the dependency stays one-way,
 // iot_ap -> iot.
 #include "iot_esp_ports.h"
+#include "iot_idf_http.h"
 #include "iot_text.h"
 
 // *****************************************************************************
@@ -78,7 +79,7 @@ IotStore& iotBootstrapStore()
 /// The HTTP client the API talks through.
 static IotHttp& defaultHttp()
 {
-    static IotEspHttp http;
+    static IotIdfHttp http;
     return http;
 }
 
@@ -124,6 +125,7 @@ Iot::Iot() :
     _watchdogTimeout_s = DEFAULT_WATCHDOG_TIMEOUT_S;
     _clockSyncTimeout_ms = DEFAULT_CLOCK_SYNC_TIMEOUT_MS;
     _network = &defaultNetwork();
+    _http = nullptr;
     _clock = &defaultClock();
     _battery = nullptr;
     _panicHandler = [this] { defaultPanicHandler(); };
@@ -221,7 +223,7 @@ void Iot::_initSubsystems()
     logger.setNetwork(*_network);
     api.setDeviceName(deviceId());
     api.setBoardId(boardId());
-    api.begin(iotBootstrapStore(), defaultHttp(), *_clock);
+    api.begin(iotBootstrapStore(), _http != nullptr ? *_http : defaultHttp(), *_clock);
 }
 
 bool Iot::begin(uint32_t timeout_ms)
@@ -359,6 +361,11 @@ void Iot::end()
 void Iot::setNetwork(IotNetwork& network)
 {
     _network = &network;
+}
+
+void Iot::setHttp(IotHttp& http)
+{
+    _http = &http;
 }
 
 void Iot::setClock(IotClock& clock)

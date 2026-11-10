@@ -18,7 +18,7 @@ pio test -e native -f test_ports    # run one suite: test_result | test_telemetr
                                     # test_text | test_ap_text | test_ports |
                                     # test_lifecycle | test_token | test_config |
                                     # test_api | test_cache | test_rtc_slot |
-                                    # test_rtc_log
+                                    # test_rtc_log | test_http1
 ```
 
 - **ESP32 builds are never done from this repo directly.** There is no ESP32 env in
@@ -49,8 +49,8 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 | Layer | Files | Arduino? |
 |---|---|---|
 | Ports (interfaces + contracts) | `iot_ports.h` | no |
-| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_ap_text` `iot_rtc_log.h` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_names.h` `iot_endpoints.h` `iot_logger.h` | no |
-| ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
+| Pure types and services | `iot_result` `iot_telemetry` `iot_text` `iot_http1` `iot_ap_text` `iot_rtc_log.h` `iot_rtc_state` `iot_rtc_slot.h` `iot_lifecycle` `iot_token` `iot_config` `iot_seed` `iot_api` `iot_cache` `iot_names.h` `iot_endpoints.h` `iot_logger.h` | no |
+| ESP32 adapters | `iot_esp_ports.{h,cpp}` `iot_idf_http.{h,cpp}` `iot_ap` `iot_ota_internal` `iot_endpoints.cpp` | yes |
 | Facade | `iot.{h,cpp}` | yes |
 
 The services are Arduino-free including their implementations (`iot_api`,
@@ -84,7 +84,7 @@ excluded there. Use `iot_log.h` rather than Arduino's logging macros.
 | Port | Default in `Iot` | Adapters |
 |---|---|---|
 | `IotStore` | `IotNvsStore` (mandatory) | — |
-| `IotHttp` | `IotEspHttp` (mandatory) | a fake in tests |
+| `IotHttp` | `IotIdfHttp` (mandatory; lwIP + mbedTLS, framing in `iot_http1`) | `IotEspHttp` (HTTPClient, fallback via `iot.setHttp()`), a fake in tests |
 | `IotPower` | `IotEspPower` (mandatory) | — |
 | `IotNetwork` | `IotWifiNetwork` | Ethernet/LTE would slot in here |
 | `IotClock` | `IotSystemClock` — **never synchronizes** | `IotNtpClock` (opt-in; TLS does not need it — mbedTLS is built without `MBEDTLS_HAVE_TIME_DATE`) |

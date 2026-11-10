@@ -53,7 +53,7 @@ struct IotResult
 
     Kind kind;
     int httpStatus;      ///< HTTP status code for Ok/HttpError, 0 otherwise
-    int transportError;  ///< negative ESP HTTPClient error for TransportError, 0 otherwise
+    int transportError;  ///< negative error of the IotHttp adapter for TransportError, 0 otherwise
 
     /// For a TransportError: where it happened, None if unknown.
     IotTransportPhase phase = IotTransportPhase::None;

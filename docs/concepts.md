@@ -166,8 +166,8 @@ Authentication is deliberately **not** part of the transport:
   re-provisioning on every wakeup.
 - `IotApi::_perform()` builds one `IotHttpRequest` and hands it to the
   `IotHttp` port. It has no notion of tokens, and no notion of sockets either:
-  `IotEspHttp` owns the `HTTPClient`, the keep-alive connection and the TLS
-  trust, which is what lets the whole transport be exercised on the host.
+  `IotIdfHttp` owns the socket, the keep-alive connection and the TLS trust,
+  which is what lets the whole transport be exercised on the host.
 - `IotApi::send()` is the policy on top: attach the token, and on 401 get
   a new one and retry once. Because the retry cannot re-enter the request path,
   nothing has to guard against it.
@@ -939,19 +939,24 @@ therefore also carries:
 
 `api.errorText(result)` turns it into one line for a log or a display, e.g.
 `TLS handshake failed (TLS -0x2700: X509 - Certificate verification failed) after 812 ms`,
-`TLS handshake timed out after 10012 ms` or `read Timeout (receive) after 5012 ms`,
+`TLS handshake timed out after 6012 ms` or `read timeout (receive) after 5012 ms`,
 and the library logs exactly that line for a failed request. A failure while
 setting up the connection (`Dns`, `Connect`, `Tls`) is described by its phase,
 not by the transport's generic code.
 
-`IotEspHttp` finds the phase like this: before a new connection it resolves the
-server name itself (the connect that follows gets it from the DNS cache), so a
-DNS failure is certain. A failed connect then has the mbedTLS code
-`NetworkClientSecure` recorded for it - a TLS failure - or `-1`, which is a
-refused connection, a TCP timeout or a TLS handshake timeout. The two timeouts
-are told apart by the time they took, which works as long as the handshake
-timeout is longer than the connect timeout. After the connect, HTTPClient's
-codes are specific: `-2`/`-3` sending, `-5`/`-7`/`-11` receiving.
+`IotIdfHttp`, the default adapter, does each step itself and knows the phase
+without guessing: `getaddrinfo()` (Dns), a non-blocking `connect()` checked
+with `SO_ERROR` (Connect, errno in the log), `mbedtls_ssl_handshake()` (Tls,
+with the mbedTLS code; without one it timed out; a certificate that does not
+verify also logs why), then the request (Send) and the response (Receive).
+The HTTP/1.1 framing - request head, status line, headers, Content-Length,
+chunked and until-close bodies - is `iot_http1`, Arduino-free and tested on
+the host (`test/test_http1`).
+
+The fallback `IotEspHttp` (HTTPClient, `iot.setHttp()`) has to infer the
+phase: it resolves the name itself before a new connection, takes the mbedTLS
+code `NetworkClientSecure` recorded, and tells a TCP from a TLS timeout by
+the time it took.
 
 ### Timeouts and the watchdog
 
@@ -962,28 +967,32 @@ the cycle:
 |---|---|---|
 | DNS | lwIP's resolver retries, not configurable | — |
 | TCP connect | 5 s | `api.setConnectTimeout_ms()` |
-| TLS handshake | 6 s, in steps of the connect timeout (so up to 10 s) | `api.setHandshakeTimeout_ms()` |
-| response | 5 s per wait for data | `api.setRequestTimeout_ms()` |
-| whole request | 60 s, checked while the body arrives | `api.setResponseTimeout_ms()` |
+| TLS handshake | 6 s | `api.setHandshakeTimeout_ms()` |
+| send and receive | 5 s per wait for data | `api.setRequestTimeout_ms()` |
+| whole request | 60 s from its start | `api.setResponseTimeout_ms()` |
 
-The TLS handshake needs its own bound: `NetworkClientSecure` waits up to
-120 s by default, longer than any watchdog. `IotEspHttp::send()` resets the
-task watchdog before each request, because a single `api.send()` can make
-three of them (request, re-provisioning after a 401, retry), and again
-whenever body data arrives. The per-wait response timeout alone would let a
-body that trickles in - a byte every few seconds - run forever; the deadline
-for the whole request ends it (`response took too long`, phase `receive`).
-It may exceed the watchdog timeout, since the watchdog is fed only while
-data arrives: a slow download of a large image completes, a stalled one
-still ends after the per-wait timeout. Up to the first body byte, keep the
-sum of the timeouts well below the watchdog timeout (20 s by default). The
-response headers are bounded only per wait: HTTPClient offers no hook there.
-A body with a `Content-Length` (or one that ends with the connection) is read
-by `IotEspHttp` itself, only what has arrived, so deadline and watchdog act
-between any two reads. A chunked body is decoded by HTTPClient, which reads
-each chunk (up to 4 KB) in one blocking call: there both act only between
-chunks. nice4iot sends its responses with a `Content-Length`.
-The setters may be called before `iot.begin()`.
+`IotIdfHttp` never blocks in a read or a write: it reads what has arrived and
+otherwise waits in `select()` for at most the earlier of the per-wait timeout
+and the deadline of the whole request. So the deadline holds in the response
+headers and in a body of any framing, and a body that trickles in - a byte
+every few seconds - ends with `response took too long` (phase `receive`).
+
+`send()` resets the task watchdog before each request, because a single
+`api.send()` can make three of them (request, re-provisioning after a 401,
+retry), and again whenever data arrives. The whole-request deadline may
+therefore exceed the watchdog timeout: a slow download of a large image
+completes, a stalled one still ends after the per-wait timeout. Up to the
+first response byte, keep the sum of the timeouts well below the watchdog
+timeout (20 s by default). The setters may be called before `iot.begin()`.
+
+The requests of a cycle share one keep-alive connection. A server may close
+an idle connection just as it is reused; a request that got no byte of a
+response on a reused connection is repeated once on a new one.
+
+With the fallback `IotEspHttp` the bounds are coarser: the handshake waits in
+steps of the connect timeout (so up to 10 s), the response headers and each
+chunk of a chunked body are bounded only per wait, since HTTPClient reads
+them in blocking calls.
 
 OTA downloads go through `esp_https_ota`, with their own timeout, and are not
 covered by this.

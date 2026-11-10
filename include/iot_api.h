@@ -145,19 +145,18 @@ public:
     /**
      * Set a timeout for the TLS handshake of a new connection. May be called
      * before begin(); 0 keeps the adapter's default. Keep connect, handshake
-     * and request timeouts together well below the watchdog timeout, and the
-     * handshake timeout above the connect timeout, so the two failures can be
-     * told apart, @see IotEspHttp::DEFAULT_HANDSHAKE_TIMEOUT_MS.
+     * and request timeouts together well below the watchdog timeout,
+     * @see IotIdfHttp::DEFAULT_HANDSHAKE_TIMEOUT_MS.
      * @param timeout_ms the timeout in milliseconds
      */
     void setHandshakeTimeout_ms(uint32_t timeout_ms);
 
     /**
-     * Set a deadline for the whole request, checked while the body arrives,
-     * so a response that trickles in ends too. The watchdog is fed while
+     * Set a deadline for the whole request, from its start, so a response
+     * that trickles in ends too. The watchdog is fed while
      * data arrives, so this may exceed the watchdog timeout and a slow but
      * progressing download completes. May be called before begin(); 0 keeps
-     * the adapter's default, @see IotEspHttp::DEFAULT_RESPONSE_TIMEOUT_MS.
+     * the adapter's default, @see IotIdfHttp::DEFAULT_RESPONSE_TIMEOUT_MS.
      * @param timeout_ms the timeout in milliseconds
      */
     void setResponseTimeout_ms(uint32_t timeout_ms);
