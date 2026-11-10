@@ -203,8 +203,8 @@ void test_every_key_fits_the_store()
     // accessors, so it has to fit the NVS limit
     const char* keys[] = {
         // the complete set the library itself registers
-        "log_level", "sleep_s", "battery_min_mv",
-        "panic_init_s", "panic_factor", "panic_max_s",
+        "log_level", "sleep_s", "battery_min_mv", "battery_sleep_s",
+        "panic_init_s", "panic_factor", "panic_max_s", "wifi_tx_qdbm",
         // IotConfig's own cache validators
         "iotCfgEtag", "iotCfgDate",
     };

@@ -95,8 +95,13 @@ Iot::Iot() :
 
     _batteryMin_mV(config, -1, iot_config_keys::BATTERY_MIN,
         { .title = "Battery minimum (mV)",
-          .description = "Shut down below this supply voltage; -1 disables the check",
+          .description = "Below this supply voltage the device does not connect; -1 disables the check",
           .min = -1, .max = 10000 }),
+    _batterySleep_s(config, 0, iot_config_keys::BATTERY_SLEEP,
+        { .title = "Undervoltage sleep (s)",
+          .description = "On undervoltage: 0 shuts down until a reset, > 0 sleeps that long "
+                         "and measures again (e.g. solar recharging)",
+          .min = 0, .max = 7 * 24 * 60 * 60 }),
     _panicSleepDurationInit_s(config, IotBackoffPolicy{}.initialDuration_s, iot_config_keys::PANIC_INIT,
         { .title = "Backoff initial (s)", .description = "First sleep after a failed cycle",
           .min = 1, .max = 7 * 24 * 60 * 60 }),
@@ -119,7 +124,8 @@ Iot::Iot() :
     _network = &defaultNetwork();
     _clock = &defaultClock();
     _battery = nullptr;
-    _panicHandler = [this] { _enterBackoff(); };
+    _panicHandler = [this] { defaultPanicHandler(); };
+    _undervoltageHandler = [this] { defaultUndervoltageHandler(); };
     _firmwareVersion = "";
     _firmwareId = "";
     _firmwareSha256 = "";
@@ -188,6 +194,11 @@ void Iot::_beginCycle()
     // before any connect: a network with a MAC allow list needs this address
     log_i("--- Device id %s, MAC %s", deviceId().c_str(), macAddress().c_str());
 
+    // before the abnormal-start check: a brownout on a weak battery is an
+    // undervoltage, not a failure to back off from; and before any connect,
+    // whose current peaks are what browns a weak battery out
+    _checkBattery();
+
     // the previous cycle crashed, hung or browned out: back off rather than
     // retry immediately
     if (_lifecycle.isAbnormalStart())
@@ -202,19 +213,6 @@ void Iot::_initSubsystems()
     if (!_network->isConnected())
     {
         log_e("Network not connected yet. Connect first.");
-    }
-
-    // check the battery voltage
-    if (_battery != nullptr && _batteryMin_mV.get() > 0)
-    {
-        int batteryVoltage_mV = battery_mV();
-        if (batteryVoltage_mV >= 0 && batteryVoltage_mV < _batteryMin_mV.get())
-        {
-            log_e("Battery voltage too low: %d mV < %d mV", batteryVoltage_mV, _batteryMin_mV.get());
-            logger.error(tag, "undervoltage %d mV < %d mV, shutting down",
-                batteryVoltage_mV, _batteryMin_mV.get());
-            _shutdown(/*isFailure=*/true);
-        }
     }
 
     // initialize other components
@@ -575,7 +573,43 @@ void Iot::_panicEarly(const char* format...)
 
 // *****************************************************************************
 
-void Iot::_enterBackoff()
+void Iot::_checkBattery()
+{
+    if (_battery == nullptr || _batteryMin_mV.get() <= 0)
+    {
+        return;
+    }
+    const int32_t battery_mV = this->battery_mV();
+    if (battery_mV < 0 || battery_mV >= _batteryMin_mV.get())
+    {
+        return;
+    }
+    log_e("Battery voltage too low: %ld mV < %ld mV", (long)battery_mV, (long)_batteryMin_mV.get());
+    // offline at this point: kept in RTC RAM, sent by a later cycle
+    logger.error(tag, "undervoltage %ld mV < %ld mV", (long)battery_mV, (long)_batteryMin_mV.get());
+    _undervoltageHandler();
+}
+
+std::function<void()> Iot::setUndervoltageHandler(std::function<void()> undervoltageHandler)
+{
+    std::function<void()> oldUndervoltageHandler = _undervoltageHandler;
+    _undervoltageHandler = undervoltageHandler;
+    return oldUndervoltageHandler;
+}
+
+void Iot::defaultUndervoltageHandler()
+{
+    const int32_t sleep_s = _batterySleep_s.get();
+    if (sleep_s > 0)
+    {
+        logger.warn(tag, "undervoltage: sleeping %ld s, then measuring again", (long)sleep_s);
+        _deepSleep(sleep_s, /*isFailure=*/true);
+    }
+    logger.warn(tag, "undervoltage: shutting down until a reset");
+    _shutdown(/*isFailure=*/true);
+}
+
+void Iot::defaultPanicHandler()
 {
     // the escalation itself is IotBackoffPolicy (iot_lifecycle.h)
     const int32_t next_s = _lifecycle.backoffPolicy().next(_lifecycle.backoffDuration_s());

@@ -104,8 +104,29 @@ off between measurements); `IotCallbackBattery` wraps any lambda, e.g. an I2C
 fuel gauge; anything else implements `IotBattery`.
 
 Without a battery there is no `battery_V` telemetry field and no undervoltage
-check. With one, `battery_min_mv` (server-configurable) makes `begin()` shut the
-device down below the threshold.
+check. With one, `battery_min_mv` (server-configurable) is the threshold below
+which `begin()` does not connect. The check runs early in `begin()`: before the
+WiFi connect, whose current peaks are what browns a weak battery out, and
+before the abnormal-start check, so a brownout caused by a weak battery leads
+to the undervoltage reaction rather than to the failure backoff.
+
+The reaction is the undervoltage handler, analogous to the panic handler.
+`iot.defaultUndervoltageHandler()` shuts down until a reset when
+`battery_sleep_s` is 0 (the default, for a primary cell that will not
+recover), and otherwise sleeps that long and measures again (a battery that
+gets recharged, e.g. by solar). `iot.setUndervoltageHandler()` replaces it,
+e.g. to show a message on a display and then continue with the default:
+
+```cpp
+iot.setUndervoltageHandler([] {
+    display.show("Battery low");
+    iot.defaultUndervoltageHandler();
+});
+```
+
+The handler runs before the connect and should not use the network; the
+undervoltage log line is kept in RTC RAM and sent by a later cycle. If the
+handler returns, `begin()` continues normally.
 
 Two value types round out the surface: `IotTelemetry` (a telemetry builder) and
 `IotResult` (a typed operation result). Neither is a singleton — you create them
@@ -881,6 +902,11 @@ The strategy is split in two, along the same line as everywhere else:
 An **abnormal reset is acted on in `iot.begin()`, not in the constructor**, so
 the diagnosis reaches a serial console the sketch has had a chance to open, and
 the other singletons are constructed by then.
+
+`iot.setPanicHandler()` replaces what `panic()` does after logging;
+`iot.defaultPanicHandler()` is the backoff, so a replacement can show a
+message and then continue with it - the same pattern as the undervoltage
+handler (see "Battery").
 
 An application that must do something before the device sleeps supplies its own
 `IotPower` (`iot.setPower()`), or registers `iot.addExitHook()` to run at every

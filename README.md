@@ -39,6 +39,7 @@ one of them:
 | Task | Call |
 |---|---|
 | Wakeup cycle | `iot.begin()`, `iot.deepSleep()`, `iot.radioOff()`, `iot.panic()`, `iot.restart()`, `iot.shutdown()` |
+| Failure reactions | `iot.setPanicHandler()`, `iot.defaultPanicHandler()`, `iot.setUndervoltageHandler()`, `iot.defaultUndervoltageHandler()`, `iot.setBatteryMin_mV()`, `iot.setBatterySleep_s()` |
 | Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()`, `iot.setSetupTrigger()` |
 | Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
 | Device info | `iot.deviceId()`, `iot.macAddress()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
@@ -191,7 +192,7 @@ the linker drops every one an application does not reference.
   ignored and disappear on `factoryReset()`; a `config.json` still listing them
   logs them as unknown and applies the rest. What remains configurable is the
   operational set: `log_level`, `sleep_s`, `battery_min_mv`, `panic_init_s`,
-  `panic_factor`, `panic_max_s`, `wifi_tx_qdbm`.
+  `panic_factor`, `panic_max_s`, `battery_sleep_s`, `wifi_tx_qdbm`.
 - **Internal headers moved from `include/` to `src/`** (`iot_text.h`,
   `iot_ap_text.h`, `iot_ota_internal.h`, `iot_log.h`). `include/` is the public
   interface; none of these appear in a public header or a sketch.

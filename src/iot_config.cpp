@@ -317,8 +317,9 @@ std::string IotConfig::schemaJson() const
         // the library's own values, grouped, after the application's rows
         static const std::vector<std::vector<const char*>> LIBRARY_ROWS = {
             { iot_config_keys::LOG_LEVEL, iot_config_keys::SLEEP },
-            { iot_config_keys::BATTERY_MIN },
+            { iot_config_keys::BATTERY_MIN, iot_config_keys::BATTERY_SLEEP },
             { iot_config_keys::PANIC_INIT, iot_config_keys::PANIC_FACTOR, iot_config_keys::PANIC_MAX },
+            { iot_config_keys::WIFI_TX_POWER },
         };
         for (const auto& row : LIBRARY_ROWS)
         {

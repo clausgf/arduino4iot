@@ -32,6 +32,7 @@ namespace iot_config_keys
     inline constexpr const char* LOG_LEVEL    = "log_level";
     inline constexpr const char* SLEEP        = "sleep_s";
     inline constexpr const char* BATTERY_MIN  = "battery_min_mv";
+    inline constexpr const char* BATTERY_SLEEP = "battery_sleep_s";
     inline constexpr const char* PANIC_INIT   = "panic_init_s";
     inline constexpr const char* PANIC_FACTOR = "panic_factor";
     inline constexpr const char* PANIC_MAX    = "panic_max_s";

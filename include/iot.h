@@ -63,8 +63,8 @@ public:
      * WiFi credentials and API configuration are present in NVS. begin()
      * initializes NVS, starts the wakeup cycle (boot count, reset reason), reads
      * configuration values (class IotConfigValue), sets the log level from the
-     * *log_level* config value, checks the battery (undervoltage triggers
-     * shutdown), and starts the watchdog.
+     * *log_level* config value, starts the watchdog and checks the battery
+     * before connecting (undervoltage runs the undervoltage handler).
      *
      * If the *previous* cycle ended in a crash, a watchdog timeout or a
      * brownout, begin() logs that and enters the escalating backoff instead of
@@ -287,10 +287,41 @@ public:
     void setBattery(IotBattery& battery);
 
     /**
-     * Undervoltage threshold in millivolts; begin() shuts the device down below
-     * it. Values < 0 disable the check. Server-configurable as *battery_min_mv*.
+     * Undervoltage threshold in millivolts; below it begin() calls the
+     * undervoltage handler, before connecting. Values <= 0 disable the check.
+     * Server-configurable as *battery_min_mv*.
      */
     void setBatteryMin_mV(int32_t batteryMin_mV) { _batteryMin_mV = batteryMin_mV; }
+
+    /**
+     * What defaultUndervoltageHandler() does: 0 shuts the device down until a
+     * reset (a primary cell that will not recover), a duration > 0 sleeps
+     * that long and measures again (a battery that gets recharged, e.g. by
+     * solar). Server-configurable as *battery_sleep_s*.
+     */
+    void setBatterySleep_s(int32_t batterySleep_s) { _batterySleep_s = batterySleep_s; }
+
+    /**
+     * Replace what begin() does on undervoltage, after logging it - e.g. to
+     * show a message on a display first and then continue with the default:
+     *
+     *   iot.setUndervoltageHandler([] {
+     *       display.show("Battery low");
+     *       iot.defaultUndervoltageHandler();
+     *   });
+     *
+     * Runs before the network connect, so it should not use the network. If
+     * the handler returns, begin() continues normally.
+     *
+     * @return the previous undervoltage handler
+     */
+    std::function<void()> setUndervoltageHandler(std::function<void()> undervoltageHandler);
+
+    /**
+     * The default undervoltage handler: shuts down, or with *battery_sleep_s*
+     * > 0 sleeps that long, @see setBatterySleep_s(). Does not return.
+     */
+    void defaultUndervoltageHandler();
 
     /// @return the supply voltage in millivolts, or -1 without a battery.
     int32_t battery_mV() const;
@@ -313,12 +344,23 @@ public:
     void setBackoff(const IotBackoffPolicy& policy);
 
     /**
-     * Replace what panic() does after logging. The default enters the
-     * escalating backoff, @see setBackoff().
+     * Replace what panic() does after logging - e.g. to show a message on a
+     * display first and then continue with the default:
+     *
+     *   iot.setPanicHandler([] {
+     *       display.show("Error");
+     *       iot.defaultPanicHandler();
+     *   });
      *
      * @return the previous panic handler
      */
     std::function<void()> setPanicHandler(std::function<void()> panicHandler);
+
+    /**
+     * The default panic handler: enters the escalating backoff, @see
+     * setBackoff(). Does not return.
+     */
+    void defaultPanicHandler();
 
     /**
      * Log an error message and employ the panic strategy defined by the
@@ -486,6 +528,7 @@ public:
 private:
     mutable std::string _deviceId;
     std::function<void()> _panicHandler;
+    std::function<void()> _undervoltageHandler;
     mutable std::string _firmwareVersion;
     mutable std::string _firmwareId;
     mutable std::string _firmwareSha256;
@@ -514,6 +557,7 @@ private:
     IotConfigValue<int32_t> _logLevel;
     IotConfigValue<int32_t> _sleepDuration_s;
     IotConfigValue<int32_t> _batteryMin_mV;
+    IotConfigValue<int32_t> _batterySleep_s;
 
     IotConfigValue<int32_t> _panicSleepDurationInit_s;
     IotConfigValue<int32_t> _panicSleepDurationFactor;
@@ -529,8 +573,8 @@ private:
 
     /// panic() before the network is up: serial and RTC log only, no request.
     void _panicEarly(const char* format...);
-    /// The default panic handler: sleep for the next backoff duration.
-    void _enterBackoff();
+    /// Below battery_min_mv: log and run the undervoltage handler.
+    void _checkBattery();
     /// 0 if not in backoff, otherwise the current backoff sleep in seconds.
     int32_t _backoffDuration_s() const { return _lifecycle.backoffDuration_s(); }
     friend struct IotTelemetryEndpoint;
