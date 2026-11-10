@@ -978,6 +978,11 @@ data arrives: a slow download of a large image completes, a stalled one
 still ends after the per-wait timeout. Up to the first body byte, keep the
 sum of the timeouts well below the watchdog timeout (20 s by default). The
 response headers are bounded only per wait: HTTPClient offers no hook there.
+A body with a `Content-Length` (or one that ends with the connection) is read
+by `IotEspHttp` itself, only what has arrived, so deadline and watchdog act
+between any two reads. A chunked body is decoded by HTTPClient, which reads
+each chunk (up to 4 KB) in one blocking call: there both act only between
+chunks. nice4iot sends its responses with a `Content-Length`.
 The setters may be called before `iot.begin()`.
 
 OTA downloads go through `esp_https_ota`, with their own timeout, and are not

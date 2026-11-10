@@ -153,6 +153,9 @@ private:
 
     class _BodySink;
 
+    /// Read a body that is not chunked, @see send(); 0 or an error status.
+    int _readBody(HTTPClient& http, std::string& body, unsigned long deadline_ms) const;
+
     /// Where a failed request broke off, @see send().
     void _classifyError(IotHttpResponse& oResponse, bool newConnection) const;
 

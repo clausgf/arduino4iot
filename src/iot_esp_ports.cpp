@@ -8,6 +8,7 @@
 #include "iot_rtc_slot.h"
 #include "iot_text.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include <esp_sleep.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
+#include <esp_wifi.h>
 #include <mbedtls/error.h>
 #include <sys/time.h>
 #include <WiFi.h>
@@ -400,9 +402,12 @@ void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
 }
 
 /**
- * The body's destination: appends to a std::string, feeds the task watchdog
- * while data arrives, and refuses to take more once the deadline has passed,
- * which makes HTTPClient::writeToStream() stop with HTTPC_ERROR_STREAM_WRITE.
+ * The destination of a chunked body, which HTTPClient::writeToStream()
+ * decodes: appends to a std::string, feeds the task watchdog while data
+ * arrives, and refuses to take more once the deadline has passed, which makes
+ * writeToStream() stop with HTTPC_ERROR_STREAM_WRITE. Both act only between
+ * blocks: writeToStream() reads each chunk (up to 4 KB) in one blocking
+ * readBytes(), whose timeout applies per byte.
  */
 class IotEspHttp::_BodySink : public Stream
 {
@@ -438,6 +443,68 @@ private:
     unsigned long _deadline_ms;
     bool _expired = false;
 };
+
+/**
+ * Read a body with a Content-Length, or one that ends with the connection,
+ * from the client directly: HTTPClient::writeToStream() would block in
+ * readBytes() until its 4 KB buffer is full, the timeout applying per byte, so
+ * neither the deadline nor the watchdog could act while a body trickles in.
+ * Here only what has arrived is read; each pass feeds the watchdog on progress
+ * and checks the deadline, and a gap without data is bounded by the request
+ * (read) timeout.
+ */
+int IotEspHttp::_readBody(HTTPClient& http, std::string& body, unsigned long deadline_ms) const
+{
+    NetworkClient* stream = http.getStreamPtr();
+    if (stream == nullptr)
+    {
+        return HTTPC_ERROR_NOT_CONNECTED;
+    }
+    const int size = http.getSize();  // -1: no Content-Length, ends with the connection
+    const uint32_t idle_ms = _requestTimeout_ms > 0 ? _requestTimeout_ms : HTTPCLIENT_DEFAULT_TCP_TIMEOUT;
+    uint8_t buffer[1024];
+    unsigned long lastData_ms = millis();
+
+    while (size < 0 || body.length() < (size_t)size)
+    {
+        if ((long)(millis() - deadline_ms) >= 0)
+        {
+            return ERROR_RESPONSE_TIMEOUT;
+        }
+        const int available = stream->available();
+        if (available > 0)
+        {
+            size_t n = std::min((size_t)available, sizeof(buffer));
+            if (size >= 0)
+            {
+                n = std::min(n, (size_t)size - body.length());
+            }
+            const int got = stream->read(buffer, n);
+            if (got > 0)
+            {
+                try { body.append((const char*)buffer, (size_t)got); }
+                catch (...) { return HTTPC_ERROR_TOO_LESS_RAM; }
+                lastData_ms = millis();
+                if (esp_task_wdt_status(nullptr) == ESP_OK)
+                {
+                    esp_task_wdt_reset();
+                }
+                continue;
+            }
+        }
+        if (!stream->connected())
+        {
+            // without a Content-Length the closed connection is the end
+            return size < 0 ? 0 : HTTPC_ERROR_CONNECTION_LOST;
+        }
+        if ((uint32_t)(millis() - lastData_ms) >= idle_ms)
+        {
+            return HTTPC_ERROR_READ_TIMEOUT;
+        }
+        delay(1);
+    }
+    return 0;
+}
 
 void IotEspHttp::_classifyError(IotHttpResponse& oResponse, bool newConnection) const
 {
@@ -566,7 +633,9 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
     {
         // what getString() does, into the std::string directly (no String
         // copy of a large body) and with a deadline for the whole request
-        _BodySink sink(oResponse.body, start + _responseTimeout_ms);
+        const unsigned long deadline_ms = start + _responseTimeout_ms;
+        const bool chunked = http.header(TRANSFER_ENCODING).equalsIgnoreCase("chunked");
+        int readError = 0;
         bool reserved = true;
         if (http.getSize() > 0)
         {
@@ -575,20 +644,36 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
         }
         if (!reserved)
         {
-            log_e("IotEspHttp: no memory for a body of %d bytes", http.getSize());
-            oResponse.status = HTTPC_ERROR_TOO_LESS_RAM;
-            http.setReuse(false);  // the unread body is still in flight
+            readError = HTTPC_ERROR_TOO_LESS_RAM;
+        } else if (chunked)
+        {
+            _BodySink sink(oResponse.body, deadline_ms);
+            http.writeToStream(&sink);
+            if (sink.expired())
+            {
+                readError = ERROR_RESPONSE_TIMEOUT;
+            }
         } else if (http.getSize() != 0)
         {
-            http.writeToStream(&sink);
+            readError = _readBody(http, oResponse.body, deadline_ms);
         }
-        if (sink.expired())
+        if (readError != 0)
         {
-            log_e("IotEspHttp: response not complete within %lu ms, %u bytes received",
-                (unsigned long)_responseTimeout_ms, (unsigned)oResponse.body.length());
-            oResponse.status = ERROR_RESPONSE_TIMEOUT;
+            if (readError == ERROR_RESPONSE_TIMEOUT)
+            {
+                log_e("IotEspHttp: response not complete within %lu ms, %u bytes received",
+                    (unsigned long)_responseTimeout_ms, (unsigned)oResponse.body.length());
+            } else if (readError == HTTPC_ERROR_TOO_LESS_RAM)
+            {
+                log_e("IotEspHttp: no memory for a body of %d bytes", http.getSize());
+            } else
+            {
+                log_e("IotEspHttp: body incomplete, %u of %d bytes (%d)",
+                    (unsigned)oResponse.body.length(), http.getSize(), readError);
+            }
+            oResponse.status = readError;
             oResponse.body.clear();
-            http.setReuse(false);
+            http.setReuse(false);  // the rest of the body may still be in flight
             http.end();
             oResponse.elapsed_ms = (uint32_t)(millis() - start);
             _classifyError(oResponse, newConnection);
@@ -596,13 +681,12 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
         }
 
         // writeToStream() stops at what it got: a read timeout, a dropped
-        // connection or a failed allocation yields a short or empty body under
-        // the server's status. Delivered as a success, a cache would keep it
+        // connection or a failed allocation yields a short or empty chunked
+        // body under the server's status. Delivered as a success, a cache would keep it
         // with the new ETag, so report it as the transport error it is.
         // The size is the Content-Length; for a chunked body HTTPClient sets
         // it only once the last chunk arrived, so -1 then means it broke off.
         const int expected = http.getSize();
-        const bool chunked = http.header(TRANSFER_ENCODING).equalsIgnoreCase("chunked");
         const bool incomplete = expected >= 0
             ? oResponse.body.length() != (size_t)expected
             : chunked;
@@ -856,14 +940,24 @@ bool IotWifiNetwork::applyMaxTxPower() const
     {
         return true;
     }
-    if (!WiFi.setTxPower((wifi_power_t)_txPower_qdBm))
+    // the IDF directly, not WiFi.setTxPower(): that one checks WiFi.STA.started(),
+    // which the STA_START event sets some time after mode() has returned,
+    // while the driver only requires esp_wifi_start(), which mode() has done
+    const esp_err_t err = esp_wifi_set_max_tx_power(_txPower_qdBm);
+    if (err != ESP_OK)
     {
-        log_w("IotWifiNetwork: setting max tx power %d (0.25 dBm) failed", (int)_txPower_qdBm);
+        log_w("IotWifiNetwork: setting max tx power to %d.%02d dBm failed: %s",
+            _txPower_qdBm / 4, (_txPower_qdBm % 4) * 25, esp_err_to_name(err));
         return false;
     }
     // the driver maps the request to its nearest supported level
-    log_i("IotWifiNetwork: max tx power %d requested, %d in effect (0.25 dBm)",
-        (int)_txPower_qdBm, (int)WiFi.getTxPower());
+    int8_t effective_qdBm = 0;
+    if (esp_wifi_get_max_tx_power(&effective_qdBm) == ESP_OK)
+    {
+        log_i("IotWifiNetwork: max tx power %d.%02d dBm requested, %d.%02d dBm in effect",
+            _txPower_qdBm / 4, (_txPower_qdBm % 4) * 25,
+            effective_qdBm / 4, (effective_qdBm % 4) * 25);
+    }
     return true;
 }
 
