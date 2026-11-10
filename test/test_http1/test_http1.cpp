@@ -160,6 +160,27 @@ void test_parser_content_length_body_in_any_split()
     }
 }
 
+void test_parser_reserves_the_content_length()
+{
+    std::string body;
+    ResponseParser parser;
+    parser.begin(false, COLLECT, body);
+    const std::string head = "HTTP/1.1 200 OK\r\nContent-Length: 50000\r\n\r\n";
+    parser.feed(head.data(), head.size());
+    TEST_ASSERT_GREATER_OR_EQUAL(50000, body.capacity());
+}
+
+void test_parser_absurd_content_length_is_out_of_memory()
+{
+    std::string body;
+    ResponseParser parser;
+    parser.begin(false, COLLECT, body);
+    const std::string head = "HTTP/1.1 200 OK\r\nContent-Length: 999999999999999999\r\n\r\n";
+    parser.feed(head.data(), head.size());
+    TEST_ASSERT_TRUE(parser.failed());
+    TEST_ASSERT_EQUAL((int)ResponseParser::Error::OutOfMemory, (int)parser.error());
+}
+
 void test_parser_head_complete_before_body()
 {
     std::string body;
@@ -386,6 +407,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_request_head_caller_overrides_defaults);
     RUN_TEST(test_header_safety);
     RUN_TEST(test_parser_content_length_body_in_any_split);
+    RUN_TEST(test_parser_reserves_the_content_length);
+    RUN_TEST(test_parser_absurd_content_length_is_out_of_memory);
     RUN_TEST(test_parser_head_complete_before_body);
     RUN_TEST(test_parser_stops_at_the_end_of_the_response);
     RUN_TEST(test_parser_chunked_body_in_any_split);

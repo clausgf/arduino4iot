@@ -41,3 +41,6 @@
 # Build-time secrets (copy secrets-example.ini -> secrets.ini)
 secrets.ini
 
+
+# On-device tests: generated per host (address, test certificates)
+test/device/generated/

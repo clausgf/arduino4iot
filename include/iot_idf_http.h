@@ -72,7 +72,8 @@ public:
     static constexpr int ERROR_INVALID_URL = -101;
     static constexpr int ERROR_NO_SERVER_TRUST = -102;  ///< https:// without a TLS mode
 
-    void setTls(const IotTlsConfig& tls) override { _tlsConfig = &tls; }
+    /// Also closes the connection, which was opened with the previous trust.
+    void setTls(const IotTlsConfig& tls) override { close(); _tlsConfig = &tls; }
     bool hasServerTrust() const override;
     void setConnectTimeout_ms(uint32_t timeout_ms) override;
     void setRequestTimeout_ms(uint32_t timeout_ms) override;

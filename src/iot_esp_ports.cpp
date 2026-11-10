@@ -314,9 +314,18 @@ void IotEspHttp::_applyTls()
 
 WiFiClient& IotEspHttp::_clientFor(const std::string& url)
 {
+    const bool https = url.rfind("https://", 0) == 0;
+    if (_client != nullptr && https != (_secureClient != nullptr))
+    {
+        // the other scheme needs the other client
+        close();
+        delete _client;
+        _client = nullptr;
+        _secureClient = nullptr;
+    }
     if (_client == nullptr)
     {
-        if (url.rfind("https://", 0) == 0)
+        if (https)
         {
             log_d("Create WiFiClientSecure");
             _secureClient = new WiFiClientSecure();

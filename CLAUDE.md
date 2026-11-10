@@ -21,9 +21,14 @@ pio test -e native -f test_ports    # run one suite: test_result | test_telemetr
                                     # test_rtc_log | test_http1
 ```
 
-- **ESP32 builds are never done from this repo directly.** There is no ESP32 env in
-  `platformio.ini` (its only env is `native`, for tests). The library is compiled on
-  target only via `pio ci` — CI does this for `esp32dev` and `esp32-s3-devkitc-1`
+- **On-device tests:** `pio test -e device` (ESP32 DevKit v1 on USB,
+  `test/device/`, see `docs/device_tests.md`). A custom Unity runner starts a
+  test server on the host; WiFi credentials come from the device's NVS. Never
+  run in CI. Run them after changes to the adapters (HTTP, WiFi, NVS) and
+  before a release; flashing replaces the application on the devkit.
+- **ESP32 builds of the library itself are not done from this repo directly.**
+  Apart from `device` (tests only), `platformio.ini` has the env `native`. The
+  library is compiled on target via `pio ci` — CI does this for `esp32dev` and `esp32-s3-devkitc-1`
   using the **pioarduino** platform (the PlatformIO registry `espressif32` ships only
   arduino-esp32 2.x; this library needs 3.x / ESP-IDF 5 and C++20). To reproduce a
   target build locally, mirror the `pio ci` invocation in `.github/workflows/ci.yml`.

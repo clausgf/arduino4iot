@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <stdexcept>
 
 namespace iot_http1
 {
@@ -457,6 +458,15 @@ void ResponseParser::_onHeadComplete()
     {
         _remaining = (uint64_t)_contentLength;
         _state = _remaining == 0 ? State::Done : State::Body;
+        // at once: growing step by step would need the old and the doubled
+        // buffer together, which a fragmented heap often cannot provide
+        try
+        {
+            _body->reserve(_body->size() + (size_t)_remaining);
+        } catch (const std::exception&)  // bad_alloc, or length_error beyond max_size()
+        {
+            _fail(Error::OutOfMemory);
+        }
     } else
     {
         _state = State::BodyUntilClose;

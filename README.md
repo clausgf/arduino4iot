@@ -146,6 +146,8 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 ## Development
 
 - Native unit tests: `pio test -e native`
+- On-device tests against a devkit on USB: `pio test -e device`, see
+  [docs/device_tests.md](docs/device_tests.md). Run by hand, not in CI.
 - The CI workflow (GitHub Actions) runs the native tests and builds the example for ESP32 and ESP32-S3 with arduino-esp32 3.x.
 
 ## Open points
