@@ -25,6 +25,10 @@ jobs:
         run: pip install --upgrade platformio
       - name: Run native unit tests
         run: pio test -e native
+      - name: Run native unit tests under AddressSanitizer and UBSan
+        run: pio test -e native_asan
+      - name: Check that the core headers compile without Arduino
+        run: python scripts/check_architecture.py headers
 
   build-example:
     name: Build example (${{ matrix.board }})
@@ -55,7 +59,14 @@ jobs:
           --project-option="platform=https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20/platform-espressif32.zip"
           --project-option="framework=arduino"
           --project-option="lib_deps=bblanchon/ArduinoJson@^7.0.0"
+          --keep-build-dir --build-dir=build-main
           examples/main.cpp
+      - name: Check that the optional adapters are not linked
+        run: >
+          python scripts/check_architecture.py symbols
+          build-main/.pio/build/${{ matrix.board }}/firmware.elf
+          --absent IotAp,IotNtpClock,IotAdcBattery,IotCallbackBattery,IotEspHttp
+          --present IotIdfHttp,IotApi
 
       - name: Build AP provisioning example
         # separate sketch on purpose: IotAp is opt-in via
@@ -68,4 +79,14 @@ jobs:
           --project-option="platform=https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20/platform-espressif32.zip"
           --project-option="framework=arduino"
           --project-option="lib_deps=bblanchon/ArduinoJson@^7.0.0"
+          --keep-build-dir --build-dir=build-ap
           examples/ap_provisioning/main.cpp
+      - name: Check that the AP example does link the optional adapters
+        run: >
+          python scripts/check_architecture.py symbols
+          build-ap/.pio/build/${{ matrix.board }}/firmware.elf
+          --present IotAp,IotNtpClock,IotAdcBattery,IotIdfHttp
+      - name: Report the firmware sizes
+        run: |
+          python scripts/check_architecture.py size build-main/.pio/build/${{ matrix.board }}/firmware.elf --label "${{ matrix.board }}, minimal example"
+          python scripts/check_architecture.py size build-ap/.pio/build/${{ matrix.board }}/firmware.elf --label "${{ matrix.board }}, AP provisioning example"

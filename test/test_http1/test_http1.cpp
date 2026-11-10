@@ -65,6 +65,10 @@ void test_url_rejects_bad_input()
     TEST_ASSERT_FALSE(parseUrl("https://host:70000/", url));
     TEST_ASSERT_FALSE(parseUrl("https://host:8a/", url));
     TEST_ASSERT_FALSE(parseUrl("https://user:pw@host/", url));
+    // would end the request line, or split it
+    TEST_ASSERT_FALSE(parseUrl("https://host/a\r\nX-Injected: 1", url));
+    TEST_ASSERT_FALSE(parseUrl("https://host/a b", url));
+    TEST_ASSERT_FALSE(parseUrl("https://ho st/", url));
 }
 
 // *****************************************************************************

@@ -107,6 +107,12 @@ bool parseUrl(const std::string& url, Url& oUrl)
     {
         return false;
     }
+    // a space or control character has to be percent-encoded; taken as it is,
+    // a CR or LF would end the request line
+    for (unsigned char c : url)
+    {
+        if (c <= 0x20 || c == 0x7f) { return false; }
+    }
 
     const size_t end = url.find_first_of("/?#", start);
     const std::string authority = url.substr(start, end == std::string::npos ? std::string::npos : end - start);
@@ -460,6 +466,13 @@ void ResponseParser::_onHeadComplete()
         _state = _remaining == 0 ? State::Done : State::Body;
         // at once: growing step by step would need the old and the doubled
         // buffer together, which a fragmented heap often cannot provide
+        // A length beyond MAX_BODY_LENGTH cannot fit, and on a 32-bit target
+        // would not even survive the conversion to size_t.
+        if (_body->size() > MAX_BODY_LENGTH || _remaining > MAX_BODY_LENGTH - _body->size())
+        {
+            _fail(Error::OutOfMemory);
+            return;
+        }
         try
         {
             _body->reserve(_body->size() + (size_t)_remaining);

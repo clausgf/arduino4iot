@@ -3,9 +3,10 @@
  * Copyright (c) 2023 clausgf@github. See LICENSE.md for legal information.
  */
 
-#include "Arduino.h"
+#include <cstring>
 
 #include "iot_api.h"
+#include "iot_log.h"
 #include "iot_logger.h"
 #include "iot_rtc_log.h"
 #include "iot_rtc_slot.h"
@@ -23,7 +24,7 @@ static RTC_NOINIT_ATTR IotRtcSlot<IotRtcLog<IOT_RTC_LOG_SIZE>> rtcLog;
 #endif
 
 /// Keep @p lines for a later cycle. The first lines a cycle keeps are led by a
-/// marker naming the cycle, since millis() alone cannot be dated or told
+/// marker naming the cycle, since a time stamp since boot alone cannot be dated or told
 /// apart once several cycles share the buffer.
 void IotLogger::_keepOffline(const std::string& lines)
 {
@@ -34,7 +35,7 @@ void IotLogger::_keepOffline(const std::string& lines)
         const std::string cycle = _offlineContext != nullptr ? _offlineContext() : std::string("unknown cycle");
         char marker[96];
         snprintf(marker, sizeof(marker), "I (%lu) iot: --- kept offline: %s ---\n",
-            (unsigned long)millis(), cycle.c_str());
+            (unsigned long)iotLogTimestamp_ms(), cycle.c_str());
         rtcLog->append(marker);
     }
     rtcLog->append(lines);
@@ -105,7 +106,7 @@ static void formatLine(char* logBuf, size_t logBufLen, IotLogger::Level level,
     {
         logLevelChar = ESP_LOG_LEVEL_CHARS[logLevelIndex];
     }
-    int headerChars = snprintf(logBuf, logBufLen, "%c (%lu) %s: ", logLevelChar, millis(), tag);
+    int headerChars = snprintf(logBuf, logBufLen, "%c (%lu) %s: ", logLevelChar, (unsigned long)iotLogTimestamp_ms(), tag);
     if (headerChars < 0 || (size_t)headerChars >= logBufLen) { return; }
     vsnprintf(logBuf + headerChars, logBufLen - headerChars, format, ap);
 

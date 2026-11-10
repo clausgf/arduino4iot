@@ -75,6 +75,9 @@ public:
     };
 
     static constexpr size_t MAX_LINE_LENGTH = 4096;
+    /// A Content-Length above this fails with OutOfMemory before anything is
+    /// allocated: more than the memory of any ESP32.
+    static constexpr size_t MAX_BODY_LENGTH = 256u * 1024u * 1024u;
 
     /**
      * Start a response.
@@ -86,7 +89,8 @@ public:
     void begin(bool headRequest, const std::vector<std::string>& collect, std::string& body);
 
     /// Parse @p length bytes. @return the number consumed: all of them, or
-    /// fewer once the response is complete or the parser failed.
+    /// fewer once the response is complete or the parser failed. After a
+    /// failure the count says nothing; the connection is unusable anyway.
     size_t feed(const char* data, size_t length);
 
     /// The connection ended: completes a body framed by the connection end,

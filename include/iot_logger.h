@@ -84,6 +84,7 @@ public:
 
 private:
     friend class Iot;
+    friend struct IotLoggerTest;  // test/test_logger
 
     /// Where to ask whether the buffer can be sent. Without one, flush() tries
     /// once the API is initialized and lets the request fail.

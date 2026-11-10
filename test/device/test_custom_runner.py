@@ -141,6 +141,12 @@ class _Connection:
         body, self.buffer = self.buffer[:length], self.buffer[length:]
         return method, target, headers, body
 
+    def _send(self, data):
+        """In pieces: the socket timeout bounds one sendall() as a whole, and a
+        large body over a weak link can take longer than that."""
+        for i in range(0, len(data), 8192):
+            self.sock.sendall(data[i:i + 8192])
+
     def _respond(self, status, body=b"", headers=None, head_only=False):
         reason = {200: "OK", 204: "No Content", 304: "Not Modified", 404: "Not Found"}.get(status, "X")
         out = [f"HTTP/1.1 {status} {reason}", f"X-Conn: {self.id}"]
@@ -151,7 +157,7 @@ class _Connection:
         data = ("\r\n".join(out) + "\r\n\r\n").encode()
         if not head_only and status not in (204, 304):
             data += body
-        self.sock.sendall(data)
+        self._send(data)
 
     @staticmethod
     def _pattern(n):
@@ -224,6 +230,22 @@ class _Connection:
             elif route == "malformed":
                 self.sock.sendall(b"HTX/1.1 200 OK\r\n\r\n")
                 return
+            elif route == "firmware":
+                # the image of the suite under test, as the OTA source
+                with open(sys._arduino4iot_device_test_firmware, "rb") as f:
+                    image = f.read()
+                variant = parts[1] if len(parts) > 1 else ""
+                # 64 KB of it are enough to fail, and quick over a weak link
+                if variant == "truncated":
+                    # complete as far as HTTP goes, but not a valid image
+                    self._respond(200, image[:65536])
+                elif variant == "cut":
+                    # the connection ends long before the announced length
+                    self._send(f"HTTP/1.1 200 OK\r\nContent-Length: {len(image)}\r\n\r\n".encode()
+                               + image[:65536])
+                    return
+                else:
+                    self._respond(200, image, {"ETag": '"fw1"', "Last-Modified": "Tue, 10 Nov 2026 08:00:00 GMT"})
             else:
                 self._respond(404, b"not found")
 
@@ -297,6 +319,9 @@ def _start_servers(base):
 class CustomTestRunner(UnityTestRunner):
 
     def setup(self):
+        build_dir = self.project_config.get("platformio", "build_dir")
+        sys._arduino4iot_device_test_firmware = os.path.join(
+            build_dir, self.test_suite.env_name, "firmware.bin")
         host = os.environ.get("DEVICE_TEST_HOST") or _default_host()
         base = int(os.environ.get("DEVICE_TEST_PORT_BASE", "18080"))
         os.makedirs(GENERATED, exist_ok=True)

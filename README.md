@@ -145,10 +145,15 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
 
 ## Development
 
-- Native unit tests: `pio test -e native`
+- Native unit tests: `pio test -e native`; the same under AddressSanitizer
+  and UndefinedBehaviorSanitizer: `pio test -e native_asan`.
 - On-device tests against a devkit on USB: `pio test -e device`, see
   [docs/device_tests.md](docs/device_tests.md). Run by hand, not in CI.
-- The CI workflow (GitHub Actions) runs the native tests and builds the example for ESP32 and ESP32-S3 with arduino-esp32 3.x.
+- The CI workflow (GitHub Actions) runs the native tests, also under the
+  sanitizers, and `scripts/check_architecture.py`: the core headers compile
+  without Arduino, and the minimal example links none of the optional
+  adapters. It builds both examples for ESP32 and ESP32-S3 with
+  arduino-esp32 3.x and reports their sizes.
 
 ## Open points
 
@@ -177,6 +182,8 @@ the linker drops every one an application does not reference.
   keep their values (`-1` connect, `-5` connection lost, `-11` read timeout);
   new are `-101` invalid URL and `-102` no TLS server trust. To go back to
   HTTPClient: `static IotEspHttp espHttp; iot.setHttp(espHttp);`.
+  URLs with spaces or control characters are rejected (`-101`); percent-encode
+  them.
 - **New in 4.1:** WiFi transmit power (`iot.wifi().setMaxTxPower_qdBm()`,
   config `wifi_tx_qdbm`); the setup AP on request (`iot.setSetupTrigger()` with
   `apProvisioning.waitForButton()`) showing device id and MAC

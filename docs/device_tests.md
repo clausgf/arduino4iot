@@ -1,7 +1,7 @@
 # On-device tests
 
 The native tests (`pio test -e native`) cover everything that is Arduino-free.
-What only the hardware can show - sockets, TLS, WiFi, NVS, the watchdog - is
+What only the hardware can show - sockets, TLS, WiFi, NVS, OTA, the watchdog - is
 covered by on-device tests, run by hand against a devkit on USB. They are not
 part of CI: the CI workflow runs `pio test -e native` only, and needs no
 device, no WiFi and no test server.
@@ -23,7 +23,9 @@ What it takes:
   needs nothing. Otherwise set `DEVICE_TEST_WIFI_SSID` and
   `DEVICE_TEST_WIFI_PASSWORD`. The tests only read the `iot` namespace; they
   write to `iot-test` only.
-- The device has to **reach this host** on TCP ports 18080-18082.
+- The device has to **reach this host** on TCP ports 18080-18082. Two cases
+  also need the internet (`www.google.com`, `badssl.com`, for the certificate
+  bundle); without it they are reported as ignored, not failed.
   `DEVICE_TEST_HOST` overrides the address (default: the one of the host's
   default route), `DEVICE_TEST_PORT_BASE` the ports.
 - `openssl` on the host, for the test certificates.
@@ -49,7 +51,9 @@ Before the first build it
 3. starts the test server, which runs until `pio test` ends:
    - `base`: HTTP, a small hand-written server that can also misbehave on
      purpose (trickling headers or body, a stall, a malformed status line,
-     dropping a request on a kept-alive connection);
+     dropping a request on a kept-alive connection). It also serves the
+     image of the suite under test as an OTA source, whole, truncated or cut
+     off mid-transfer;
    - `base+1`: the same over TLS with the test CA's certificate;
    - `base+2`: accepts TCP and never answers the TLS handshake;
    - `base+3`: closed.
@@ -63,17 +67,20 @@ can brown out at full power.
 | Suite | What it covers |
 |---|---|
 | `device/test_platform` | `IotNvsStore` round trip and integer widths, MAC before the connect, WiFi connect and reconnect with the transmit power in effect; reports IP, RSSI and connect time |
-| `device/test_http` | `IotIdfHttp`: Content-Length, chunked and until-close bodies, HEAD/204/304, POST with small and large bodies, keep-alive, repeating a request the server dropped; the phase and the bound of DNS failure, closed port, connect timeout, read timeout, trickling body and headers (whole-request deadline), malformed response; TLS with pinned CA, insecure, wrong CA (`-0x2700`), handshake timeout; the watchdog fed through an 8 s download under a 3 s watchdog. `IotEspHttp`: the basic cases as a fallback check. A throughput measurement of both (informational) |
+| `device/test_http` | `IotIdfHttp`: Content-Length, chunked and until-close bodies, HEAD/204/304, POST with small and large bodies, keep-alive, repeating a request the server dropped; the phase and the bound of DNS failure, closed port, connect timeout, read timeout, trickling body and headers (whole-request deadline), malformed response; TLS with pinned CA, insecure, wrong CA (`-0x2700`), handshake timeout; the certificate bundle against public servers (trusted; unknown CA `-0x3000`; wrong host name `-0x2700`); the watchdog fed through an 8 s download under a 3 s watchdog; no heap or socket leak over 30 rounds of requests, handshakes and failures. `IotEspHttp`: the basic cases and the leak check as a fallback check. A throughput measurement of both (informational) |
+| `device/test_ota` | The OTA download (`IotOtaInternal`): 404, data that is no image, a truncated image, a download cut off, an untrusted server - each fails and the device still boots what it runs. A valid image is written and activated (same app as the running one), then the boot partition is set back, so the suite never restarts the device |
 
 Timing assertions allow ±700 ms. The throughput depends on the radio link
 far more than on the code: at -86 dBm with 3 % packet loss, downloads beyond
-~20 KB are dominated by TCP retransmits. Place the devkit with a good signal
-(the platform suite reports the RSSI) and compare measurements made at the
-same place.
+~20 KB are dominated by TCP retransmits, and the 1 MB OTA image took between
+25 s and over 3 minutes. Place the devkit with a good signal (the platform
+suite reports the RSSI) and compare measurements made at the same place. The
+connect helper tries three times: on a weak link the WPA handshake times out
+now and then, which the driver reports as a wrong password.
 
 ## Not covered yet
 
-Deep sleep and the RTC state across it, OTA, AP provisioning, and the
-`iot` facade against a real nice4iot server. The first needs a test that
-spans a reset; the last writes to a server project and needs its own
-provisioning.
+Deep sleep and the RTC state across it, booting a new image (and the rollback),
+AP provisioning, and the `iot` facade against a real nice4iot server. The
+first two need a test that spans a reset; the last writes to a server
+project and needs its own provisioning.

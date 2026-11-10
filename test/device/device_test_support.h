@@ -53,15 +53,21 @@ inline IotWifiNetwork& deviceTestWifi()
     return wifi;
 }
 
-/// Connect, or fail the calling test with a reason.
+/// Connect, or fail the calling test with a reason. Three attempts: on a weak
+/// link the WPA handshake times out now and then, which the driver reports
+/// as a wrong password.
 inline void deviceTestConnect()
 {
     IotWifiNetwork& wifi = deviceTestWifi();
+    for (int attempt = 0; attempt < 3 && !wifi.isConnected(); ++attempt)
+    {
+        wifi.connect(15000);
+    }
     if (!wifi.isConnected())
     {
-        TEST_ASSERT_TRUE_MESSAGE(wifi.connect(15000),
-            "WiFi connect failed - no credentials in NVS namespace \"iot\" and none in "
-            "DEVICE_TEST_WIFI_SSID/_PASSWORD?");
+        const std::string message = "WiFi connect failed: " + wifi.lastError()
+            + " (credentials from NVS namespace \"iot\" or DEVICE_TEST_WIFI_SSID/_PASSWORD)";
+        TEST_FAIL_MESSAGE(message.c_str());
     }
 }
 

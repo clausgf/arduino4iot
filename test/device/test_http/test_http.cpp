@@ -8,6 +8,7 @@
  * fallback IotEspHttp.
  */
 
+#include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
 
 #include "../device_test_support.h"
@@ -20,6 +21,7 @@ static IotTlsConfig caTrust;
 static IotTlsConfig otherCaTrust;
 static IotTlsConfig insecureTrust;
 static IotTlsConfig noTrust;
+static IotTlsConfig bundleTrust;
 
 static IotHttpResponse request(IotHttp& http, const char* method, const std::string& url,
     const std::string& body = "", std::vector<std::string> collect = {})
@@ -297,8 +299,124 @@ void test_idf_tls_handshake_timeout()
     TEST_ASSERT_INT_WITHIN(700, 1500, (int)r.elapsed_ms);
 }
 
+void test_idf_bundle_trusts_a_public_server()
+{
+    idfHttp.setTls(bundleTrust);
+    IotHttpResponse r = get(idfHttp, "https://www.google.com/generate_204");
+    if (r.status < 0 && r.phase != IotTransportPhase::Tls)
+    {
+        TEST_IGNORE_MESSAGE("no internet access from the test network");
+    }
+    TEST_ASSERT_EQUAL(204, r.status);
+}
+
+/// @return the TLS error of a request to @p url under the bundle, or 1 if the
+/// server is out of reach (no internet), so the caller can skip.
+static int bundleTlsError(const char* url)
+{
+    idfHttp.close();
+    idfHttp.setTls(bundleTrust);
+    IotHttpResponse r = get(idfHttp, url);
+    if (r.status < 0 && r.phase != IotTransportPhase::Tls) { return 1; }
+    TEST_ASSERT_EQUAL_MESSAGE(IotIdfHttp::ERROR_CONNECT, r.status, url);
+    return r.tlsError;
+}
+
+void test_idf_bundle_rejects_untrusted_and_mismatched_certificates()
+{
+    const int selfSigned = bundleTlsError("https://self-signed.badssl.com/");
+    const int untrustedRoot = bundleTlsError("https://untrusted-root.badssl.com/");
+    const int wrongHost = bundleTlsError("https://wrong.host.badssl.com/");
+    if (selfSigned == 1 || untrustedRoot == 1 || wrongHost == 1)
+    {
+        TEST_IGNORE_MESSAGE("badssl.com out of reach");
+    }
+    // no CA of the bundle: its verify callback fails the chain
+    TEST_ASSERT_EQUAL(-0x3000, selfSigned);     // MBEDTLS_ERR_X509_FATAL_ERROR
+    TEST_ASSERT_EQUAL(-0x3000, untrustedRoot);
+    // a trusted chain for another name
+    TEST_ASSERT_EQUAL(-0x2700, wrongHost);      // MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
+}
+
 // *****************************************************************************
 // Throughput
+// *****************************************************************************
+// Resources
+// *****************************************************************************
+
+static size_t freeHeap() { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
+
+/// One round of everything that allocates: a kept-alive request, a new
+/// connection, a full TLS handshake, a failed handshake, a malformed
+/// response. A leaked socket shows as a failed connect once lwIP runs out.
+static void allocatingRound()
+{
+    TEST_ASSERT_EQUAL(200, get(idfHttp, deviceTestUrl("/hello")).status);
+    TEST_ASSERT_EQUAL(200, get(idfHttp, deviceTestUrl("/bytes/4000")).status);
+    idfHttp.close();
+    TEST_ASSERT_EQUAL(200, get(idfHttp, deviceTestUrl("/hello", true)).status);
+    idfHttp.setTls(otherCaTrust);
+    TEST_ASSERT_EQUAL(IotIdfHttp::ERROR_CONNECT, get(idfHttp, deviceTestUrl("/hello", true)).status);
+    idfHttp.setTls(caTrust);
+    TEST_ASSERT_EQUAL(IotIdfHttp::ERROR_MALFORMED_RESPONSE, get(idfHttp, deviceTestUrl("/malformed")).status);
+}
+
+void test_idf_leaks_neither_memory_nor_sockets()
+{
+    // warm up: lwIP keeps closed connections in TIME_WAIT for a while, and
+    // mbedTLS and the resolver allocate some state once
+    for (int i = 0; i < 10; ++i) { allocatingRound(); }
+    idfHttp.close();
+    delay(200);
+    const size_t before = freeHeap();
+
+    const int rounds = 30;
+    for (int i = 0; i < rounds; ++i) { allocatingRound(); }
+    idfHttp.setRequestTimeout_ms(300);
+    for (int i = 0; i < 3; ++i)
+    {
+        TEST_ASSERT_EQUAL(IotIdfHttp::ERROR_READ_TIMEOUT, get(idfHttp, deviceTestUrl("/stall")).status);
+    }
+    idfHttp.close();
+    delay(200);
+    const size_t after = freeHeap();
+
+    char text[160];
+    snprintf(text, sizeof(text), "free heap %u before, %u after %d rounds (%+d); minimum ever %u, largest block %u",
+        (unsigned)before, (unsigned)after, rounds, (int)after - (int)before,
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    TEST_MESSAGE(text);
+    // a leak of one allocation per round would be 30 of them; this allows
+    // for TIME_WAIT connections and allocator noise, not for that
+    TEST_ASSERT_INT_WITHIN_MESSAGE(2048, (int)before, (int)after, "free heap drifted");
+}
+
+void test_esp_leaks_neither_memory_nor_sockets()
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        TEST_ASSERT_EQUAL(200, get(espHttp, deviceTestUrl("/hello")).status);
+        TEST_ASSERT_EQUAL(200, get(espHttp, deviceTestUrl("/hello", true)).status);
+        espHttp.close();
+    }
+    delay(200);
+    const size_t before = freeHeap();
+    for (int i = 0; i < 20; ++i)
+    {
+        TEST_ASSERT_EQUAL(200, get(espHttp, deviceTestUrl("/hello")).status);
+        TEST_ASSERT_EQUAL(200, get(espHttp, deviceTestUrl("/hello", true)).status);
+        espHttp.close();
+    }
+    delay(200);
+    const size_t after = freeHeap();
+    char text[100];
+    snprintf(text, sizeof(text), "free heap %u before, %u after 20 rounds (%+d)",
+        (unsigned)before, (unsigned)after, (int)after - (int)before);
+    TEST_MESSAGE(text);
+    TEST_ASSERT_INT_WITHIN_MESSAGE(2048, (int)before, (int)after, "free heap drifted");
+}
+
 // *****************************************************************************
 
 static void measure(const char* name, IotHttp& http, bool https, size_t n)
@@ -358,6 +476,7 @@ void setup()
     otherCaTrust.mode = IotTlsMode::CaPin;
     otherCaTrust.caCertPem = DEVICE_TEST_OTHER_CA_PEM;
     insecureTrust.mode = IotTlsMode::Insecure;
+    bundleTrust.mode = IotTlsMode::Bundle;
 
     DEVICE_TEST_BEGIN();
     RUN_TEST(test_idf_content_length_and_headers);
@@ -385,6 +504,10 @@ void setup()
     RUN_TEST(test_idf_https_insecure);
     RUN_TEST(test_idf_https_wrong_ca_is_a_tls_error);
     RUN_TEST(test_idf_tls_handshake_timeout);
+    RUN_TEST(test_idf_bundle_trusts_a_public_server);
+    RUN_TEST(test_idf_bundle_rejects_untrusted_and_mismatched_certificates);
+    RUN_TEST(test_idf_leaks_neither_memory_nor_sockets);
+    RUN_TEST(test_esp_leaks_neither_memory_nor_sockets);
     RUN_TEST(test_throughput);
     RUN_TEST(test_idf_feeds_the_watchdog_during_a_slow_download);
     UNITY_END();

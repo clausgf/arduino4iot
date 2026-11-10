@@ -18,16 +18,20 @@ pio test -e native -f test_ports    # run one suite: test_result | test_telemetr
                                     # test_text | test_ap_text | test_ports |
                                     # test_lifecycle | test_token | test_config |
                                     # test_api | test_cache | test_rtc_slot |
-                                    # test_rtc_log | test_http1
+                                    # test_rtc_log | test_http1 |
+                                    # test_logger | test_fuzz
+pio test -e native_asan             # the same under ASan + UBSan (CI runs both)
+python scripts/check_architecture.py headers   # rule 1 below (CI)
 ```
 
 - **On-device tests:** `pio test -e device` (ESP32 DevKit v1 on USB,
   `test/device/`, see `docs/device_tests.md`). A custom Unity runner starts a
   test server on the host; WiFi credentials come from the device's NVS. Never
-  run in CI. Run them after changes to the adapters (HTTP, WiFi, NVS) and
-  before a release; flashing replaces the application on the devkit.
+  run in CI. Run them after changes to the adapters (HTTP, WiFi, NVS, OTA)
+  and before a release; flashing replaces the application on the devkit.
 - **ESP32 builds of the library itself are not done from this repo directly.**
-  Apart from `device` (tests only), `platformio.ini` has the env `native`. The
+  Apart from `device` (tests only), `platformio.ini` has the envs `native` and
+  `native_asan`. The
   library is compiled on target via `pio ci` — CI does this for `esp32dev` and `esp32-s3-devkitc-1`
   using the **pioarduino** platform (the PlatformIO registry `espressif32` ships only
   arduino-esp32 2.x; this library needs 3.x / ESP-IDF 5 and C++20). To reproduce a
@@ -35,7 +39,8 @@ pio test -e native -f test_ports    # run one suite: test_result | test_telemetr
   CI builds **both** examples per board: `examples/main.cpp` (minimal) and
   `examples/ap_provisioning/main.cpp` (every optional adapter wired in). The
   second exists so the opt-in paths keep being compiled; the flash difference
-  between the two is what the optional adapters cost.
+  between the two is what the optional adapters cost (CI reports both sizes
+  in the job summary).
 - Native tests require C++20 (`-std=gnu++20` in `platformio.ini`); on target the
   arduino-esp32 framework default (`gnu++2b`) suffices.
 
@@ -60,23 +65,27 @@ cannot. Everything that can, is Arduino-free and uses `std::string`.
 
 The services are Arduino-free including their implementations (`iot_api`,
 `iot_cache`, `iot_config`, `iot_token`, `iot_lifecycle`, `iot_ports`, `iot_result`,
-`iot_seed`), which is why `platformio.ini` compiles `src/` into the native test
+`iot_seed`, `iot_logger`, `iot_http1`), which is why `platformio.ini` compiles `src/` into the native test
 build (`test_build_src = yes`). Its `build_src_filter` includes everything and
 **excludes** the Arduino sources, so a new source file is tested by default and
 one that names Arduino breaks the native build until it is made Arduino-free or
-excluded there. Use `iot_log.h` rather than Arduino's logging macros.
+excluded there. Use `iot_log.h` rather than Arduino's logging macros; it also
+provides `iotLogTimestamp_ms()` instead of `millis()` and `RTC_NOINIT_ATTR`.
 
 **Rules that keep this true — check them when adding code:**
 
 1. A header in the "no Arduino" rows must compile standalone:
    `g++ -std=gnu++20 -fsyntax-only -I include -I <ArduinoJson/src> -x c++ <header>`.
-   Naming `String`, `Preferences`, `WiFi` or `HTTPClient` breaks it.
+   Naming `String`, `Preferences`, `WiFi` or `HTTPClient` breaks it. CI checks
+   every header but the adapters listed in `scripts/check_architecture.py`.
 2. Use `std::string` everywhere; `String` only at an Arduino call boundary
    (`Preferences`, `HTTPClient`, `WebServer`), converted on the spot. Keys stay
    `const char*`.
 3. **The core never names an optional adapter.** That is what lets the linker
    drop what an application does not use — `IotAp` (~42 KB), `IotNtpClock`,
-   `IotAdcBattery`. Verify with `nm -C firmware.elf | grep <Class>::`.
+   `IotAdcBattery`, and `IotEspHttp`. CI checks it on the minimal example with
+   `scripts/check_architecture.py symbols` (identical functions folded by the
+   linker are ignored); extend its `--absent` list for a new optional adapter.
 4. Test doubles live in `test/iot_fakes.h`, included as `"../iot_fakes.h"` — not
    in `include/`, so firmware cannot reach them.
 5. `include/` is the public interface. A header that no public header includes
