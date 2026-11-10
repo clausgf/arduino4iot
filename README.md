@@ -165,7 +165,17 @@ adapters in `iot_esp_ports.h`. Optional ports are held as pointers that may be
 no wall-clock time no `IotClock` — and the core names no optional adapter, so
 the linker drops every one an application does not reference.
 
-- **System telemetry fields in snake case (action required for dashboards).**
+- **New in 4.1:** WiFi transmit power (`iot.wifi().setMaxTxPower_qdBm()`,
+  config `wifi_tx_qdbm`); the setup AP on request (`iot.setSetupTrigger()` with
+  `apProvisioning.waitForButton()`) showing device id and MAC
+  (`iot.macAddress()`); the undervoltage check before the connect, with
+  `iot.setUndervoltageHandler()` / `defaultUndervoltageHandler()`, config
+  `battery_sleep_s` and a public `iot.defaultPanicHandler()`; failure counters
+  in the system telemetry; a bounded TLS handshake and the phase of a transport
+  error (`IotResult::phase`, `api.errorText()`). The config mirror is loaded at
+  the start of `begin()`, so the panic backoff and the connect use the server's
+  values.
+- **System telemetry fields in snake case (4.1, action required for dashboards).**
   `lastSleep_s` → `last_sleep_s`, `panicSleep_s` → `panic_sleep_s`, and the unit
   suffix in lower case like in the config keys, `battery_V` → `battery_v`. The
   `time` field is gone: strings are labels in nice4iot, and a label must not
