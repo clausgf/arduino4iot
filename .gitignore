@@ -44,3 +44,4 @@ secrets.ini
 
 # On-device tests: generated per host (address, test certificates)
 test/device/generated/
+__pycache__/
