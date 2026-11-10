@@ -392,12 +392,13 @@ public:
     void setFirmwareVersion(const std::string& version);
 
     /**
-     * @return the composite firmware identifier from the ESP application
-     * descriptor: "<project> <version> <date> <time> IDF <idf> sec <sec>
-     * ARDUINO x.y.z IOT a.b.c". In a PlatformIO/Arduino build the project/version
-     * come from the precompiled framework, so this identifies the build
-     * environment rather than the sketch - use firmwareVersion() for the
-     * actual firmware version. Reported as the "firmware_id" telemetry field.
+     * @return what identifies this build in one string, e.g.
+     * "1.4.0-3-gcce20b9 2026-11-10 13:03 ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0-5-ga57b942":
+     * firmwareVersion(), the project's last commit date (UTC), the Arduino
+     * core, the ESP-IDF release, arduino4iot (its git describe for a git
+     * checkout, else the release) and "sec <n>" for a secure version other
+     * than 0. Parts that are unknown are left out. Reported as the
+     * "firmware_id" telemetry field.
      */
     std::string firmwareId() const;
 

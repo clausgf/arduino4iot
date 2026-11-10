@@ -14,11 +14,20 @@ The version is a single `git describe --tags --dirty --always` string:
   - N commits past a tag:      0.10.0-3-gcce20b9   (+ "-dirty" if modified)
   - no tag at all:             cce20b9             (+ "-dirty")
 
-Graceful fallback: without git (e.g. a tarball install) the define is not set and
-getFirmwareVersion() returns empty / an app-provided override via
+Two more defines, both part of Iot::firmwareId():
+  - IOT_FW_DATE: the project's last commit date in UTC, "2026-11-10 13:03".
+    The commit date rather than the build time, so it changes only with a
+    commit and does not force a full rebuild on every build.
+  - IOT_LIB_VERSION: `git describe` of arduino4iot itself, e.g. 4.0.0-5-ga57b942,
+    when the library is a git checkout of its own (a local clone, or lib_deps
+    from a git URL); unset for a registry install, where IOT_VERSION_* says it.
+
+Graceful fallback: without git (e.g. a tarball install) the defines are not set and
+firmwareVersion() returns empty / an app-provided override via
 setFirmwareVersion(). Skip entirely with -DIOT_NO_GIT_VERSION.
 """
 
+import inspect
 import os
 import subprocess
 
@@ -36,13 +45,35 @@ def _has_define(name):
     return False
 
 
-def _git(args, default=""):
+def _library_dir():
+    # SCons executes this file without __file__; the frame knows its path
+    try:
+        script = inspect.getframeinfo(inspect.currentframe()).filename
+        return os.path.dirname(os.path.dirname(os.path.realpath(script)))
+    except Exception:
+        return os.getcwd()
+
+
+LIBRARY_DIR = _library_dir()
+
+
+def _git(args, default="", cwd=PROJECT_DIR):
     try:
         return subprocess.check_output(
-            ["git", "-C", PROJECT_DIR] + args, stderr=subprocess.DEVNULL
+            ["git", "-C", cwd] + args, stderr=subprocess.DEVNULL,
+            env=dict(os.environ, TZ="UTC"),
         ).decode().strip()
     except Exception:
         return default
+
+
+def _library_git_version():
+    # only if the library is the top of its own repository: a registry install
+    # under .pio/libdeps has no .git, and git would find the project's instead
+    top = _git(["rev-parse", "--show-toplevel"], cwd=LIBRARY_DIR)
+    if not top or os.path.realpath(top) != os.path.realpath(LIBRARY_DIR):
+        return ""
+    return _git(["describe", "--tags", "--dirty", "--always"], cwd=LIBRARY_DIR).lstrip("v")
 
 
 if not _has_define("IOT_NO_GIT_VERSION"):
@@ -53,6 +84,14 @@ if not _has_define("IOT_NO_GIT_VERSION"):
         or _git(["describe", "--tags", "--dirty", "--always"]) or "0.0.0"
     version = version.lstrip("v")
 
-    env.Append(CPPDEFINES=[
-        ("IOT_FW_VERSION", env.StringifyMacro(version)),
-    ])
+    defines = [("IOT_FW_VERSION", env.StringifyMacro(version))]
+
+    date = _git(["log", "-1", "--format=%cd", "--date=format-local:%Y-%m-%d %H:%M"])
+    if date:
+        defines.append(("IOT_FW_DATE", env.StringifyMacro(date)))
+
+    library_version = _library_git_version()
+    if library_version:
+        defines.append(("IOT_LIB_VERSION", env.StringifyMacro(library_version)))
+
+    env.Append(CPPDEFINES=defines)

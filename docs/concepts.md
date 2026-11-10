@@ -237,16 +237,33 @@ iot.telemetry.post("epaper", t, rtc->next);     // next cycle: last_refresh_ms
 or more, or a value beyond `N` places; it holds numbers only, since a label
 from a previous cycle would not be metadata of the current one.
 
-The firmware is reported as two fields: `firmware_id` (the composite ESP
-application descriptor — in a PlatformIO/Arduino build this identifies the
-framework, not the sketch) and `firmware_version`, which the library derives from
+The firmware is reported as `firmware_version`, which the library derives from
 the **consuming project's git** at build time via a pre-build script
 (`scripts/git_version.py`, wired through `library.json`), so a firmware reports a
 meaningful version with no boilerplate. The version is a single
 `git describe --tags --dirty --always` string — `0.10.0` exactly on a tag, else
 `0.10.0-3-gcce20b9` (with `-dirty` when the tree is modified), or the bare commit
 if there is no tag. An app can override it with `iot.setFirmwareVersion()`, or
-skip git with `-DIOT_NO_GIT_VERSION`.
+skip git with `-DIOT_NO_GIT_VERSION`. nice4iot also takes it as the device's
+reported firmware.
+
+`firmware_id` identifies the whole build in one string:
+
+```
+1.4.0-2-g622e017 2026-11-10 10:51 ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0-6-g3455250-dirty
+```
+
+— the firmware version, the project's last commit date in UTC, the Arduino
+core, the ESP-IDF release, and arduino4iot: its own `git describe` when the
+library is a git checkout (a local clone, `symlink://`, or `lib_deps` from a
+git URL), otherwise the release from `IOT_VERSION_*`. A secure version other
+than 0 is appended as `sec <n>`, unknown parts are left out. The commit date
+rather than the build time, because a define that changes with every build
+would force a full rebuild every time; for a `-dirty` build it is the date of
+the last commit. The project name, version, date and time of the ESP app
+descriptor are deliberately not used: in an Arduino build they describe the
+precompiled framework libraries (`arduino-lib-builder`, built months ago), not
+the firmware. At about 85 characters it stays within nice4iot's 128 per label.
 
 A third, optional field, `board`, identifies the hardware variant (as
 opposed to the firmware): set `-DIOT_BOARD_ID="waveshare_esp32_driver"` per

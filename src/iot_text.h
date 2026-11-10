@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 // *****************************************************************************
@@ -118,6 +119,44 @@ inline std::string formatMacAddress(const std::string& hex)
         out += hex[i];
     }
     return out;
+}
+
+/**
+ * The release part of a version string: "v5.4.1-1-g2f7dcd862a-dirty" ->
+ * "5.4.1". Drops a leading "v" and everything from the first "-".
+ */
+inline std::string releaseVersion(const std::string& version)
+{
+    const size_t start = (!version.empty() && version[0] == 'v') ? 1 : 0;
+    const size_t dash = version.find('-', start);
+    return version.substr(start, dash == std::string::npos ? std::string::npos : dash - start);
+}
+
+/**
+ * The firmware identifier: what identifies a build in one string, empty parts
+ * left out, e.g.
+ *   "1.4.0-3-gcce20b9 2026-11-10 13:03 ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0-5-ga57b942"
+ * "sec <n>" is appended only for a secure version other than 0.
+ */
+inline std::string firmwareId(const std::string& firmwareVersion, const std::string& firmwareDate,
+    const std::string& arduinoVersion, const std::string& idfVersion,
+    const std::string& iotVersion, uint32_t secureVersion)
+{
+    std::string id;
+    auto append = [&id](const char* label, const std::string& value)
+    {
+        if (value.empty()) { return; }
+        if (!id.empty()) { id += ' '; }
+        if (label != nullptr) { id += label; id += ' '; }
+        id += value;
+    };
+    append(nullptr, firmwareVersion);
+    append(nullptr, firmwareDate);
+    append("ARDUINO", arduinoVersion);
+    append("IDF", idfVersion);
+    append("IOT", iotVersion);
+    if (secureVersion != 0) { append("sec", std::to_string(secureVersion)); }
+    return id;
 }
 
 } // namespace iot_text

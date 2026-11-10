@@ -169,7 +169,9 @@ the linker drops every one an application does not reference.
   `lastSleep_s` → `last_sleep_s`, `panicSleep_s` → `panic_sleep_s`, and the unit
   suffix in lower case like in the config keys, `battery_V` → `battery_v`. The
   `time` field is gone: strings are labels in nice4iot, and a label must not
-  change with every post. New fields:
+  change with every post. `firmware_id` now holds only what identifies the
+  build, e.g. `1.4.0-2-g622e017 2026-11-10 10:51 ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0-6-g3455250`
+  (see [Telemetry](docs/concepts.md#telemetry)). New fields:
   `reset_reason`, `panic_count`, `crash_count`, `undervoltage_count`, see
   [Telemetry](docs/concepts.md#telemetry).
 - **`config.json` keys renamed (action required).** One key now names a value in

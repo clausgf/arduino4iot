@@ -124,6 +124,31 @@ void test_mac_empty_stays_empty()
 }
 
 // *****************************************************************************
+// releaseVersion, firmwareId
+// *****************************************************************************
+
+void test_release_version_drops_v_and_suffix()
+{
+    TEST_ASSERT_EQUAL_STRING("5.4.1", releaseVersion("v5.4.1-1-g2f7dcd862a-dirty").c_str());
+    TEST_ASSERT_EQUAL_STRING("5.4.1", releaseVersion("5.4.1").c_str());
+    TEST_ASSERT_EQUAL_STRING("", releaseVersion("").c_str());
+}
+
+void test_firmware_id_joins_all_parts()
+{
+    TEST_ASSERT_EQUAL_STRING(
+        "1.4.0-3-gcce20b9 2026-11-10 13:03 ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0-5-ga57b942",
+        firmwareId("1.4.0-3-gcce20b9", "2026-11-10 13:03", "3.2.0", "5.4.1",
+                   "4.0.0-5-ga57b942", 0).c_str());
+}
+
+void test_firmware_id_leaves_out_empty_parts_and_adds_a_secure_version()
+{
+    TEST_ASSERT_EQUAL_STRING("ARDUINO 3.2.0 IDF 5.4.1 IOT 4.0.0 sec 2",
+        firmwareId("", "", "3.2.0", "5.4.1", "4.0.0", 2).c_str());
+}
+
+// *****************************************************************************
 
 int main(int argc, char **argv)
 {
@@ -141,5 +166,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_chunk_full_iteration_terminates_and_covers_body);
     RUN_TEST(test_mac_gets_colons);
     RUN_TEST(test_mac_empty_stays_empty);
+    RUN_TEST(test_release_version_drops_v_and_suffix);
+    RUN_TEST(test_firmware_id_joins_all_parts);
+    RUN_TEST(test_firmware_id_leaves_out_empty_parts_and_adds_a_secure_version);
     return UNITY_END();
 }

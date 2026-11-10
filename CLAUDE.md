@@ -182,8 +182,13 @@ pre-build and injects `IOT_FW_VERSION` from **the consuming project's** git:
 **not** the process CWD — PlatformIO's CWD points at the library's own libdeps
 checkout, so a bare `git` would report *this* library's version instead of the
 firmware's. Falls back gracefully (define unset) without git; skip with
-`-DIOT_NO_GIT_VERSION`. Reported as the `firmware_version` telemetry field;
-`firmware_id` is the separate ESP app-descriptor composite.
+`-DIOT_NO_GIT_VERSION`. Reported as the `firmware_version` telemetry field.
+The script also injects `IOT_FW_DATE` (the project's last commit date, UTC —
+not the build time, which would force a full rebuild on every build) and
+`IOT_LIB_VERSION` (`git describe` of this library, only when it is the top of
+its own git checkout). `firmware_id` combines them with the Arduino, IDF and
+library versions; the ESP app descriptor's name/version/date describe the
+precompiled framework, not the firmware, and are not used.
 
 ## Server contract (must stay in sync with nice4iot)
 

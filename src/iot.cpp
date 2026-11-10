@@ -10,6 +10,8 @@
 #include <esp_ota_ops.h>
 #include <nvs_flash.h>
 #include <esp_idf_version.h>
+#include <esp_app_desc.h>
+#include <esp_system.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
@@ -645,24 +647,33 @@ std::string Iot::firmwareVersion() const
 void Iot::setFirmwareVersion(const std::string& version)
 {
     _firmwareVersion = version;
+    _firmwareId.clear();  // firmwareId() leads with the version
 }
 
 std::string Iot::firmwareId() const
 {
     if (_firmwareId.empty())
     {
-        const esp_partition_t *running = esp_ota_get_running_partition();
-        esp_app_desc_t app_info;
-        if (esp_ota_get_partition_description(running, &app_info) == ESP_OK)
-        {
-            char buf[224];
-            snprintf(buf, sizeof(buf), "%s %s %s %s IDF %s sec %u ARDUINO %d.%d.%d IOT %d.%d.%d",
-                app_info.project_name, app_info.version, app_info.date, app_info.time,
-                app_info.idf_ver, (unsigned)app_info.secure_version,
-                ESP_ARDUINO_VERSION_MAJOR, ESP_ARDUINO_VERSION_MINOR, ESP_ARDUINO_VERSION_PATCH,
-                IOT_VERSION_MAJOR, IOT_VERSION_MINOR, IOT_VERSION_PATCH);
-            _firmwareId = buf;
-        }
+        // not the app descriptor's project name, version, date and time: in an
+        // Arduino build they describe the precompiled framework libraries
+#ifdef IOT_FW_DATE
+        const std::string date = IOT_FW_DATE;
+#else
+        const std::string date;
+#endif
+        char arduinoVersion[16];
+        snprintf(arduinoVersion, sizeof(arduinoVersion), "%d.%d.%d",
+            ESP_ARDUINO_VERSION_MAJOR, ESP_ARDUINO_VERSION_MINOR, ESP_ARDUINO_VERSION_PATCH);
+#ifdef IOT_LIB_VERSION
+        const std::string iotVersion = IOT_LIB_VERSION;
+#else
+        char iotVersion[16];
+        snprintf(iotVersion, sizeof(iotVersion), "%d.%d.%d",
+            IOT_VERSION_MAJOR, IOT_VERSION_MINOR, IOT_VERSION_PATCH);
+#endif
+        _firmwareId = iot_text::firmwareId(firmwareVersion(), date, arduinoVersion,
+            iot_text::releaseVersion(esp_get_idf_version()), iotVersion,
+            esp_app_get_description()->secure_version);
     }
     return _firmwareId;
 }
