@@ -216,8 +216,24 @@ void test_a_transport_error_carries_phase_tls_error_and_duration()
     TEST_ASSERT_EQUAL_INT((int)IotTransportPhase::Tls, (int)result.phase);
     TEST_ASSERT_EQUAL_INT(-0x2700, result.tlsError);
     TEST_ASSERT_EQUAL_UINT32(812, result.elapsed_ms);
-    TEST_ASSERT_EQUAL_STRING("fake error -1 (tls, TLS -0x2700: fake tls -9984) after 812 ms",
+    TEST_ASSERT_EQUAL_STRING("TLS handshake failed (TLS -0x2700: fake tls -9984) after 812 ms",
         f.api.errorText(result).c_str());
+}
+
+void test_error_text_names_the_connection_phase_not_the_generic_code()
+{
+    Fixture f;
+    f.begin();
+    f.http.replyTransportError(-1, IotTransportPhase::Dns, 0, 120);
+    f.http.replyTransportError(-1, IotTransportPhase::Connect, 0, 5003);
+    f.http.replyTransportError(-1, IotTransportPhase::Tls, 0, 10012);
+
+    TEST_ASSERT_EQUAL_STRING("server name not resolved after 120 ms",
+        f.api.errorText(f.api.get("file/x").result).c_str());
+    TEST_ASSERT_EQUAL_STRING("connect failed or timed out after 5003 ms",
+        f.api.errorText(f.api.get("file/x").result).c_str());
+    TEST_ASSERT_EQUAL_STRING("TLS handshake timed out after 10012 ms",
+        f.api.errorText(f.api.get("file/x").result).c_str());
 }
 
 void test_error_text_of_success_http_and_synthetic_results()
@@ -419,6 +435,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_a_transport_error_is_passed_through);
     RUN_TEST(test_a_transport_error_carries_phase_tls_error_and_duration);
     RUN_TEST(test_error_text_of_success_http_and_synthetic_results);
+    RUN_TEST(test_error_text_names_the_connection_phase_not_the_generic_code);
     RUN_TEST(test_timeouts_set_before_begin_reach_the_adapter);
     RUN_TEST(test_a_request_before_begin_is_not_configured);
     RUN_TEST(test_a_request_without_api_url_is_not_configured);

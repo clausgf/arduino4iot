@@ -143,20 +143,45 @@ std::string IotApi::errorText(const IotResult& result) const
             break;
     }
 
-    std::string out = _http != nullptr
-        ? _http->errorToString(result.transportError)
-        : "transport error " + std::to_string(result.transportError);
-    out += " (";
-    out += iotTransportPhaseToString(result.phase);
+    // a failure while setting up the connection is described by its phase:
+    // the transport reports all of them with one generic code (HTTPClient's
+    // "connection refused"), which would be wrong for a timeout or a TLS error
+    std::string out;
+    switch (result.phase)
+    {
+        case IotTransportPhase::Dns:
+            out = "server name not resolved";
+            break;
+        case IotTransportPhase::Connect:
+            out = "connect failed or timed out";
+            break;
+        case IotTransportPhase::Tls:
+            // without a TLS code, the adapter recognized a handshake timeout
+            out = result.tlsError != 0 ? "TLS handshake failed" : "TLS handshake timed out";
+            break;
+        case IotTransportPhase::Send:
+        case IotTransportPhase::Receive:
+        case IotTransportPhase::None:
+            out = _http != nullptr
+                ? _http->errorToString(result.transportError)
+                : "transport error " + std::to_string(result.transportError);
+            if (result.phase != IotTransportPhase::None)
+            {
+                out += " (";
+                out += iotTransportPhaseToString(result.phase);
+                out += ")";
+            }
+            break;
+    }
     if (result.tlsError != 0)
     {
         // mbedTLS documents its codes in hex
-        snprintf(text, sizeof(text), ", TLS -0x%04X", (unsigned)-result.tlsError);
+        snprintf(text, sizeof(text), " (TLS -0x%04X", (unsigned)-result.tlsError);
         out += text;
         const std::string tlsText = _http != nullptr ? _http->tlsErrorToString(result.tlsError) : "";
         if (!tlsText.empty()) { out += ": " + tlsText; }
+        out += ")";
     }
-    out += ")";
     if (result.elapsed_ms > 0)
     {
         snprintf(text, sizeof(text), " after %lu ms", (unsigned long)result.elapsed_ms);

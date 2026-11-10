@@ -938,8 +938,11 @@ therefore also carries:
 - `elapsed_ms`: how long the request took (set for every request).
 
 `api.errorText(result)` turns it into one line for a log or a display, e.g.
-`connection refused (tls, TLS -0x2700: X509 - Certificate verification failed) after 812 ms`,
-and the library logs exactly that line for a failed request.
+`TLS handshake failed (TLS -0x2700: X509 - Certificate verification failed) after 812 ms`,
+`TLS handshake timed out after 10012 ms` or `read Timeout (receive) after 5012 ms`,
+and the library logs exactly that line for a failed request. A failure while
+setting up the connection (`Dns`, `Connect`, `Tls`) is described by its phase,
+not by the transport's generic code.
 
 `IotEspHttp` finds the phase like this: before a new connection it resolves the
 server name itself (the connect that follows gets it from the DNS cache), so a

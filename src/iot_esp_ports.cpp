@@ -466,12 +466,14 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
     {
         const std::string host = iot_text::hostOfUrl(request.url);
         IPAddress address;
-        if (!WiFi.hostByName(host.c_str(), address))
+        // 1 on success, otherwise a (negative) lwIP error - not a bool
+        const int resolved = WiFi.hostByName(host.c_str(), address);
+        if (resolved != 1)
         {
             oResponse.status = HTTPC_ERROR_CONNECTION_REFUSED;
             oResponse.phase = IotTransportPhase::Dns;
             oResponse.elapsed_ms = (uint32_t)(millis() - start);
-            log_e("IotEspHttp: cannot resolve '%s'", host.c_str());
+            log_e("IotEspHttp: cannot resolve '%s' (%d)", host.c_str(), resolved);
             http.end();
             return oResponse.status;
         }

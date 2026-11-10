@@ -154,8 +154,9 @@ public:
 
     /**
      * Describe a failed result for a log line or a display, e.g.
-     * "connection refused (tls, mbedTLS -0x2700: X509 - Certificate
-     * verification failed) after 812 ms" or "HTTP 404".
+     * "TLS handshake failed (TLS -0x2700: X509 - Certificate verification
+     * failed) after 812 ms", "connect failed or timed out after 5003 ms",
+     * "read Timeout (receive) after 5012 ms" or "HTTP 404".
      *
      * @return "" for a success
      */
