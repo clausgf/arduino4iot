@@ -14,6 +14,7 @@
 #include <Preferences.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include <WiFiGeneric.h>      // wifi_power_t for setMaxTxPower_qdBm()
 
 #include "iot_ports.h"
 #include "iot_rtc_state.h"
@@ -235,6 +236,34 @@ public:
     void setFastReconnect(bool enabled) { _fastReconnect = enabled; }
     void setDhcpCache(bool enabled, uint32_t maxReuse = 20);
 
+    /// Leave the transmit power at the WiFi stack's default.
+    static constexpr int8_t DEFAULT_TX_POWER_QDBM = 0;
+
+    /**
+     * Limit the transmit power, in 0.25 dBm steps - the unit of ESP-IDF's
+     * esp_wifi_set_max_tx_power() and of wifi_power_t, so its constants pass
+     * directly:
+     *
+     *   iot.wifi().setMaxTxPower_qdBm(WIFI_POWER_8_5dBm);
+     *
+     * The driver accepts 8..84 (2..21 dBm) and maps other values to its
+     * nearest supported level. Applied on every connect, before associating.
+     * DEFAULT_TX_POWER_QDBM (0) leaves the stack's default untouched.
+     *
+     * Helps boards that fail to connect at full power (a poorly matched
+     * antenna) and batteries that brown out on the transmit current peaks.
+     * The server's config value `wifi_tx_qdbm` overrides this unless it is 0.
+     */
+    void setMaxTxPower_qdBm(int8_t power_qdBm) { _txPower_qdBm = power_qdBm; }
+
+    /// @return the limit set by setMaxTxPower_qdBm(), 0 for the stack's default.
+    int8_t maxTxPower_qdBm() const { return _txPower_qdBm; }
+
+    /// Apply the limit to the running WiFi driver, in whatever mode it is;
+    /// connect() calls it, and the SoftAP of the AP provisioning too. A no-op
+    /// for DEFAULT_TX_POWER_QDBM. @return false if the driver rejected it.
+    bool applyMaxTxPower() const;
+
     bool connect(uint32_t timeout_ms) override;
     void disconnect() override;
     bool isConnected() const override;
@@ -254,6 +283,7 @@ private:
     bool _staticIpConfigured;
     bool _dhcpCache;
     uint32_t _dhcpMaxReuse;
+    int8_t _txPower_qdBm;
     IPAddress _ip, _gw, _mask, _dns1, _dns2;
     uint32_t _connectDuration_ms;
 

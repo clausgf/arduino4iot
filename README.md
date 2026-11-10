@@ -27,7 +27,7 @@ The *nice4iot* server is intended for easy self hosting. Options include a Raspb
 - **OTA firmware updates:** ETag-based update check and streaming firmware download.
 - **File upload:** `iot.files.upload()` pushes files to the device-specific storage on the server.
 - **Forwarding:** `iot.forward.get()` proxies requests to upstream services configured in the project settings.
-- **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.wifi().setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.wifi().setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.wifi().setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry.
+- **Fast WiFi connect:** to cut the radio-on time of a wakeup, the last-good AP (BSSID + channel) is cached in RTC RAM for a scan-free reconnect (on by default, `iot.wifi().setFastReconnect()`); DHCP can be skipped either with a fixed static IP (`iot.wifi().setStaticIp()`) or by caching the DHCP-assigned lease in RTC and reusing it automatically (`iot.wifi().setDhcpCache()`, opt-in). All fall back automatically to a full-scan/DHCP connect. The connect duration is exposed as `wifi_connect_ms` telemetry. The transmit power can be limited (`iot.wifi().setMaxTxPower_qdBm()`, server-side `wifi_tx_qdbm`) for boards with a weak antenna match or batteries that brown out on transmit peaks.
 - **System management:** deep sleep cycle bookkeeping, watchdog supervision, battery monitoring with undervoltage shutdown, escalating panic/backoff strategy.
 - **Application state:** `IotRtcSlot<T>` keeps a struct in RTC RAM across deep sleep and resets it when it did not survive; an own `IotNvsStore` namespace holds what must survive a power loss.
 
@@ -190,7 +190,7 @@ the linker drops every one an application does not reference.
   ignored and disappear on `factoryReset()`; a `config.json` still listing them
   logs them as unknown and applies the rest. What remains configurable is the
   operational set: `log_level`, `sleep_s`, `battery_min_mv`, `panic_init_s`,
-  `panic_factor`, `panic_max_s`.
+  `panic_factor`, `panic_max_s`, `wifi_tx_qdbm`.
 - **Internal headers moved from `include/` to `src/`** (`iot_text.h`,
   `iot_ap_text.h`, `iot_ota_internal.h`, `iot_log.h`). `include/` is the public
   interface; none of these appear in a public header or a sketch.

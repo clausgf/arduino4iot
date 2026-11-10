@@ -621,6 +621,7 @@ IotWifiNetwork::IotWifiNetwork(IotRtcState& rtcState):
     _staticIpConfigured(false),
     _dhcpCache(false),
     _dhcpMaxReuse(20),
+    _txPower_qdBm(DEFAULT_TX_POWER_QDBM),
     _connectDuration_ms(0)
 {
 }
@@ -660,6 +661,23 @@ void IotWifiNetwork::setDhcpCache(bool enabled, uint32_t maxReuse)
     }
 }
 
+bool IotWifiNetwork::applyMaxTxPower() const
+{
+    if (_txPower_qdBm == DEFAULT_TX_POWER_QDBM)
+    {
+        return true;
+    }
+    if (!WiFi.setTxPower((wifi_power_t)_txPower_qdBm))
+    {
+        log_w("IotWifiNetwork: setting max tx power %d (0.25 dBm) failed", (int)_txPower_qdBm);
+        return false;
+    }
+    // the driver maps the request to its nearest supported level
+    log_i("IotWifiNetwork: max tx power %d requested, %d in effect (0.25 dBm)",
+        (int)_txPower_qdBm, (int)WiFi.getTxPower());
+    return true;
+}
+
 void IotWifiNetwork::_invalidateDhcpCache()
 {
     _rtc.dhcpIp = 0;
@@ -697,6 +715,9 @@ bool IotWifiNetwork::connect(uint32_t timeout_ms)
     // do not let the WiFi stack persist credentials on every connect (flash wear)
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
+    // after mode(), which starts the driver, and before begin(), so the
+    // association already runs at the limited power
+    applyMaxTxPower();
     if (!_hostname.isEmpty())
     {
         WiFi.setHostname(_hostname.c_str());

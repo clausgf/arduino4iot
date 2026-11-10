@@ -96,6 +96,9 @@ void setup()
     // Reuse the DHCP lease from RTC RAM on the next wakeups, renewing it via
     // DHCP every 20th connect. Tunes the built-in WiFi station.
     iot.wifi().setDhcpCache(true);
+    // Limit the transmit power to 8.5 dBm, e.g. for a board with a poorly
+    // matched antenna; the server's wifi_tx_qdbm overrides it unless 0.
+    iot.wifi().setMaxTxPower_qdBm(WIFI_POWER_8_5dBm);
 
     if (!iot.begin())
     {

@@ -10,6 +10,7 @@
 
 #include "iot.h"
 #include "iot_ap_text.h"
+#include "iot_esp_ports.h"
 
 // *****************************************************************************
 
@@ -78,6 +79,9 @@ bool IotAp::_startSoftAp()
         return false;
     }
     log_w("run: SoftAP '%s' started, ip=%s", ssid.c_str(), WiFi.softAPIP().toString().c_str());
+    // the firmware's limit, which describes the board; the server's
+    // wifi_tx_qdbm is tuning for a site and is not applied here
+    iot.wifi().applyMaxTxPower();
 
     // wildcard DNS: answer every query with our own IP (captive-portal spoof).
     // Without it the form is still reachable at the IP, just not as a portal.

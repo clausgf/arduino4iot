@@ -104,7 +104,12 @@ Iot::Iot() :
           .min = 1, .max = 16 }),
     _panicSleepDurationMax_s(config, IotBackoffPolicy{}.maxDuration_s, iot_config_keys::PANIC_MAX,
         { .title = "Backoff maximum (s)", .description = "Upper bound of the backoff sleep",
-          .min = 1, .max = 7 * 24 * 60 * 60 })
+          .min = 1, .max = 7 * 24 * 60 * 60 }),
+    _wifiTxPower_qdBm(config, IotWifiNetwork::DEFAULT_TX_POWER_QDBM, iot_config_keys::WIFI_TX_POWER,
+        { .title = "WiFi TX power (0.25 dBm)",
+          .description = "Maximum transmit power in 0.25 dBm steps, 8..84 (2..21 dBm); "
+                         "0 keeps the firmware's setting. Applies from the next connect.",
+          .min = 0, .max = 84 })
 {
     // initialize variables
     _deviceId = "";
@@ -151,6 +156,11 @@ void Iot::_beginCycle()
         log_e("nvs_flash_init failed: %s", esp_err_to_name(err));
     }
 
+    // the config mirror next: the backoff below, the log level and the WiFi
+    // settings of the connect take the server's values from the last cycle
+    config.begin(configStore());
+    logger.setLevel((IotLogger::Level)_logLevel.get());
+
     _registerExitHooks();
     _lifecycle.setBackoffPolicy(IotBackoffPolicy{
         _panicSleepDurationInit_s.get(),
@@ -190,16 +200,6 @@ void Iot::_initSubsystems()
     {
         log_e("Network not connected yet. Connect first.");
     }
-
-    // read configuration again to allow overwriting hardcoded parameters with WiFi config
-    config.begin(configStore());
-    logger.setLevel((IotLogger::Level)_logLevel.get());
-
-    // the backoff parameters may have been changed by the server config
-    _lifecycle.setBackoffPolicy(IotBackoffPolicy{
-        _panicSleepDurationInit_s.get(),
-        _panicSleepDurationFactor.get(),
-        _panicSleepDurationMax_s.get() });
 
     // check the battery voltage
     if (_battery != nullptr && _batteryMin_mV.get() > 0)
@@ -255,6 +255,10 @@ bool Iot::begin(uint32_t timeout_ms)
     {
         defaultNetwork().setCredentials(ssid, password);
         defaultNetwork().setHostname(deviceId());
+        if (_wifiTxPower_qdBm.get() != IotWifiNetwork::DEFAULT_TX_POWER_QDBM)
+        {
+            defaultNetwork().setMaxTxPower_qdBm((int8_t)_wifiTxPower_qdBm.get());
+        }
     }
 
     bool connected = _network->connect((uint32_t)timeout_ms);

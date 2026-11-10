@@ -425,6 +425,10 @@ Server values are **still mirrored into NVS** even for an overridden value, so
 they take effect from the next boot. The override is per cycle, not a veto.
 `clearOverride()` hands a value back to the server within the same cycle.
 
+`Iot::begin()` binds the mirror first, before the panic backoff and
+the network connect, so all of them already run with the server's values of
+the last cycle; `updateConfig()` later in the cycle applies a newer file.
+
 The rule of thumb: use the setter for values the application owns, and leave a
 value alone to let the server own it.
 
@@ -449,7 +453,7 @@ static IotConfigValue<std::string> rotation(config, "0deg", "rotation",
   `[min, max]` is clamped and logged, a string not in `enumValues` is rejected
   like a type mismatch and the previous value stays. A value the application
   `set()`s is not checked — it owns it. The library's own values carry limits
-  too (`sleep_s` ≥ 1, `log_level` 0–5, `panic_factor` 1–16, …).
+  too (`sleep_s` ≥ 1, `log_level` 0–5, `panic_factor` 1–16, `wifi_tx_qdbm` 0–84, …).
 - **Published:** `config.schemaJson()` builds a flat JSON Schema (type,
   compile-time default, title, description, minimum/maximum, enum) — the subset
   nice4iot turns into a typed form for `config.json`. `config.publishSchema()`
@@ -568,6 +572,31 @@ opt-in optimizations cut this, both with automatic fallback:
   retried, so a reassigned address costs at most one slow connect. Off by default
   because it trades a small correctness risk (a lease reassigned by the server
   before the renewal bound) for speed.
+
+### Transmit power
+
+`iot.wifi().setMaxTxPower_qdBm()` limits the transmit power, in 0.25 dBm steps
+(the unit of `esp_wifi_set_max_tx_power()` and `wifi_power_t`, so
+`WIFI_POWER_8_5dBm` passes directly; the driver accepts 8..84 = 2..21 dBm). It is
+applied on every connect between `WiFi.mode()` and `WiFi.begin()`, so the
+association already runs at the limited power. 0 leaves the stack's default.
+Two reasons to lower it: boards that fail to associate at full power (a poorly
+matched antenna), and batteries that brown out on the transmit current peaks.
+
+The server can override it with the config value `wifi_tx_qdbm` (0..84, 0 keeps
+the firmware's setting). Since the connect precedes `updateConfig()`, the value
+the connect sees is the NVS mirror of the last cycle, so a change on the server
+takes effect from the next wakeup. A board that cannot connect at full power
+never receives a server value: give it the setting in the firmware.
+
+The SoftAP of the first-time provisioning uses the firmware's setting too,
+since it describes the board; the server value is tuning for a site and does
+not apply there (the handler runs before `begin()` applies it). Without a
+firmware setting the AP keeps the stack's default.
+
+There is no telemetry field for it: the ESP32 has no automatic transmit power
+control, so the limit stays what was set. The connect logs the level the
+driver actually uses, which may be the nearest supported one.
 
 The connect also sets `WiFi.persistent(false)` so the WiFi stack does not write
 credentials to NVS on every connect (flash wear). The measured connect duration

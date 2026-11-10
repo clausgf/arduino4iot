@@ -35,6 +35,7 @@ namespace iot_config_keys
     inline constexpr const char* PANIC_INIT   = "panic_init_s";
     inline constexpr const char* PANIC_FACTOR = "panic_factor";
     inline constexpr const char* PANIC_MAX    = "panic_max_s";
+    inline constexpr const char* WIFI_TX_POWER = "wifi_tx_qdbm";
 }
 
 /// NVS namespaces and keys. Every key fits IotStore::MAX_KEY_LENGTH (15).

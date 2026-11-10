@@ -167,6 +167,7 @@ public:
      *   iot.wifi().setStaticIp(IPAddress(192,168,178,42), IPAddress(192,168,178,1),
      *                          IPAddress(255,255,255,0));
      *   iot.wifi().setDhcpCache(true);
+     *   iot.wifi().setMaxTxPower_qdBm(WIFI_POWER_8_5dBm);
      *
      * Needs #include <iot_esp_ports.h>. This is always the built-in adapter, also
      * after setNetwork() replaced it as the network in use.
@@ -491,6 +492,7 @@ private:
     IotConfigValue<int32_t> _panicSleepDurationInit_s;
     IotConfigValue<int32_t> _panicSleepDurationFactor;
     IotConfigValue<int32_t> _panicSleepDurationMax_s;
+    IotConfigValue<int32_t> _wifiTxPower_qdBm;
 
     /// Register the library's own exit hooks (log flush, connection close)
     /// exactly once; idempotent, so every exit path can call it.
