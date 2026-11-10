@@ -254,7 +254,9 @@ void test_timeouts_set_before_begin_reach_the_adapter()
     f.api.setConnectTimeout_ms(3000);
     f.api.setHandshakeTimeout_ms(7000);
     f.api.setRequestTimeout_ms(4000);
+    f.api.setResponseTimeout_ms(45000);
     f.begin();
+    TEST_ASSERT_EQUAL_UINT32(45000, f.http.responseTimeout_ms);
     TEST_ASSERT_EQUAL_UINT32(3000, f.http.connectTimeout_ms);
     TEST_ASSERT_EQUAL_UINT32(7000, f.http.handshakeTimeout_ms);
     TEST_ASSERT_EQUAL_UINT32(4000, f.http.requestTimeout_ms);

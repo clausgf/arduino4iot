@@ -49,6 +49,7 @@ void IotApi::begin(IotStore& store, IotHttp& http, IotClock& clock)
     if (_connectTimeout_ms > 0) { _http->setConnectTimeout_ms(_connectTimeout_ms); }
     if (_requestTimeout_ms > 0) { _http->setRequestTimeout_ms(_requestTimeout_ms); }
     if (_handshakeTimeout_ms > 0) { _http->setHandshakeTimeout_ms(_handshakeTimeout_ms); }
+    if (_responseTimeout_ms > 0) { _http->setResponseTimeout_ms(_responseTimeout_ms); }
 }
 
 void IotApi::end()
@@ -119,6 +120,12 @@ void IotApi::setHandshakeTimeout_ms(uint32_t timeout_ms)
 {
     _handshakeTimeout_ms = timeout_ms;
     if (_http != nullptr && timeout_ms > 0) { _http->setHandshakeTimeout_ms(timeout_ms); }
+}
+
+void IotApi::setResponseTimeout_ms(uint32_t timeout_ms)
+{
+    _responseTimeout_ms = timeout_ms;
+    if (_http != nullptr && timeout_ms > 0) { _http->setResponseTimeout_ms(timeout_ms); }
 }
 
 std::string IotApi::errorText(const IotResult& result) const

@@ -168,6 +168,8 @@ public:
     virtual void setRequestTimeout_ms(uint32_t timeout_ms) = 0;
     /// Bound the TLS handshake of a new connection.
     virtual void setHandshakeTimeout_ms(uint32_t timeout_ms) = 0;
+    /// Bound the whole request, so a response that trickles in ends too.
+    virtual void setResponseTimeout_ms(uint32_t timeout_ms) = 0;
 
     /**
      * Perform one request. Requests within a wakeup cycle share a keep-alive

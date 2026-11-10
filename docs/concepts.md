@@ -964,14 +964,21 @@ the cycle:
 | TCP connect | 5 s | `api.setConnectTimeout_ms()` |
 | TLS handshake | 6 s, in steps of the connect timeout (so up to 10 s) | `api.setHandshakeTimeout_ms()` |
 | response | 5 s per wait for data | `api.setRequestTimeout_ms()` |
+| whole request | 60 s, checked while the body arrives | `api.setResponseTimeout_ms()` |
 
 The TLS handshake needs its own bound: `NetworkClientSecure` waits up to
 120 s by default, longer than any watchdog. `IotEspHttp::send()` resets the
 task watchdog before each request, because a single `api.send()` can make
-three of them (request, re-provisioning after a 401, retry). A request whose
-phases all succeed slowly can still add up, so keep the sum of the timeouts
-well below the watchdog timeout (20 s by default). The three setters may be
-called before `iot.begin()`.
+three of them (request, re-provisioning after a 401, retry), and again
+whenever body data arrives. The per-wait response timeout alone would let a
+body that trickles in - a byte every few seconds - run forever; the deadline
+for the whole request ends it (`response took too long`, phase `receive`).
+It may exceed the watchdog timeout, since the watchdog is fed only while
+data arrives: a slow download of a large image completes, a stalled one
+still ends after the per-wait timeout. Up to the first body byte, keep the
+sum of the timeouts well below the watchdog timeout (20 s by default). The
+response headers are bounded only per wait: HTTPClient offers no hook there.
+The setters may be called before `iot.begin()`.
 
 OTA downloads go through `esp_https_ota`, with their own timeout, and are not
 covered by this.

@@ -153,6 +153,16 @@ public:
     void setHandshakeTimeout_ms(uint32_t timeout_ms);
 
     /**
+     * Set a deadline for the whole request, checked while the body arrives,
+     * so a response that trickles in ends too. The watchdog is fed while
+     * data arrives, so this may exceed the watchdog timeout and a slow but
+     * progressing download completes. May be called before begin(); 0 keeps
+     * the adapter's default, @see IotEspHttp::DEFAULT_RESPONSE_TIMEOUT_MS.
+     * @param timeout_ms the timeout in milliseconds
+     */
+    void setResponseTimeout_ms(uint32_t timeout_ms);
+
+    /**
      * Describe a failed result for a log line or a display, e.g.
      * "TLS handshake failed (TLS -0x2700: X509 - Certificate verification
      * failed) after 812 ms", "connect failed or timed out after 5003 ms",
@@ -294,6 +304,7 @@ private:
     uint32_t _connectTimeout_ms = 0;
     uint32_t _requestTimeout_ms = 0;
     uint32_t _handshakeTimeout_ms = 0;
+    uint32_t _responseTimeout_ms = 0;
     IotClock* _clock = nullptr;
     std::string _boardId;
 

@@ -382,6 +382,14 @@ void IotEspHttp::setHandshakeTimeout_ms(uint32_t timeout_ms)
     }
 }
 
+void IotEspHttp::setResponseTimeout_ms(uint32_t timeout_ms)
+{
+    if (timeout_ms > 0)
+    {
+        _responseTimeout_ms = timeout_ms;
+    }
+}
+
 void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
 {
     _requestTimeout_ms = timeout_ms;
@@ -391,10 +399,53 @@ void IotEspHttp::setRequestTimeout_ms(uint32_t timeout_ms)
     }
 }
 
+/**
+ * The body's destination: appends to a std::string, feeds the task watchdog
+ * while data arrives, and refuses to take more once the deadline has passed,
+ * which makes HTTPClient::writeToStream() stop with HTTPC_ERROR_STREAM_WRITE.
+ */
+class IotEspHttp::_BodySink : public Stream
+{
+public:
+    _BodySink(std::string& body, unsigned long deadline_ms): _body(body), _deadline_ms(deadline_ms) {}
+
+    bool expired() const { return _expired; }
+
+    size_t write(const uint8_t* data, size_t size) override
+    {
+        if ((long)(millis() - _deadline_ms) >= 0)
+        {
+            _expired = true;
+            return 0;
+        }
+        // progress: the per-read timeout bounds each wait, the deadline the sum
+        if (esp_task_wdt_status(nullptr) == ESP_OK)
+        {
+            esp_task_wdt_reset();
+        }
+        try { _body.append((const char*)data, size); }
+        catch (...) { return 0; }  // out of memory: reported as an incomplete body
+        return size;
+    }
+    size_t write(uint8_t c) override { return write(&c, 1); }
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+
+private:
+    std::string& _body;
+    unsigned long _deadline_ms;
+    bool _expired = false;
+};
+
 void IotEspHttp::_classifyError(IotHttpResponse& oResponse, bool newConnection) const
 {
     switch (oResponse.status)
     {
+        case ERROR_RESPONSE_TIMEOUT:
+            oResponse.phase = IotTransportPhase::Receive;
+            return;
         case HTTPC_ERROR_CONNECTION_REFUSED:  // any failure to connect
             break;
         case HTTPC_ERROR_SEND_HEADER_FAILED:
@@ -508,14 +559,43 @@ int IotEspHttp::send(const IotHttpRequest& request, IotHttpResponse& oResponse)
             oResponse.headers[key] = http.header(key.c_str()).c_str();
         }
     }
-    // a HEAD has no body, and a 304 body would be the cached resource
-    if (strcasecmp("HEAD", request.method) != 0 && oResponse.status != HTTP_CODE_NOT_MODIFIED)
+    // a HEAD has no body, a 304 body would be the cached resource, and a
+    // failed request has none to read
+    if (oResponse.status > 0 && strcasecmp("HEAD", request.method) != 0
+        && oResponse.status != HTTP_CODE_NOT_MODIFIED)
     {
-        // assign with the length: a binary body (e.g. a PNG) contains NUL bytes
-        const String body = http.getString();
-        oResponse.body.assign(body.c_str(), body.length());
+        // what getString() does, into the std::string directly (no String
+        // copy of a large body) and with a deadline for the whole request
+        _BodySink sink(oResponse.body, start + _responseTimeout_ms);
+        bool reserved = true;
+        if (http.getSize() > 0)
+        {
+            try { oResponse.body.reserve((size_t)http.getSize()); }
+            catch (...) { reserved = false; }
+        }
+        if (!reserved)
+        {
+            log_e("IotEspHttp: no memory for a body of %d bytes", http.getSize());
+            oResponse.status = HTTPC_ERROR_TOO_LESS_RAM;
+            http.setReuse(false);  // the unread body is still in flight
+        } else if (http.getSize() != 0)
+        {
+            http.writeToStream(&sink);
+        }
+        if (sink.expired())
+        {
+            log_e("IotEspHttp: response not complete within %lu ms, %u bytes received",
+                (unsigned long)_responseTimeout_ms, (unsigned)oResponse.body.length());
+            oResponse.status = ERROR_RESPONSE_TIMEOUT;
+            oResponse.body.clear();
+            http.setReuse(false);
+            http.end();
+            oResponse.elapsed_ms = (uint32_t)(millis() - start);
+            _classifyError(oResponse, newConnection);
+            return oResponse.status;
+        }
 
-        // getString() hands back what it got: a read timeout, a dropped
+        // writeToStream() stops at what it got: a read timeout, a dropped
         // connection or a failed allocation yields a short or empty body under
         // the server's status. Delivered as a success, a cache would keep it
         // with the new ETag, so report it as the transport error it is.
@@ -557,6 +637,10 @@ void IotEspHttp::close()
 
 std::string IotEspHttp::errorToString(int status) const
 {
+    if (status == ERROR_RESPONSE_TIMEOUT)
+    {
+        return "response took too long";
+    }
     return std::string(HTTPClient::errorToString(status).c_str());
 }
 

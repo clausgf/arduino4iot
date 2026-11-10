@@ -47,7 +47,7 @@ one of them:
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
 | Firmware update | `iot.ota.update()`, `iot.ota.validators()` |
-| HTTP to the server | `api.get()`, `api.post()`, `api.put()`, `api.head()`, `api.send()`, `api.getCached()`, `api.errorText()`, `api.setConnectTimeout_ms()`, `api.setHandshakeTimeout_ms()`, `api.setRequestTimeout_ms()` |
+| HTTP to the server | `api.get()`, `api.post()`, `api.put()`, `api.head()`, `api.send()`, `api.getCached()`, `api.errorText()`, `api.setConnectTimeout_ms()`, `api.setHandshakeTimeout_ms()`, `api.setRequestTimeout_ms()`, `api.setResponseTimeout_ms()` |
 | Provisioning | `api.updateProvisioning()` |
 | Configuration | `config.updateConfig()`, `IotConfigValue<T>`, `config.getInt()`/`getString()`/... |
 | Logging | `logger.info()`/`warn()`/`error()`, `logger.flush()` |

@@ -109,6 +109,13 @@ public:
     /// Above the connect timeout, so a TCP and a TLS timeout can be told
     /// apart by the time they took.
     static constexpr uint32_t DEFAULT_HANDSHAKE_TIMEOUT_MS = 6000;
+    /// The whole request, checked while the body arrives. Above the watchdog:
+    /// the watchdog is fed while data arrives, so a slow but progressing
+    /// download completes, and this ends one that trickles.
+    static constexpr uint32_t DEFAULT_RESPONSE_TIMEOUT_MS = 60000;
+    /// Transport error for a request that exceeded the response timeout,
+    /// below HTTPClient's codes (-1 .. -11).
+    static constexpr int ERROR_RESPONSE_TIMEOUT = -100;
 
     void setTls(const IotTlsConfig& tls) override;
     bool hasServerTrust() const override;
@@ -118,10 +125,12 @@ public:
     /// handshake waits in steps of the connect timeout, so a stalled handshake
     /// can take up to the next multiple of it.
     void setHandshakeTimeout_ms(uint32_t timeout_ms) override;
+    void setResponseTimeout_ms(uint32_t timeout_ms) override;
 
     /**
      * Perform one request. Resets the task watchdog first, since each request
-     * is bounded by the timeouts, and reports where a transport error
+     * is bounded by the timeouts, and while the body arrives; reports where a
+     * transport error
      * happened: the server name is resolved explicitly before a new
      * connection (a cache hit for the connect that follows), a TLS failure
      * carries the mbedTLS code, and a timeout without one is a TCP or a TLS
@@ -140,6 +149,9 @@ private:
     uint32_t _connectTimeout_ms = 0;   ///< 0: the HTTPClient default
     uint32_t _requestTimeout_ms = 0;   ///< 0: the HTTPClient default
     uint32_t _handshakeTimeout_ms = DEFAULT_HANDSHAKE_TIMEOUT_MS;
+    uint32_t _responseTimeout_ms = DEFAULT_RESPONSE_TIMEOUT_MS;
+
+    class _BodySink;
 
     /// Where a failed request broke off, @see send().
     void _classifyError(IotHttpResponse& oResponse, bool newConnection) const;

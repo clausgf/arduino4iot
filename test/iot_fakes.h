@@ -274,6 +274,7 @@ public:
     void setConnectTimeout_ms(uint32_t timeout_ms) override { connectTimeout_ms = timeout_ms; }
     void setRequestTimeout_ms(uint32_t timeout_ms) override { requestTimeout_ms = timeout_ms; }
     void setHandshakeTimeout_ms(uint32_t timeout_ms) override { handshakeTimeout_ms = timeout_ms; }
+    void setResponseTimeout_ms(uint32_t timeout_ms) override { responseTimeout_ms = timeout_ms; }
     void close() override { closeCount++; }
     std::string errorToString(int status) const override { return "fake error " + std::to_string(status); }
     std::string tlsErrorToString(int tlsError) const override { return "fake tls " + std::to_string(tlsError); }
@@ -321,6 +322,7 @@ public:
     uint32_t connectTimeout_ms = 0;
     uint32_t requestTimeout_ms = 0;
     uint32_t handshakeTimeout_ms = 0;
+    uint32_t responseTimeout_ms = 0;
     unsigned closeCount = 0;
 
     // --- test inspection ---
