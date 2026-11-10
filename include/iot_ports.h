@@ -332,16 +332,17 @@ private:
 // *****************************************************************************
 
 /// Why the device booted. Platform-independent projection of esp_reset_reason_t.
+/// The values are stable: they are reported as the reset_reason telemetry field.
 enum class IotResetReason
 {
-    Unknown,
-    PowerOn,     ///< power applied; RTC RAM is not valid
-    External,    ///< reset pin
-    Software,    ///< esp_restart()
-    Panic,       ///< exception / abort
-    Watchdog,    ///< any watchdog
-    Brownout,    ///< supply dipped - on a battery device usually the real story
-    DeepSleep,   ///< woke from deep sleep; RTC RAM is valid
+    Unknown   = 0,
+    PowerOn   = 1,  ///< power applied; RTC RAM is not valid
+    External  = 2,  ///< reset pin
+    Software  = 3,  ///< esp_restart()
+    Panic     = 4,  ///< exception / abort
+    Watchdog  = 5,  ///< any watchdog
+    Brownout  = 6,  ///< supply dipped - on a battery device usually the real story
+    DeepSleep = 7,  ///< woke from deep sleep; RTC RAM is valid
 };
 
 /// What ended the deep sleep. Platform-independent projection of esp_sleep_wakeup_cause_t.

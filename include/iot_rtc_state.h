@@ -38,6 +38,11 @@ struct IotRtcState
     /// software/watchdog reset, and a power loss legitimately starts over.
     int32_t  panicSleepDuration_s;
 
+    // --- failure counters, since the last power-on reset like bootCount ---
+    uint32_t panicCount;            ///< iot.panic() calls
+    uint32_t crashCount;            ///< starts after a crash, watchdog or brownout
+    uint32_t undervoltageCount;     ///< cycles that found the battery below battery_min_mv
+
     // --- clock ---
     int64_t  ntpLastSyncTime;       ///< unix seconds of the last successful sync, 0 = never
 

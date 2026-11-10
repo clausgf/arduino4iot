@@ -42,7 +42,7 @@ one of them:
 | Failure reactions | `iot.setPanicHandler()`, `iot.defaultPanicHandler()`, `iot.setUndervoltageHandler()`, `iot.defaultUndervoltageHandler()`, `iot.setBatteryMin_mV()`, `iot.setBatterySleep_s()` |
 | Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()`, `iot.setSetupTrigger()` |
 | Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
-| Device info | `iot.deviceId()`, `iot.macAddress()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
+| Device info | `iot.deviceId()`, `iot.macAddress()`, `iot.resetReason()`, `iot.panicCount()`, `iot.crashCount()`, `iot.undervoltageCount()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
 | Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
@@ -165,6 +165,10 @@ adapters in `iot_esp_ports.h`. Optional ports are held as pointers that may be
 no wall-clock time no `IotClock` — and the core names no optional adapter, so
 the linker drops every one an application does not reference.
 
+- **System telemetry fields in snake case (action required for dashboards).**
+  `lastSleep_s` → `last_sleep_s`, `panicSleep_s` → `panic_sleep_s`. New fields:
+  `reset_reason`, `panic_count`, `crash_count`, `undervoltage_count`, see
+  [Telemetry](docs/concepts.md#telemetry).
 - **`config.json` keys renamed (action required).** One key now names a value in
   `config.json`, in NVS and in the free-form accessors, so every key must fit the
   15-character NVS limit. Four were too long:
@@ -309,7 +313,7 @@ the linker drops every one an application does not reference.
   `iot.setPanic(init, factor, max)` → `iot.setBackoff({ .initialDuration_s = …,
   .factor = …, .maxDuration_s = … })`; `panicEarly()`,
   `escalatingSleepPanicHandler()` and `getPanicSleepDuration_s()` are internal
-  (the backoff is still reported as `panicSleep_s`). `api.updateProvisioningOk()`
+  (the backoff is reported as `panic_sleep_s`). `api.updateProvisioningOk()`
   → `api.updateProvisioning()` in a boolean context.
 - **`config.store()`, `reload()` and `find()` are internal**, as are
   `IotConfigValueBase::loadFrom()`, `applyJson()`, `next()`, `owner()` and the
@@ -319,7 +323,7 @@ the linker drops every one an application does not reference.
 - **`IotRtcState` is plain data in an `IotRtcSlot`.** Its `MAGIC`, `isValid()`
   and `reset()` are gone; the slot detects a power-on or a changed layout from
   the struct's size. "Not in backoff" is now 0 instead of -1, which the
-  `panicSleep_s` telemetry field shows. After this update every device starts
+  `panic_sleep_s` telemetry field shows. After this update every device starts
   over once: boot count from 1, any running backoff cleared.
 - **New: `IotRtcTelemetry<N>`** for values known only after the radio is off:
   kept in the application's `IotRtcSlot` and added to the next cycle's post of

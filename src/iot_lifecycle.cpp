@@ -34,6 +34,10 @@ void IotLifecycle::begin()
     _resetReason = _power->resetReason();
     _wakeupCause = _power->wakeupCause();
     _rtc.bootCount++;
+    if (iotIsAbnormalReset(_resetReason))
+    {
+        _rtc.crashCount++;
+    }
     _begun = true;
 }
 

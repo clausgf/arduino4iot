@@ -89,8 +89,8 @@ public:
     void addExitHook(std::function<void()> hook) { _exitHooks.push_back(std::move(hook)); }
 
     /**
-     * Start a wakeup cycle: count the boot and latch
-     * why the device came up.
+     * Start a wakeup cycle: count the boot (and a crash, after an abnormal
+     * reset) and latch why the device came up.
      *
      * Deliberately does *not* act on an abnormal reset - the caller decides,
      * once its logging works.
@@ -121,6 +121,21 @@ public:
     /// @return the running backoff duration in seconds, or 0 when not in
     /// backoff (the previous cycle ended in an orderly way).
     int32_t backoffDuration_s() const { return _rtc.panicSleepDuration_s; }
+
+    // --- failure counters, since the last power-on reset like bootCount() ---
+
+    /// @return the panics counted with countPanic().
+    uint32_t panicCount() const { return _rtc.panicCount; }
+
+    /// @return the starts after a crash, a watchdog timeout or a brownout,
+    /// @see isAbnormalStart(); counted by begin().
+    uint32_t crashCount() const { return _rtc.crashCount; }
+
+    /// @return the undervoltages counted with countUndervoltage().
+    uint32_t undervoltageCount() const { return _rtc.undervoltageCount; }
+
+    void countPanic() { _rtc.panicCount++; }
+    void countUndervoltage() { _rtc.undervoltageCount++; }
 
     // --- ending the cycle ---
 

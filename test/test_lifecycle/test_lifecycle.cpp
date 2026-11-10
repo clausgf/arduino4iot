@@ -154,6 +154,50 @@ void test_brownout_and_panic_are_abnormal_starts()
     }
 }
 
+void test_begin_counts_crashes_but_not_orderly_starts()
+{
+    IotRtcState rtc = freshRtcState();
+    IotFakePower power;
+
+    for (IotResetReason reason : { IotResetReason::PowerOn, IotResetReason::Panic,
+                                   IotResetReason::DeepSleep, IotResetReason::Watchdog,
+                                   IotResetReason::Software, IotResetReason::Brownout,
+                                   IotResetReason::External })
+    {
+        power.resetReasonValue = reason;
+        IotLifecycle lifecycle(power, rtc);
+        lifecycle.begin();
+    }
+
+    IotLifecycle last(power, rtc);
+    TEST_ASSERT_EQUAL_UINT32(3, last.crashCount());
+    TEST_ASSERT_EQUAL_UINT32(7, last.bootCount());
+}
+
+void test_failure_counters_survive_deep_sleep_but_not_a_power_loss()
+{
+    IotRtcState rtc = freshRtcState();
+    IotFakePower power;
+    IotLifecycle lifecycle(power, rtc);
+    lifecycle.begin();
+    lifecycle.countPanic();
+    lifecycle.countPanic();
+    lifecycle.countUndervoltage();
+    lifecycle.deepSleep(60);
+
+    power.resetReasonValue = IotResetReason::DeepSleep;
+    IotLifecycle nextCycle(power, rtc);
+    nextCycle.begin();
+    TEST_ASSERT_EQUAL_UINT32(2, nextCycle.panicCount());
+    TEST_ASSERT_EQUAL_UINT32(1, nextCycle.undervoltageCount());
+    TEST_ASSERT_EQUAL_UINT32(0, nextCycle.crashCount());
+
+    IotRtcState afterPowerLoss = freshRtcState();
+    IotLifecycle rebooted(power, afterPowerLoss);
+    rebooted.begin();
+    TEST_ASSERT_EQUAL_UINT32(0, rebooted.panicCount());
+    TEST_ASSERT_EQUAL_UINT32(0, rebooted.undervoltageCount());
+}
 
 // *****************************************************************************
 // IotLifecycle: ending a cycle
@@ -357,6 +401,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_begin_counts_up_across_deep_sleep_cycles);
     RUN_TEST(test_begin_does_not_act_on_an_abnormal_reset);
     RUN_TEST(test_brownout_and_panic_are_abnormal_starts);
+    RUN_TEST(test_begin_counts_crashes_but_not_orderly_starts);
+    RUN_TEST(test_failure_counters_survive_deep_sleep_but_not_a_power_loss);
 
     RUN_TEST(test_deep_sleep_records_the_cycle_and_clears_the_backoff);
     RUN_TEST(test_restart_and_shutdown_report_no_sleep_duration);

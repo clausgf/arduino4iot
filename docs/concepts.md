@@ -188,9 +188,28 @@ t.add("temperature", 22.5).add("humidity", 40);
 iot.telemetry.post("sensors", t);
 ```
 
-`iot.telemetry.postSystem()` posts a set of device-health values (uptime/sleep
-bookkeeping, battery voltage if configured, WiFi/connect metrics, firmware
-identification, …). Bodies are capped at 8 KiB by the server.
+`iot.telemetry.postSystem()` posts a set of device-health values. Bodies are
+capped at 8 KiB by the server.
+
+| Field | Meaning |
+|---|---|
+| `battery_V` | supply voltage; only with an `IotBattery` |
+| `wifi_rssi`, `wifi_connect_ms` | signal strength and duration of this cycle's connect |
+| `boot_count` | boots since the last power-on reset |
+| `reset_reason` | why this cycle started, `IotResetReason` as a number: 0 unknown, 1 power-on, 2 reset pin, 3 software, 4 panic, 5 watchdog, 6 brownout, 7 deep sleep |
+| `active_ms`, `last_sleep_s` | awake time of the previous cycle, nominal duration of the sleep this cycle woke from |
+| `panic_sleep_s` | running failure backoff, 0 when not in backoff |
+| `panic_count` | `iot.panic()` calls since the last power-on reset |
+| `crash_count` | starts after a crash, watchdog timeout or brownout since the last power-on reset |
+| `undervoltage_count` | cycles that found the battery below `battery_min_mv` since the last power-on reset |
+| `time`, `firmware_id`, `firmware_version`, `firmware_sha256`, `board` | text, see below; nice4iot currently ignores non-numeric fields |
+
+The counters live in RTC RAM like `boot_count`: they cost no flash writes,
+survive deep sleep and software or watchdog resets, and start over at a power
+loss. A rate is a counter over `boot_count`; the difference between two posts
+is what happened in between. `panic_count` counts the event, not the reaction,
+so a replaced panic handler does not change it. A panic points at the network,
+the server or the application, a crash at the firmware or the power supply.
 
 **Values known only after the network is gone** — a display refresh after
 `iot.radioOff()`, the length of the whole cycle — go into an

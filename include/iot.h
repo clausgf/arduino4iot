@@ -459,6 +459,20 @@ public:
      */
     uint32_t bootCount() const { return _lifecycle.bootCount(); }
 
+    /// @return why this cycle started, as latched by begin().
+    IotResetReason resetReason() const { return _lifecycle.resetReason(); }
+
+    /// @return the panic() calls since the last power-on reset.
+    uint32_t panicCount() const { return _lifecycle.panicCount(); }
+
+    /// @return the starts after a crash, a watchdog timeout or a brownout
+    /// since the last power-on reset.
+    uint32_t crashCount() const { return _lifecycle.crashCount(); }
+
+    /// @return the cycles since the last power-on reset that found the battery
+    /// below battery_min_mv.
+    uint32_t undervoltageCount() const { return _lifecycle.undervoltageCount(); }
+
     /**
      * @return how long the *previous* boot cycle stayed awake, in milliseconds
      * (recorded at its exit).

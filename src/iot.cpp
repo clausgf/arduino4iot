@@ -488,9 +488,13 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
     telemetry.add("wifi_rssi", iot.network().rssi());
     telemetry.add("wifi_connect_ms", (int32_t)iot.network().lastConnectDuration_ms());
     telemetry.add("boot_count", iot.bootCount());
+    telemetry.add("reset_reason", (int32_t)iot.resetReason());
     telemetry.add("active_ms", iot.lastActiveDuration_ms());
-    telemetry.add("lastSleep_s", iot.lastSleepDuration_s());
-    telemetry.add("panicSleep_s", iot._backoffDuration_s());
+    telemetry.add("last_sleep_s", iot.lastSleepDuration_s());
+    telemetry.add("panic_sleep_s", iot._backoffDuration_s());
+    telemetry.add("panic_count", iot.panicCount());
+    telemetry.add("crash_count", iot.crashCount());
+    telemetry.add("undervoltage_count", iot.undervoltageCount());
     // non-numeric fields are ignored by the nice4iot telemetry backend,
     // but kept for backends which support them
     telemetry.add("time", iot.timeIso());
@@ -542,6 +546,7 @@ std::function<void()> Iot::setPanicHandler(std::function<void()> panicHandler)
 
 void Iot::panic(const char* format...)
 {
+    _lifecycle.countPanic();
     va_list args;
     va_start(args, format);
     logger.logv(IotLogger::Level::Error, tag, format, args);
@@ -587,6 +592,7 @@ void Iot::_checkBattery()
     log_e("Battery voltage too low: %ld mV < %ld mV", (long)battery_mV, (long)_batteryMin_mV.get());
     // offline at this point: kept in RTC RAM, sent by a later cycle
     logger.error(tag, "undervoltage %ld mV < %ld mV", (long)battery_mV, (long)_batteryMin_mV.get());
+    _lifecycle.countUndervoltage();
     _undervoltageHandler();
 }
 
