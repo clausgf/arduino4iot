@@ -131,6 +131,22 @@ public:
     void setNoCredentialsHandler(std::function<void()> handler);
 
     /**
+     * Register a check that lets a person ask for the setup handler on a device
+     * that already has credentials - e.g. to look up its MAC address for a
+     * network's allow list, or to move it to another WiFi:
+     *
+     *   iot.setNoCredentialsHandler([] { apProvisioning.run(); });
+     *   iot.setSetupTrigger([] { return apProvisioning.waitForButton(); });
+     *
+     * begin() calls the check only after a power-on or a reset-pin start,
+     * never after a deep-sleep wakeup or a software restart, so it costs a
+     * battery device nothing in its normal cycle. If it returns true, begin()
+     * calls the handler of setNoCredentialsHandler() before connecting; if
+     * that handler returns, begin() continues normally.
+     */
+    void setSetupTrigger(std::function<bool()> trigger);
+
+    /**
      * Erase all persisted state (seeded configuration, tokens, config values and
      * persistent variables) from NVS. After this the device must boot a firmware
      * that re-seeds the configuration. Does not touch RTC RAM.
@@ -193,6 +209,14 @@ public:
      * established connection.
      */
     std::string deviceId() const;
+
+    /**
+     * The hardware address of the network adapter in use, e.g.
+     * "12:34:56:78:0a:bc" - the address to enter into a network's MAC allow
+     * list. Available without an established connection; begin() logs it
+     * before connecting.
+     */
+    std::string macAddress() const;
 
 
     // **********************************************************************
@@ -483,6 +507,8 @@ private:
 
     /// @see setNoCredentialsHandler(); empty unless the application registers one
     std::function<void()> _noCredentialsHandler;
+    /// @see setSetupTrigger(); empty unless the application registers one
+    std::function<bool()> _setupTrigger;
 
     // configurable variables
     IotConfigValue<int32_t> _logLevel;

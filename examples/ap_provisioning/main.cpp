@@ -79,6 +79,10 @@ void setup()
     apProvisioning.setSsidPrefix("my-sensor-setup-");
     apProvisioning.setIdleTimeout_s(600);
     iot.setNoCredentialsHandler([] { apProvisioning.run(); });
+    // Also open it on request: press BOOT within 2 s after a reset (not
+    // during it - that starts the serial bootloader). Never asked after a
+    // deep-sleep wakeup, so the normal cycle stays as short as before.
+    iot.setSetupTrigger([] { return apProvisioning.waitForButton(); });
 
     // A real clock, for timestamps and to renew the device token before it
     // expires. TLS does not need it: arduino-esp32 does not check certificate

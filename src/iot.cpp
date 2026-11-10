@@ -18,6 +18,7 @@
 // in via setNoCredentialsHandler(), and the dependency stays one-way,
 // iot_ap -> iot.
 #include "iot_esp_ports.h"
+#include "iot_text.h"
 
 // *****************************************************************************
 
@@ -184,6 +185,8 @@ void Iot::_beginCycle()
     log_i("--- Firmware version %s", firmwareVersion().c_str());
     log_i("--- Firmware id %s", firmwareId().c_str());
     log_i("--- SHA256 %s", firmwareSha256().c_str());
+    // before any connect: a network with a MAC allow list needs this address
+    log_i("--- Device id %s, MAC %s", deviceId().c_str(), macAddress().c_str());
 
     // the previous cycle crashed, hung or browned out: back off rather than
     // retry immediately
@@ -224,6 +227,18 @@ void Iot::_initSubsystems()
 bool Iot::begin(uint32_t timeout_ms)
 {
     _beginCycle();
+
+    // a person asking for the setup handler: only at a manual start, so the
+    // check never lengthens a deep-sleep cycle
+    const IotResetReason resetReason = _lifecycle.resetReason();
+    if (_setupTrigger && _noCredentialsHandler
+        && (resetReason == IotResetReason::PowerOn || resetReason == IotResetReason::External)
+        && _setupTrigger())
+    {
+        log_w("begin: setup requested, invoking the setup handler");
+        _noCredentialsHandler();
+        log_w("begin: the setup handler returned, continuing");
+    }
 
     // WiFi credentials were seeded into the store by seedCredentials()
     const std::string ssid = iotBootstrapStore().getString(iot_nvs_keys::WIFI_SSID, "");
@@ -287,6 +302,11 @@ bool Iot::begin(uint32_t timeout_ms)
 void Iot::setNoCredentialsHandler(std::function<void()> handler)
 {
     _noCredentialsHandler = std::move(handler);
+}
+
+void Iot::setSetupTrigger(std::function<bool()> trigger)
+{
+    _setupTrigger = std::move(trigger);
 }
 
 void Iot::seedCredentials(const IotSeedConfig& cfg)
@@ -376,6 +396,11 @@ std::string Iot::deviceId() const
         _deviceId = "e32_" + _network->macAddress();
     }
     return _deviceId;
+}
+
+std::string Iot::macAddress() const
+{
+    return iot_text::formatMacAddress(_network->macAddress());
 }
 
 

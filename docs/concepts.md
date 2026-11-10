@@ -306,6 +306,41 @@ sleep, for the same reason the idle timeout does (see *No backoff state*
 below). See [`examples/ap_provisioning/`](../examples/ap_provisioning/) for a
 complete sketch.
 
+**Opening the setup on request.** A device that already has credentials never
+reaches the handler on its own - not even when the network rejects it. For
+that, `iot.setSetupTrigger()` registers a check that `begin()` asks before
+connecting, and if it says yes, `begin()` runs the same handler:
+
+```cpp
+iot.setSetupTrigger([] { return apProvisioning.waitForButton(); });
+```
+
+`begin()` asks only after a power-on or a reset-pin start, never after a
+deep-sleep wakeup or a software restart, so the normal cycle of a battery
+device does not get any longer. `waitForButton()` waits up to 2 s for the
+BOOT button (GPIO0; pin, level and window are parameters). The button has
+to be pressed **after** the reset: held during the reset, it puts the chip
+into its serial bootloader, since GPIO0 is a strapping pin. Opened this way,
+the portal offers "Leave setup without changes", and its idle timeout
+restarts the device into its normal cycle instead of sleeping indefinitely.
+
+**MAC address for allow lists.** Networks that admit only registered MAC
+addresses need the device's address before its first connect. It is the
+station MAC, which the device id is made of (`e32_<mac>`), and it is
+available without a connection:
+
+- the setup page shows device id and MAC address, and `GET /info` returns
+  them as JSON (`{"deviceId":…,"macAddress":…}`);
+- `begin()` logs `--- Device id …, MAC …` before connecting;
+- over USB without any firmware:
+  `pio pkg exec -p tool-esptoolpy -- esptool.py --port <port> read_mac`
+  (the first "MAC" line is the station address);
+- in code, `iot.macAddress()` (`"aa:bb:cc:dd:ee:ff"`).
+
+The SSID of the setup AP shows only the last 4 hex digits, and the BSSID a
+phone sees is the SoftAP address, which differs from the station address
+(on the ESP32 by +1) - neither is what the allow list needs.
+
 **Why a hook and not a direct call.** The module is not free (see *Flash
 footprint* below) and many devices never need it — they are provisioned by a
 seeded NVS partition image. Since the core names no provisioning module, the

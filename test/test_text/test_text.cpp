@@ -110,6 +110,20 @@ void test_chunk_full_iteration_terminates_and_covers_body()
 }
 
 // *****************************************************************************
+// formatMacAddress
+// *****************************************************************************
+
+void test_mac_gets_colons()
+{
+    TEST_ASSERT_EQUAL_STRING("12:34:56:78:0a:bc", formatMacAddress("123456780abc").c_str());
+}
+
+void test_mac_empty_stays_empty()
+{
+    TEST_ASSERT_EQUAL_STRING("", formatMacAddress("").c_str());
+}
+
+// *****************************************************************************
 
 int main(int argc, char **argv)
 {
@@ -125,5 +139,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_chunk_hard_split_when_no_newline);
     RUN_TEST(test_chunk_returns_zero_at_end);
     RUN_TEST(test_chunk_full_iteration_terminates_and_covers_body);
+    RUN_TEST(test_mac_gets_colons);
+    RUN_TEST(test_mac_empty_stays_empty);
     return UNITY_END();
 }

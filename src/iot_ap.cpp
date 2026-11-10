@@ -34,6 +34,43 @@ void IotAp::setIdleTimeout_s(int32_t idleTimeout_s)
     _idleTimeout_s = idleTimeout_s;
 }
 
+bool IotAp::waitForButton(uint8_t pin, uint8_t activeLevel, uint32_t window_ms)
+{
+    pinMode(pin, activeLevel == LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+    log_w("waitForButton: press the button on GPIO%u within %lu ms to open the setup AP",
+        (unsigned)pin, (unsigned long)window_ms);
+    const unsigned long start = millis();
+    bool pressedBefore = false;
+    while (millis() - start < window_ms)
+    {
+        // two reads in a row, 10 ms apart, as a minimal debounce
+        const bool pressed = digitalRead(pin) == activeLevel;
+        if (pressed && pressedBefore)
+        {
+            log_w("waitForButton: button pressed");
+            return true;
+        }
+        pressedBefore = pressed;
+        delay(10);
+    }
+    return false;
+}
+
+bool IotAp::_hasCredentials()
+{
+    return !iotBootstrapStore().getString(iot_nvs_keys::WIFI_SSID, "").empty();
+}
+
+void IotAp::_leave()
+{
+    if (_hasCredentials())
+    {
+        iot.restart();  // a software restart opens no button window again
+    }
+    // nothing can change the "no seed data" condition until a physical reset
+    iot.shutdown();
+}
+
 // *****************************************************************************
 
 static String htmlEscape(const String& s)
@@ -91,7 +128,9 @@ bool IotAp::_startSoftAp()
     }
 
     _webServer.on("/", HTTP_GET, [this]() { _handleRoot(); });
+    _webServer.on("/info", HTTP_GET, [this]() { _handleInfo(); });
     _webServer.on("/save", HTTP_POST, [this]() { _handleSave(); });
+    _webServer.on("/restart", HTTP_POST, [this]() { _handleRestart(); });
     _webServer.onNotFound([this]() { _handleNotFound(); });
     _webServer.begin();
     return true;
@@ -101,19 +140,26 @@ String IotAp::_renderForm(const String& wifiSsid, const String& wifiPassword,
     const String& apiUrl, const String& project, const String& provisioningToken)
 {
     String html;
-    html.reserve(1024);
+    html.reserve(1280);
     html += "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
             "<title>Device setup</title></head><body>"
-            "<h1>Device setup</h1>"
-            "<form method=\"POST\" action=\"/save\">";
+            "<h1>Device setup</h1>";
+    html += "<p>Device id: <b>" + htmlEscape(iot.deviceId().c_str()) + "</b><br>"
+            "MAC address: <b>" + htmlEscape(iot.macAddress().c_str()) + "</b></p>";
+    html += "<form method=\"POST\" action=\"/save\">";
     html += "<label>WiFi SSID<br><input name=\"wifiSsid\" value=\"" + htmlEscape(wifiSsid) + "\" required></label><br><br>";
     html += "<label>WiFi password<br><input name=\"wifiPassword\" type=\"password\" value=\"" + htmlEscape(wifiPassword) + "\"></label><br><br>";
     html += "<label>API URL<br><input name=\"apiUrl\" value=\"" + htmlEscape(apiUrl) + "\" required></label><br><br>";
     html += "<label>Project<br><input name=\"project\" value=\"" + htmlEscape(project) + "\" required></label><br><br>";
     html += "<label>Provisioning token<br><input name=\"provisioningToken\" value=\"" + htmlEscape(provisioningToken) + "\" required></label><br><br>";
-    html += "<button type=\"submit\">Save &amp; reboot</button>"
-            "</form></body></html>";
+    html += "<button type=\"submit\">Save &amp; reboot</button></form>";
+    if (_hasCredentials())
+    {
+        html += "<form method=\"POST\" action=\"/restart\"><p>"
+                "<button type=\"submit\">Leave setup without changes</button></p></form>";
+    }
+    html += "</body></html>";
     return html;
 }
 
@@ -123,6 +169,25 @@ void IotAp::_handleRoot()
         _webServer.arg("wifiSsid"), _webServer.arg("wifiPassword"),
         _webServer.arg("apiUrl"), _webServer.arg("project"), _webServer.arg("provisioningToken"));
     _webServer.send(200, "text/html", html);
+}
+
+void IotAp::_handleInfo()
+{
+    String json = "{\"deviceId\":\"";
+    json += iot.deviceId().c_str();
+    json += "\",\"macAddress\":\"";
+    json += iot.macAddress().c_str();
+    json += "\"}";
+    _webServer.send(200, "application/json", json);
+}
+
+void IotAp::_handleRestart()
+{
+    log_w("_handleRestart: leaving setup without changes");
+    _webServer.send(200, "text/html",
+        "<!DOCTYPE html><html><body><h1>No changes</h1><p>Rebooting&hellip;</p></body></html>");
+    delay(500); // let the response flush before the reboot tears down WiFi
+    _leave();
 }
 
 void IotAp::_handleSave()
@@ -194,7 +259,7 @@ void IotAp::run()
     if (!_startSoftAp())
     {
         // no way to reach the form: the idle wait would only drain the battery
-        iot.shutdown(); // never returns
+        _leave(); // never returns
     }
 
     unsigned long idleDeadline = millis() + (unsigned long)_idleTimeout_s * 1000UL;
@@ -210,6 +275,6 @@ void IotAp::run()
         delay(10);
     }
 
-    log_w("run: idle timeout with no successful provisioning, sleeping indefinitely");
-    iot.shutdown(); // esp_deep_sleep_start(), no timer - never returns
+    log_w("run: idle timeout with no successful provisioning, leaving setup");
+    _leave(); // never returns
 }

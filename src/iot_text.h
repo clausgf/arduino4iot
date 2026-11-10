@@ -100,4 +100,24 @@ inline size_t nextLogChunkLength(const char* body, size_t bodyLen, size_t offset
     return maxChunkSize;
 }
 
+/**
+ * Format a hardware address given as hex digits ("aabbccddeeff", as
+ * IotNetwork::macAddress() returns it) the usual way, "aa:bb:cc:dd:ee:ff".
+ * Inserts a colon after every second character; does not validate.
+ */
+inline std::string formatMacAddress(const std::string& hex)
+{
+    std::string out;
+    out.reserve(hex.size() + hex.size() / 2);
+    for (size_t i = 0; i < hex.size(); i++)
+    {
+        if (i > 0 && i % 2 == 0)
+        {
+            out += ':';
+        }
+        out += hex[i];
+    }
+    return out;
+}
+
 } // namespace iot_text

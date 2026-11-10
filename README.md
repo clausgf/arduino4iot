@@ -39,9 +39,9 @@ one of them:
 | Task | Call |
 |---|---|
 | Wakeup cycle | `iot.begin()`, `iot.deepSleep()`, `iot.radioOff()`, `iot.panic()`, `iot.restart()`, `iot.shutdown()` |
-| Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()` |
+| Bootstrap and reset | `iot.seedCredentials()`, `iot.factoryReset()`, `iot.clearProvisioning()`, `iot.setNoCredentialsHandler()`, `iot.setSetupTrigger()` |
 | Hardware ports | `iot.setNetwork()`, `iot.setClock()`, `iot.setBattery()`, `iot.setPower()`, `iot.wifi()` |
-| Device info | `iot.deviceId()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
+| Device info | `iot.deviceId()`, `iot.macAddress()`, `iot.boardId()`, `iot.firmwareVersion()`, `iot.isTimePlausible()`, `iot.battery_mV()` |
 | Telemetry | `iot.telemetry.post()`, `iot.telemetry.postSystem()` |
 | Files | `iot.files.upload()`, `iot.files.getCached()` |
 | Forwarding | `iot.forward.get()`, `iot.forward.getCached()` |
@@ -139,6 +139,7 @@ See [docs/concepts.md](docs/concepts.md) and [examples/README.md](examples/READM
   ```ini
   build_flags = -DCORE_DEBUG_LEVEL=2
   ```
+- For a network with a MAC allow list, read the device's MAC before its first connect: over USB with `pio pkg exec -p tool-esptoolpy -- esptool.py --port <port> read_mac`, or on the setup page of the AP provisioning, which a device with credentials opens when BOOT is pressed within 2 s after a reset (`iot.setSetupTrigger()`). See [MAC address for allow lists](docs/concepts.md#first-time-provisioning-softap--captive-portal).
 - Firmware update via http (instead of https) requires an IDF SDKCONFIG configuration different from the one which is shipped with `arduino-esp32`. It needs the configuration option `CONFIG_OTA_ALLOW_HTTP=y`. Only firmware updates are affected, other API calls support http as well as https in the standard configuration.
 
 ## Development
