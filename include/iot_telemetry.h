@@ -25,10 +25,12 @@ static constexpr size_t IOT_MAX_TELEMETRY_SIZE = 8192;
 /**
  * Builder for telemetry payloads.
  *
- * The nice4iot server expects a flat JSON object whose values are numbers;
- * non-numeric values are silently ignored by the server's telemetry backend.
- * This builder guarantees a flat, valid JSON object and avoids manual
- * string concatenation.
+ * The nice4iot server expects a flat JSON object. Numbers are measurements;
+ * strings are labels - slowly changing device metadata such as a firmware
+ * version, kept with their change history, at most 16 per post and 128
+ * characters each. A value that changes with every post (a timestamp, an id,
+ * a measurement) does not belong in a label. This builder guarantees a flat,
+ * valid JSON object and avoids manual string concatenation.
  *
  * Example:
  *   IotTelemetry telemetry;
@@ -44,9 +46,9 @@ public:
     IotTelemetry() {}
 
     /**
-     * Add a measurement under the given key. Numeric values are recommended;
-     * string values are accepted but ignored by the nice4iot telemetry backend.
-     * Adding an existing key overwrites its value.
+     * Add a value under the given key: a number is a measurement, a string a
+     * label (see the class comment for the limits). Adding an existing key
+     * overwrites its value.
      */
     template <typename T>
     IotTelemetry& add(const char *key, T value)

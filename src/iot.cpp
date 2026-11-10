@@ -495,9 +495,9 @@ IotResult IotTelemetryEndpoint::postSystem(const std::string& kind, const std::s
     telemetry.add("panic_count", iot.panicCount());
     telemetry.add("crash_count", iot.crashCount());
     telemetry.add("undervoltage_count", iot.undervoltageCount());
-    // non-numeric fields are ignored by the nice4iot telemetry backend,
-    // but kept for backends which support them
-    telemetry.add("time", iot.timeIso());
+    // strings become labels in nice4iot (at most 16 per post, 128 characters
+    // each, change history kept): only slowly changing values belong here,
+    // never a timestamp - the server stamps each post with its arrival time
     telemetry.add("firmware_id", iot.firmwareId());
     std::string firmwareVersion = iot.firmwareVersion();
     if (!firmwareVersion.empty())

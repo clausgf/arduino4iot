@@ -179,8 +179,13 @@ re-provisions. There is a test pinning exactly that interaction.
 
 ## Telemetry
 
-Telemetry is a **flat JSON object of numeric values** (the server's time-series
-backend expects this). `IotTelemetry` guarantees that shape:
+Telemetry is a **flat JSON object**. Numbers are measurements in nice4iot's
+time series. Strings are **labels**: slowly changing device metadata such as
+the firmware version, stored with their change history (`label_history`) and
+shown as change markers in the Data tab. nice4iot keeps at most 16 labels per
+post, 128 characters each; a value that changes with every post (a
+timestamp, an id, a measurement) must not be a label. `IotTelemetry`
+guarantees the flat shape:
 
 ```cpp
 IotTelemetry t;
@@ -203,7 +208,7 @@ lower-case suffix (`_v`, `_ms`, `_s`), like the config keys.
 | `panic_count` | `iot.panic()` calls since the last power-on reset |
 | `crash_count` | starts after a crash, watchdog timeout or brownout since the last power-on reset |
 | `undervoltage_count` | cycles that found the battery below `battery_min_mv` since the last power-on reset |
-| `time`, `firmware_id`, `firmware_version`, `firmware_sha256`, `board` | text, see below; nice4iot currently ignores non-numeric fields |
+| `firmware_id`, `firmware_version`, `firmware_sha256`, `board` | labels, see below |
 
 The counters live in RTC RAM like `boot_count`: they cost no flash writes,
 survive deep sleep and software or watchdog resets, and start over at a power
@@ -229,7 +234,8 @@ iot.telemetry.post("epaper", t, rtc->next);     // next cycle: last_refresh_ms
 ```
 
 `add()` overwrites a key it already holds and rejects a key of 24 characters
-or more, or a value beyond `N` places; it holds numbers only, like the server.
+or more, or a value beyond `N` places; it holds numbers only, since a label
+from a previous cycle would not be metadata of the current one.
 
 The firmware is reported as two fields: `firmware_id` (the composite ESP
 application descriptor — in a PlatformIO/Arduino build this identifies the
